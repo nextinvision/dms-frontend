@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import {
   BarChart3,
@@ -404,8 +404,11 @@ export default function ServiceCenterDetailPage() {
   const params = useParams();
   const [activeTab, setActiveTab] = useState("Overview");
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Initialize with empty data for new centers, or sample data for existing ones
   const [vehicles, setVehicles] = useState(vehiclesData);
   const [serviceRequests, setServiceRequests] = useState(serviceRequestsData);
+  
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   
   // Popup states
@@ -501,7 +504,48 @@ export default function ServiceCenterDetailPage() {
 
   // Compute center data directly from params
   const centerId = parseInt(params.id);
-  const center = centersData[centerId];
+  
+  // Check localStorage first for newly created centers, then fall back to centersData
+  let center = null;
+  if (typeof window !== 'undefined') {
+    const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
+    center = storedCenters[centerId] || centersData[centerId];
+  } else {
+    center = centersData[centerId];
+  }
+  
+  // If center still doesn't exist, create a default one with zero data
+  if (!center) {
+    center = {
+      id: centerId,
+      name: "Service Center",
+      location: "",
+      staff: 0,
+      jobs: 0,
+      revenue: "₹0.0L",
+      status: "Active",
+      rating: 0,
+      staffMembers: [],
+    };
+  }
+
+  // Initialize empty data for newly created centers
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
+      // If it's a newly created center (in localStorage but not in centersData), start with empty data
+      if (storedCenters[centerId] && !centersData[centerId]) {
+        // Use setTimeout to avoid synchronous state updates
+        setTimeout(() => {
+          setVehicles([]);
+          setServiceRequests([]);
+          setPartRequests([]);
+          setInventory([]);
+          setJobs([]);
+        }, 0);
+      }
+    }
+  }, [centerId]);
 
   // Filter completed jobs for invoice generation
   const jobCardsForInvoice = jobs

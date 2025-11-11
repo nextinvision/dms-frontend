@@ -58,7 +58,7 @@ export default function ServiceCentersPage() {
 
     if (editingCenter) {
       // Update existing center
-      setCenters(centers.map(center =>
+      const updatedCenters = centers.map(center =>
         center.id === editingCenter.id
           ? {
               ...center,
@@ -69,7 +69,24 @@ export default function ServiceCentersPage() {
               status: form.status,
             }
           : center
-      ));
+      );
+      setCenters(updatedCenters);
+      
+      // Update in localStorage
+      const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
+      const updatedCenter = updatedCenters.find(c => c.id === editingCenter.id);
+      if (updatedCenter && storedCenters[editingCenter.id]) {
+        storedCenters[editingCenter.id] = {
+          ...storedCenters[editingCenter.id],
+          name: updatedCenter.name,
+          location: updatedCenter.location,
+          staff: updatedCenter.staff,
+          jobs: updatedCenter.jobs,
+          status: updatedCenter.status,
+        };
+        localStorage.setItem('serviceCenters', JSON.stringify(storedCenters));
+      }
+      
       alert("Service center updated successfully!");
     } else {
       // Create new center
@@ -83,6 +100,24 @@ export default function ServiceCentersPage() {
       };
 
       setCenters([...centers, newCenter]);
+      
+      // Store in localStorage for detail page access
+      const centerDetailData = {
+        id: newCenter.id,
+        name: newCenter.name,
+        location: newCenter.location,
+        staff: newCenter.staff,
+        jobs: newCenter.jobs,
+        revenue: newCenter.revenue,
+        status: newCenter.status,
+        rating: newCenter.rating,
+        staffMembers: [], // Empty staff members for new center
+      };
+      
+      const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
+      storedCenters[newCenter.id] = centerDetailData;
+      localStorage.setItem('serviceCenters', JSON.stringify(storedCenters));
+      
       alert("Service center created successfully!");
     }
 

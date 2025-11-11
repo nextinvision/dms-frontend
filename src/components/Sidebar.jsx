@@ -19,7 +19,7 @@ const menu = [
   { name: "Dashboard", icon: Home, href: "/dashboarda" },
   { name: "Service Centers", icon: Building, href: "/servicecenters" },
   { name: "Users & Roles", icon: Users, href: "/user&roles" },
-  { name: "Inventory", icon: Package, href: "#" },
+  { name: "Inventory", icon: Package, href: "/inventory" },
   { name: "Approvals", icon: CheckCircle, href: "#" },
   { name: "Finance", icon: DollarSign, href: "#" },
   { name: "Reports", icon: FileText, href: "#" },
