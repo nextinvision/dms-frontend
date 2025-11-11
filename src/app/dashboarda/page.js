@@ -374,7 +374,7 @@ export default function Dashboard() {
                   label: "Add Service Centre",
                   icon: PlusCircle,
                   bg: "bg-gradient-to-r from-green-500 to-green-700",
-                  link: "/service-centre",
+                  link: "/servicecenters",
                 },
                 {
                   label: "Create User",

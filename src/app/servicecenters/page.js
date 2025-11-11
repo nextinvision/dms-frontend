@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Star, X } from "lucide-react";
+import { Star, X, Edit } from "lucide-react";
 
 export default function ServiceCentersPage() {
   const router = useRouter();
@@ -40,6 +40,7 @@ export default function ServiceCentersPage() {
   ]);
 
   const [showForm, setShowForm] = useState(false);
+  const [editingCenter, setEditingCenter] = useState(null);
   const [form, setForm] = useState({
     name: "",
     location: "",
@@ -50,19 +51,43 @@ export default function ServiceCentersPage() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.location.trim()) return alert("Fill required fields");
+    if (!form.name.trim() || !form.location.trim()) {
+      alert("Please fill all required fields!");
+      return;
+    }
 
-    const newCenter = {
-      id: centers.length + 1,
-      ...form,
-      staff: Number(form.staff) || 0,
-      jobs: Number(form.jobs) || 0,
-      revenue: "₹0.0L",
-      rating: 4.5,
-    };
+    if (editingCenter) {
+      // Update existing center
+      setCenters(centers.map(center =>
+        center.id === editingCenter.id
+          ? {
+              ...center,
+              name: form.name,
+              location: form.location,
+              staff: Number(form.staff) || 0,
+              jobs: Number(form.jobs) || 0,
+              status: form.status,
+            }
+          : center
+      ));
+      alert("Service center updated successfully!");
+    } else {
+      // Create new center
+      const newCenter = {
+        id: centers.length > 0 ? Math.max(...centers.map(c => c.id)) + 1 : 1,
+        ...form,
+        staff: Number(form.staff) || 0,
+        jobs: Number(form.jobs) || 0,
+        revenue: "₹0.0L",
+        rating: 4.5,
+      };
 
-    setCenters([...centers, newCenter]);
+      setCenters([...centers, newCenter]);
+      alert("Service center created successfully!");
+    }
+
     setForm({ name: "", location: "", staff: "", jobs: "", status: "Active" });
+    setEditingCenter(null);
     setShowForm(false);
   };
 
@@ -78,11 +103,35 @@ export default function ServiceCentersPage() {
         {centers.map((center) => (
           <div
             key={center.id}
-            onClick={() => router.push(`/servicecenters/${center.id}`)}
-            className="bg-white border rounded-xl shadow-sm hover:shadow-md transition p-4 sm:p-5 flex flex-col justify-between cursor-pointer"
+            className="bg-white border rounded-xl shadow-sm hover:shadow-md transition p-4 sm:p-5 flex flex-col justify-between"
           >
             <div>
-              <h2 className="text-base sm:text-lg font-semibold text-gray-800 break-words">{center.name}</h2>
+              <div className="flex items-start justify-between mb-2">
+                <h2 
+                  onClick={() => router.push(`/servicecenters/${center.id}`)}
+                  className="text-base sm:text-lg font-semibold text-gray-800 break-words cursor-pointer hover:text-blue-600 flex-1"
+                >
+                  {center.name}
+                </h2>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingCenter(center);
+                    setForm({
+                      name: center.name,
+                      location: center.location,
+                      staff: center.staff.toString(),
+                      jobs: center.jobs.toString(),
+                      status: center.status,
+                    });
+                    setShowForm(true);
+                  }}
+                  className="ml-2 p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                  title="Edit Service Center"
+                >
+                  <Edit size={16} />
+                </button>
+              </div>
               <p className="text-gray-500 text-xs sm:text-sm mb-2 sm:mb-3 break-words">{center.location}</p>
 
               <div className="text-xs sm:text-sm text-gray-700 space-y-1">
@@ -141,12 +190,18 @@ export default function ServiceCentersPage() {
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-4 sm:p-6 relative max-h-[90vh] overflow-y-auto">
             <button
               className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 z-10"
-              onClick={() => setShowForm(false)}
+              onClick={() => {
+                setShowForm(false);
+                setEditingCenter(null);
+                setForm({ name: "", location: "", staff: "", jobs: "", status: "Active" });
+              }}
             >
               <X size={18} />
             </button>
 
-            <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-gray-800 pr-8">Add New Center</h2>
+            <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-gray-800 pr-8">
+              {editingCenter ? "Edit Service Center" : "Add New Center"}
+            </h2>
 
             <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
               <div>
@@ -155,7 +210,7 @@ export default function ServiceCentersPage() {
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full border text-black border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                   required
                 />
               </div>
@@ -166,19 +221,19 @@ export default function ServiceCentersPage() {
                   type="text"
                   value={form.location}
                   onChange={(e) => setForm({ ...form, location: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full border text-black border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs sm:text-sm font-medium text-gray-600">Staff</label>
+                  <label className="text-xs  sm:text-sm font-medium text-gray-600">Staff</label>
                   <input
                     type="number"
                     value={form.staff}
                     onChange={(e) => setForm({ ...form, staff: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full border text-black border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
                 </div>
 
@@ -188,7 +243,7 @@ export default function ServiceCentersPage() {
                     type="number"
                     value={form.jobs}
                     onChange={(e) => setForm({ ...form, jobs: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full border text-black border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
                 </div>
               </div>
@@ -209,7 +264,7 @@ export default function ServiceCentersPage() {
                 type="submit"
                 className="w-full mt-4 bg-indigo-600 text-white py-2 rounded-lg font-medium text-sm hover:bg-indigo-700 transition"
               >
-                Add Center
+                {editingCenter ? "Update Center" : "Add Center"}
               </button>
             </form>
           </div>

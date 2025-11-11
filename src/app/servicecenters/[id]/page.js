@@ -23,6 +23,8 @@ import {
   Calendar,
   ClipboardList,
   Menu,
+  Edit,
+  Eye,
 } from "lucide-react";
 
 // Sample data - in a real app, this would come from an API
@@ -133,7 +135,6 @@ const actionButtons = [
   { name: "View Inventory", icon: Package },
   { name: "Request Parts", icon: ShoppingCart },
   { name: "Issue Parts", icon: Package2 },
-  { name: "OTC Order", icon: ShoppingBag },
   { name: "Generate Invoice", icon: Receipt },
   { name: "Record Payment", icon: CreditCard },
 ];
@@ -143,31 +144,125 @@ const vehiclesData = [
   {
     id: 1,
     registrationNumber: "DL-01-AB-1234",
-    model: "Honda City",
+    make: "Honda",
+    model: "City",
     year: 2020,
     customerName: "Rohit Shah",
     phone: "+91-9876-543-210",
+    email: "rohit.shah@email.com",
+    address: "123 Main Street, New Delhi, 110001",
     vin: "MBJC123456789012A",
+    totalServices: 5,
+    lastServiceDate: "2024-10-15",
+    currentStatus: "Active Job Card",
+    activeJobCard: "JC001",
+    nextServiceDate: "2025-01-15",
   },
   {
     id: 2,
     registrationNumber: "DL-01-CD-5678",
-    model: "Maruti Swift",
+    make: "Maruti",
+    model: "Swift",
     year: 2021,
     customerName: "Priya Sharma",
     phone: "+91-9876-543-211",
+    email: "priya.sharma@email.com",
+    address: "456 Park Avenue, New Delhi, 110002",
     vin: "MBJC123456789012B",
+    totalServices: 3,
+    lastServiceDate: "2024-09-20",
+    currentStatus: "Available",
+    activeJobCard: null,
+    nextServiceDate: "2025-02-20",
   },
   {
     id: 3,
     registrationNumber: "DL-01-EF-9012",
-    model: "Hyundai i20",
+    make: "Hyundai",
+    model: "i20",
     year: 2019,
     customerName: "Amit Kumar",
     phone: "+91-9876-543-212",
+    email: "amit.kumar@email.com",
+    address: "789 MG Road, New Delhi, 110003",
     vin: "MBJC123456789012C",
+    totalServices: 7,
+    lastServiceDate: "2024-11-05",
+    currentStatus: "Available",
+    activeJobCard: null,
+    nextServiceDate: "2025-01-05",
   },
 ];
+
+// Sample service history data
+const serviceHistoryData = {
+  1: [
+    {
+      id: "SH001",
+      serviceDate: "2024-10-15",
+      serviceType: "Full Service",
+      engineerName: "Technician Raj",
+      partsUsed: ["Engine Oil 5L", "Air Filter", "Spark Plugs"],
+      laborCharges: "₹1500",
+      partsCharges: "₹2500",
+      totalAmount: "₹4000",
+      invoiceNumber: "INV-2024-045",
+      jobCardId: "JC001",
+    },
+    {
+      id: "SH002",
+      serviceDate: "2024-07-10",
+      serviceType: "Maintenance",
+      engineerName: "Technician Priya",
+      partsUsed: ["Engine Oil 5L", "Coolant 5L"],
+      laborCharges: "₹1000",
+      partsCharges: "₹1500",
+      totalAmount: "₹2500",
+      invoiceNumber: "INV-2024-032",
+      jobCardId: "JC002",
+    },
+    {
+      id: "SH003",
+      serviceDate: "2024-04-05",
+      serviceType: "Repair",
+      engineerName: "Technician Raj",
+      partsUsed: ["Brake Pads", "Brake Fluid"],
+      laborCharges: "₹2000",
+      partsCharges: "₹3000",
+      totalAmount: "₹5000",
+      invoiceNumber: "INV-2024-018",
+      jobCardId: "JC003",
+    },
+  ],
+  2: [
+    {
+      id: "SH004",
+      serviceDate: "2024-09-20",
+      serviceType: "Full Service",
+      engineerName: "Technician Amit",
+      partsUsed: ["Engine Oil 5L", "Air Filter"],
+      laborCharges: "₹1200",
+      partsCharges: "₹1800",
+      totalAmount: "₹3000",
+      invoiceNumber: "INV-2024-038",
+      jobCardId: "JC004",
+    },
+  ],
+  3: [
+    {
+      id: "SH005",
+      serviceDate: "2024-11-05",
+      serviceType: "Maintenance",
+      engineerName: "Technician Vikram",
+      partsUsed: ["Engine Oil 5L", "Coolant 5L", "Air Filter"],
+      laborCharges: "₹1500",
+      partsCharges: "₹2000",
+      totalAmount: "₹3500",
+      invoiceNumber: "INV-2024-050",
+      jobCardId: "JC005",
+    },
+  ],
+};
 
 // Sample data for service requests
 const serviceRequestsData = [
@@ -193,15 +288,7 @@ const serviceRequestsData = [
   },
 ];
 
-// Sample data for approved requests (for job card creation)
-const approvedRequestsData = [
-  {
-    id: "SR001",
-    vehicle: "DL-01-AB-1234",
-    customerName: "Rohit Shah",
-    serviceType: "Full Service",
-  },
-];
+// Approved requests will be computed dynamically from serviceRequests
 
 // Sample data for part requests
 const partRequestsData = [
@@ -312,22 +399,6 @@ const invoicesData = [
   },
 ];
 
-// Sample job cards for invoice generation
-const jobCardsForInvoice = [
-  {
-    id: "JC001",
-    vehicle: "DL-01-AB-1234",
-    customerName: "Rohit Shah",
-    serviceType: "Full Service",
-  },
-  {
-    id: "JC002",
-    vehicle: "DL-01-CD-5678",
-    customerName: "Priya Nair",
-    serviceType: "Repair",
-  },
-];
-
 export default function ServiceCenterDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -336,6 +407,21 @@ export default function ServiceCenterDetailPage() {
   const [vehicles, setVehicles] = useState(vehiclesData);
   const [serviceRequests, setServiceRequests] = useState(serviceRequestsData);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  
+  // Popup states
+  const [showVehiclePopup, setShowVehiclePopup] = useState(false);
+  const [vehicleSearchQuery, setVehicleSearchQuery] = useState("");
+  const [showAddVehiclePopup, setShowAddVehiclePopup] = useState(false);
+  const [showEngineerPopup, setShowEngineerPopup] = useState(false);
+  const [engineerSearchQuery, setEngineerSearchQuery] = useState("");
+  const [showPartPopup, setShowPartPopup] = useState(false);
+  const [partSearchQuery, setPartSearchQuery] = useState("");
+  const [showAddPartPopup, setShowAddPartPopup] = useState(false);
+  const [showInvoiceSearchPopup, setShowInvoiceSearchPopup] = useState(false);
+  const [invoiceSearchQuery, setInvoiceSearchQuery] = useState("");
+  const [showInventoryAddEdit, setShowInventoryAddEdit] = useState(false);
+  const [editingInventoryItem, setEditingInventoryItem] = useState(null);
+  const [showVehicleDetails, setShowVehicleDetails] = useState(null);
   
   // Form states
   const [createRequestForm, setCreateRequestForm] = useState({
@@ -347,6 +433,9 @@ export default function ServiceCenterDetailPage() {
   
   const [jobCardForm, setJobCardForm] = useState({
     approvedRequest: "",
+    vehicle: "",
+    customerName: "",
+    serviceType: "",
     technician: "",
     completionDate: "",
     laborCost: "",
@@ -359,6 +448,7 @@ export default function ServiceCenterDetailPage() {
   
   const [requestPartsForm, setRequestPartsForm] = useState({
     part: "",
+    partName: "",
     quantity: "",
     reason: "Low Stock",
     notes: "",
@@ -366,9 +456,15 @@ export default function ServiceCenterDetailPage() {
   
   const [generateInvoiceForm, setGenerateInvoiceForm] = useState({
     jobCard: "",
+    vehicle: "",
+    invoiceType: "Job Card", // Job Card or OTC Order
     invoiceNumber: "Auto-generated",
     tax: "18",
     discount: "0",
+    customerName: "",
+    customerPhone: "",
+    items: inventoryData.map((item) => ({ ...item, selectedQuantity: 0 })),
+    paymentMethod: "Cash",
   });
   
   const [recordPaymentForm, setRecordPaymentForm] = useState({
@@ -377,16 +473,45 @@ export default function ServiceCenterDetailPage() {
     amountPaid: "",
   });
   
-  const [otcOrderForm, setOtcOrderForm] = useState({
+  const [newVehicleForm, setNewVehicleForm] = useState({
+    registrationNumber: "",
+    model: "",
+    year: "",
     customerName: "",
-    customerPhone: "",
-    items: inventoryData.map((item) => ({ ...item, selectedQuantity: 0 })),
-    paymentMethod: "Cash",
+    phone: "",
+    vin: "",
+  });
+  
+  const [newPartForm, setNewPartForm] = useState({
+    partName: "",
+    sku: "",
+    category: "",
+    quantity: "",
+    price: "",
+  });
+  
+  const [inventoryForm, setInventoryForm] = useState({
+    partName: "",
+    sku: "",
+    category: "",
+    quantity: "",
+    price: "",
+    status: "In Stock",
   });
 
   // Compute center data directly from params
   const centerId = parseInt(params.id);
   const center = centersData[centerId];
+
+  // Filter completed jobs for invoice generation
+  const jobCardsForInvoice = jobs
+    .filter((job) => job.status === "Completed")
+    .map((job) => ({
+      id: job.id,
+      vehicle: job.vehicle,
+      customerName: job.customerName,
+      serviceType: job.serviceType || "Service",
+    }));
 
   if (!center) {
     return (
@@ -636,11 +761,11 @@ export default function ServiceCenterDetailPage() {
                     >
                       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-2 break-words">
+                          <h3 className="text-lg sm:text-xl font-bold text-black mb-2 break-words">
                             {vehicle.registrationNumber}
                           </h3>
                           <p className="text-sm sm:text-base text-gray-600 mb-3">
-                            {vehicle.model} ({vehicle.year})
+                            {vehicle.make || ""} {vehicle.model} ({vehicle.year})
                           </p>
                           <div className="text-sm text-gray-700 space-y-1">
                             <p>
@@ -652,13 +777,263 @@ export default function ServiceCenterDetailPage() {
                             <p className="break-all">VIN: {vehicle.vin}</p>
                           </div>
                         </div>
-                        <button className="bg-blue-600 text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition w-full lg:w-auto lg:ml-4 whitespace-nowrap">
+                        <button 
+                          onClick={() => setShowVehicleDetails(vehicle)}
+                          className="bg-blue-600 text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition w-full lg:w-auto lg:ml-4 whitespace-nowrap flex items-center justify-center gap-2"
+                        >
+                          <Eye size={16} />
                           View Details
                         </button>
                       </div>
                     </div>
                   ))}
               </div>
+              
+              {/* Vehicle Details Modal */}
+              {showVehicleDetails && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl p-6 relative max-h-[95vh] overflow-y-auto">
+                    <button
+                      className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 z-10"
+                      onClick={() => setShowVehicleDetails(null)}
+                    >
+                      <X size={24} />
+                    </button>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6 pr-8">Vehicle Details</h2>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                      {/* Vehicle Details */}
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Vehicle Details</h3>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Make</label>
+                            <p className="text-base font-semibold text-gray-800">{showVehicleDetails.make || "N/A"}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Model</label>
+                            <p className="text-base font-semibold text-gray-800">{showVehicleDetails.model}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Year</label>
+                            <p className="text-base text-gray-800">{showVehicleDetails.year}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Registration Number</label>
+                            <p className="text-base font-semibold text-gray-800">{showVehicleDetails.registrationNumber}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">VIN</label>
+                            <p className="text-base text-gray-800 break-all font-mono text-sm">{showVehicleDetails.vin}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Customer Details */}
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Customer Details</h3>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Name</label>
+                            <p className="text-base font-semibold text-gray-800">{showVehicleDetails.customerName}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Phone</label>
+                            <p className="text-base text-gray-800">{showVehicleDetails.phone}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Email</label>
+                            <p className="text-base text-gray-800 break-all">{showVehicleDetails.email || "N/A"}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Address</label>
+                            <p className="text-base text-gray-800 break-words">{showVehicleDetails.address || "N/A"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Service Summary & Current Status */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                      <div className="bg-blue-50 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Summary</h3>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Total Services</label>
+                            <p className="text-2xl font-bold text-blue-600">{showVehicleDetails.totalServices || 0}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Last Service Date</label>
+                            <p className="text-base font-semibold text-gray-800">{showVehicleDetails.lastServiceDate || "N/A"}</p>
+                          </div>
+                          {showVehicleDetails.nextServiceDate && (
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Next Scheduled Service</label>
+                              <p className="text-base font-semibold text-orange-600">{showVehicleDetails.nextServiceDate}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-green-50 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Current Status</h3>
+                        <div className="space-y-3">
+                          <div>
+                            <span className={`inline-block text-sm font-medium px-3 py-1 rounded-full ${
+                              showVehicleDetails.currentStatus === "Active Job Card"
+                                ? "bg-orange-100 text-orange-700"
+                                : "bg-green-100 text-green-700"
+                            }`}>
+                              {showVehicleDetails.currentStatus || "Available"}
+                            </span>
+                          </div>
+                          {showVehicleDetails.activeJobCard && (
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Active Job Card</label>
+                              <p className="text-base font-semibold text-gray-800">{showVehicleDetails.activeJobCard}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Actions */}
+                    <div className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <button
+                          onClick={() => {
+                            // Scroll to service history
+                            document.getElementById('service-history-section')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                        >
+                          View Service History
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowVehicleDetails(null);
+                            setActiveTab("Create Job Card");
+                            setJobCardForm({
+                              ...jobCardForm,
+                              vehicle: showVehicleDetails.registrationNumber,
+                              customerName: showVehicleDetails.customerName,
+                            });
+                          }}
+                          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition"
+                        >
+                          Create Job Card
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowVehicleDetails(null);
+                            setActiveTab("Generate Invoice");
+                            const jobCard = jobs.find(j => j.vehicle === showVehicleDetails.registrationNumber);
+                            if (jobCard) {
+                              setGenerateInvoiceForm({ ...generateInvoiceForm, jobCard: jobCard.id });
+                            }
+                          }}
+                          className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition"
+                        >
+                          Generate Invoice
+                        </button>
+                        <button
+                          onClick={() => {
+                            alert("Schedule appointment functionality coming soon!");
+                          }}
+                          className="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-700 transition"
+                        >
+                          Schedule Appointment
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Service History Timeline */}
+                    <div id="service-history-section" className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Service History Timeline</h3>
+                      <div className="space-y-4">
+                        {serviceHistoryData[showVehicleDetails.id] && serviceHistoryData[showVehicleDetails.id].length > 0 ? (
+                          serviceHistoryData[showVehicleDetails.id].map((service, index) => (
+                            <div key={service.id} className="border-l-4 border-blue-500 pl-4 pb-4 relative">
+                              <div className="absolute -left-2 top-0 w-4 h-4 bg-blue-500 rounded-full"></div>
+                              <div className="bg-gray-50 rounded-lg p-4">
+                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-600">Service Date</p>
+                                    <p className="text-base font-semibold text-gray-800">{service.serviceDate}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-600">Service Type</p>
+                                    <p className="text-base font-semibold text-gray-800">{service.serviceType}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-600">Engineer</p>
+                                    <p className="text-base font-semibold text-gray-800">{service.engineerName}</p>
+                                  </div>
+                                </div>
+                                
+                                <div className="mb-3">
+                                  <p className="text-sm font-medium text-gray-600 mb-2">Parts Used</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {service.partsUsed.map((part, idx) => (
+                                      <span key={idx} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                        {part}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-600">Labor Charges</p>
+                                    <p className="text-sm font-semibold text-gray-800">{service.laborCharges}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-600">Parts Charges</p>
+                                    <p className="text-sm font-semibold text-gray-800">{service.partsCharges}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-600">Total Amount</p>
+                                    <p className="text-sm font-bold text-green-600">{service.totalAmount}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-600">Invoice Number</p>
+                                    <p className="text-sm font-semibold text-gray-800">{service.invoiceNumber}</p>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <p className="text-xs font-medium text-gray-600">Job Card ID</p>
+                                  <p className="text-sm font-semibold text-gray-800">{service.jobCardId}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="bg-gray-50 rounded-lg p-6 text-center">
+                            <p className="text-gray-500">No service history available for this vehicle</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Next Scheduled Service Reminder */}
+                    {showVehicleDetails.nextServiceDate && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <Calendar className="text-yellow-600 mt-1" size={20} />
+                          <div>
+                            <h4 className="text-base font-semibold text-gray-800 mb-1">Next Scheduled Service Reminder</h4>
+                            <p className="text-sm text-gray-700">
+                              Next service is scheduled for <span className="font-semibold text-yellow-700">{showVehicleDetails.nextServiceDate}</span>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -737,30 +1112,45 @@ export default function ServiceCenterDetailPage() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
+                    const selectedVehicle = vehicles.find(v => v.id.toString() === createRequestForm.vehicle);
+                    const newRequest = {
+                      id: `SR${String(serviceRequests.length + 1).padStart(3, '0')}`,
+                      vehicle: selectedVehicle ? selectedVehicle.registrationNumber : "",
+                      customerName: selectedVehicle ? selectedVehicle.customerName : "",
+                      serviceType: createRequestForm.serviceType,
+                      description: createRequestForm.description,
+                      estimatedCost: createRequestForm.estimatedCost,
+                      requestedDate: new Date().toISOString().split('T')[0],
+                      status: "Pending",
+                    };
+                    setServiceRequests([...serviceRequests, newRequest]);
                     alert("Service request created successfully!");
                     setCreateRequestForm({ vehicle: "", serviceType: "", description: "", estimatedCost: "" });
                   }}
                   className="space-y-4 sm:space-y-6"
                 >
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-black mb-2">
                       Select Vehicle
                     </label>
-                    <select
-                      value={createRequestForm.vehicle}
-                      onChange={(e) =>
-                        setCreateRequestForm({ ...createRequestForm, vehicle: e.target.value })
-                      }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
-                      required
-                    >
-                      <option value="">-- Select Vehicle --</option>
-                      {vehicles.map((vehicle) => (
-                        <option key={vehicle.id} value={vehicle.id}>
-                          {vehicle.registrationNumber} - {vehicle.customerName}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={createRequestForm.vehicle ? vehicles.find(v => v.id.toString() === createRequestForm.vehicle)?.registrationNumber || "" : ""}
+                        readOnly
+                        placeholder="Click to select vehicle"
+                        onClick={() => setShowVehiclePopup(true)}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-black cursor-pointer"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowVehiclePopup(true)}
+                        className="bg-blue-600 text-black px-4 py-3 rounded-lg hover:bg-blue-700 transition"
+                      >
+                        <Search size={20} />
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -772,7 +1162,7 @@ export default function ServiceCenterDetailPage() {
                       onChange={(e) =>
                         setCreateRequestForm({ ...createRequestForm, serviceType: e.target.value })
                       }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-black"
                       required
                     >
                       <option value="">-- Select Type --</option>
@@ -784,7 +1174,7 @@ export default function ServiceCenterDetailPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-black mb-2">
                       Description
                     </label>
                     <textarea
@@ -829,17 +1219,49 @@ export default function ServiceCenterDetailPage() {
           {/* Create Job Card */}
           {activeTab === "Create Job Card" && (
             <div>
-              <div className="flex items-center gap-2 mb-6">
-                <ClipboardList size={24} className="text-orange-600" />
-                <h2 className="text-xl sm:text-2xl font-semibold text-gray-800">Create Job Card</h2>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <ClipboardList size={24} className="text-orange-600" />
+                  <h2 className="text-xl sm:text-2xl font-semibold text-gray-800">Create Job Card</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setJobCardForm({
+                      approvedRequest: "",
+                      vehicle: "",
+                      customerName: "",
+                      serviceType: "",
+                      technician: "",
+                      completionDate: "",
+                      laborCost: "",
+                      partsCost: "",
+                    });
+                  }}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center gap-2"
+                >
+                  <Plus size={16} />
+                  Create New Job Card
+                </button>
               </div>
               <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
+                    const newJob = {
+                      id: `JC${String(jobs.length + 1).padStart(3, '0')}`,
+                      vehicle: jobCardForm.vehicle || serviceRequests.find(sr => sr.id === jobCardForm.approvedRequest)?.vehicle || "",
+                      customerName: jobCardForm.customerName || serviceRequests.find(sr => sr.id === jobCardForm.approvedRequest)?.customerName || "",
+                      serviceType: jobCardForm.serviceType || serviceRequests.find(sr => sr.id === jobCardForm.approvedRequest)?.serviceType || "Service",
+                      technician: center.staffMembers.find(s => s.id.toString() === jobCardForm.technician)?.name || "",
+                      status: "Not Started",
+                    };
+                    setJobs([...jobs, newJob]);
                     alert("Job card created successfully!");
                     setJobCardForm({
                       approvedRequest: "",
+                      vehicle: "",
+                      customerName: "",
+                      serviceType: "",
                       technician: "",
                       completionDate: "",
                       laborCost: "",
@@ -850,23 +1272,71 @@ export default function ServiceCenterDetailPage() {
                 >
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Approved Request
+                      Select Approved Request (Optional - or fill below for direct creation)
                     </label>
                     <select
                       value={jobCardForm.approvedRequest}
-                      onChange={(e) =>
-                        setJobCardForm({ ...jobCardForm, approvedRequest: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const selectedRequest = serviceRequests.find(sr => sr.id === e.target.value);
+                        setJobCardForm({ 
+                          ...jobCardForm, 
+                          approvedRequest: e.target.value,
+                          vehicle: selectedRequest?.vehicle || jobCardForm.vehicle,
+                          customerName: selectedRequest?.customerName || jobCardForm.customerName,
+                          serviceType: selectedRequest?.serviceType || jobCardForm.serviceType,
+                        });
+                      }}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
-                      required
                     >
-                      <option value="">-- Select Request --</option>
-                      {approvedRequestsData.map((request) => (
+                      <option value="">-- Select Request (Optional) --</option>
+                      {serviceRequests.filter(sr => sr.status === "Approved").map((request) => (
                         <option key={request.id} value={request.id}>
                           {request.id} - {request.vehicle} - {request.customerName}
                         </option>
                       ))}
+                      {serviceRequests.filter(sr => sr.status === "Approved").length === 0 && (
+                        <option value="" disabled>No approved requests available</option>
+                      )}
                     </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Vehicle Registration
+                    </label>
+                    <input
+                      type="text"
+                      value={jobCardForm.vehicle}
+                      onChange={(e) => setJobCardForm({ ...jobCardForm, vehicle: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Customer Name
+                    </label>
+                    <input
+                      type="text"
+                      value={jobCardForm.customerName}
+                      onChange={(e) => setJobCardForm({ ...jobCardForm, customerName: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Service Type
+                    </label>
+                    <input
+                      type="text"
+                      value={jobCardForm.serviceType}
+                      onChange={(e) => setJobCardForm({ ...jobCardForm, serviceType: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                      required
+                    />
                   </div>
 
                   <div>
@@ -978,21 +1448,24 @@ export default function ServiceCenterDetailPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Select Part
                     </label>
-                    <select
-                      value={requestPartsForm.part}
-                      onChange={(e) =>
-                        setRequestPartsForm({ ...requestPartsForm, part: e.target.value })
-                      }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
-                      required
-                    >
-                      <option value="">-- Select Part --</option>
-                      {partsData.map((part) => (
-                        <option key={part.id} value={part.id}>
-                          {part.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={requestPartsForm.partName || (requestPartsForm.part ? partsData.find(p => p.id.toString() === requestPartsForm.part)?.name : "")}
+                        readOnly
+                        placeholder="Click to search part or add custom"
+                        onClick={() => setShowPartPopup(true)}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900 cursor-pointer"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPartPopup(true)}
+                        className="bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition"
+                      >
+                        <Search size={20} />
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -1133,7 +1606,21 @@ export default function ServiceCenterDetailPage() {
                   <Package size={24} className="text-gray-600" />
                   <h2 className="text-xl sm:text-2xl font-semibold text-gray-800">Service Center Inventory</h2>
                 </div>
-                <button className="bg-blue-600 text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2 w-full sm:w-auto order-first sm:order-last">
+                <button 
+                  onClick={() => {
+                    setEditingInventoryItem(null);
+                    setInventoryForm({
+                      partName: "",
+                      sku: "",
+                      category: "",
+                      quantity: "",
+                      price: "",
+                      status: "In Stock",
+                    });
+                    setShowInventoryAddEdit(true);
+                  }}
+                  className="bg-blue-600 text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2 w-full sm:w-auto order-first sm:order-last"
+                >
                   <Plus size={16} />
                   Add New Part
                 </button>
@@ -1197,7 +1684,21 @@ export default function ServiceCenterDetailPage() {
                             </span>
                           </td>
                           <td className="px-4 py-4 whitespace-nowrap text-sm">
-                            <button className="text-blue-600 hover:text-blue-800 font-medium">
+                            <button 
+                              onClick={() => {
+                                setEditingInventoryItem(item);
+                                setInventoryForm({
+                                  partName: item.partName,
+                                  sku: item.sku,
+                                  category: item.category,
+                                  quantity: item.quantity.toString(),
+                                  price: item.price.replace('₹', ''),
+                                  status: item.status,
+                                });
+                                setShowInventoryAddEdit(true);
+                              }}
+                              className="text-blue-600 hover:text-blue-800 font-medium"
+                            >
                               Edit
                             </button>
                           </td>
@@ -1258,16 +1759,22 @@ export default function ServiceCenterDetailPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Reassign to
                           </label>
-                          <select className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900">
-                            <option value="">-- Reassign to --</option>
-                            {center.staffMembers
-                              .filter((staff) => staff.role === "Technician")
-                              .map((staff) => (
-                                <option key={staff.id} value={staff.id}>
-                                  {staff.name}
-                                </option>
-                              ))}
-                          </select>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              readOnly
+                              placeholder="Click to search engineer"
+                              onClick={() => setShowEngineerPopup(job.id)}
+                              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900 cursor-pointer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowEngineerPopup(job.id)}
+                              className="bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition"
+                            >
+                              <Search size={20} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1318,17 +1825,18 @@ export default function ServiceCenterDetailPage() {
                         Update Status
                       </label>
                       <select
+                        value={job.status}
                         onChange={(e) => {
+                          const newStatus = e.target.value;
                           setJobs(
                             jobs.map((j) =>
-                              j.id === job.id ? { ...j, status: e.target.value } : j
+                              j.id === job.id ? { ...j, status: newStatus } : j
                             )
                           );
-                          alert("Job status updated!");
+                          alert(`Job status updated to ${newStatus}!`);
                         }}
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
                       >
-                        <option value="">-- Select Status --</option>
                         <option value="Not Started">Not Started</option>
                         <option value="In Progress">In Progress</option>
                         <option value="Completed">Completed</option>
@@ -1347,8 +1855,32 @@ export default function ServiceCenterDetailPage() {
                 <CheckCircle2 size={24} className="text-green-600" />
                 <h2 className="text-xl sm:text-2xl font-semibold text-gray-800">Completed Jobs</h2>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 text-center">
-                <p className="text-gray-500">No completed jobs</p>
+              <div className="space-y-4">
+                {jobs.filter(job => job.status === "Completed").length > 0 ? (
+                  jobs.filter(job => job.status === "Completed").map((job) => (
+                    <div
+                      key={job.id}
+                      className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 sm:p-6"
+                    >
+                      <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-3">{job.id}</h3>
+                      <div className="text-sm text-gray-700 space-y-2">
+                        <p>
+                          Vehicle: <span className="font-semibold break-words">{job.vehicle} - {job.customerName}</span>
+                        </p>
+                        <p>
+                          Technician: <span className="font-semibold">{job.technician}</span>
+                        </p>
+                        <span className="inline-block text-xs font-medium px-3 py-1 rounded-full bg-green-100 text-green-700">
+                          Completed
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 text-center">
+                    <p className="text-gray-500">No completed jobs</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1360,40 +1892,190 @@ export default function ServiceCenterDetailPage() {
                 <Receipt size={24} className="text-yellow-600" />
                 <h2 className="text-xl sm:text-2xl font-semibold text-gray-800">Generate Invoice</h2>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
+              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     alert("Invoice generated and sent successfully!");
                     setGenerateInvoiceForm({
                       jobCard: "",
+                      vehicle: "",
+                      invoiceType: "Job Card",
                       invoiceNumber: "Auto-generated",
                       tax: "18",
                       discount: "0",
+                      customerName: "",
+                      customerPhone: "",
+                      items: inventoryData.map((item) => ({ ...item, selectedQuantity: 0 })),
+                      paymentMethod: "Cash",
                     });
                   }}
                   className="space-y-4 sm:space-y-6"
                 >
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Job Card
+                      Invoice Type
                     </label>
                     <select
-                      value={generateInvoiceForm.jobCard}
+                      value={generateInvoiceForm.invoiceType}
                       onChange={(e) =>
-                        setGenerateInvoiceForm({ ...generateInvoiceForm, jobCard: e.target.value })
+                        setGenerateInvoiceForm({ ...generateInvoiceForm, invoiceType: e.target.value, jobCard: "", vehicle: "" })
                       }
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
                       required
                     >
-                      <option value="">-- Select Job --</option>
-                      {jobCardsForInvoice.map((jobCard) => (
-                        <option key={jobCard.id} value={jobCard.id}>
-                          {jobCard.id} - {jobCard.vehicle} - {jobCard.customerName}
-                        </option>
-                      ))}
+                      <option value="Job Card">Job Card Invoice</option>
+                      <option value="OTC Order">OTC Order</option>
                     </select>
                   </div>
+
+                  {generateInvoiceForm.invoiceType === "Job Card" ? (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Search & Select Job Card / Vehicle
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={generateInvoiceForm.jobCard ? jobCardsForInvoice.find(jc => jc.id === generateInvoiceForm.jobCard)?.id + " - " + jobCardsForInvoice.find(jc => jc.id === generateInvoiceForm.jobCard)?.vehicle : ""}
+                            readOnly
+                            placeholder="Click to search job card or vehicle"
+                            onClick={() => setShowInvoiceSearchPopup(true)}
+                            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900 cursor-pointer"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowInvoiceSearchPopup(true)}
+                            className="bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition"
+                          >
+                            <Search size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Customer Information</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Customer Name
+                            </label>
+                            <input
+                              type="text"
+                              value={generateInvoiceForm.customerName}
+                              onChange={(e) =>
+                                setGenerateInvoiceForm({ ...generateInvoiceForm, customerName: e.target.value })
+                              }
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Customer Phone
+                            </label>
+                            <input
+                              type="tel"
+                              value={generateInvoiceForm.customerPhone}
+                              onChange={(e) =>
+                                setGenerateInvoiceForm({ ...generateInvoiceForm, customerPhone: e.target.value })
+                              }
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                              required
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Select Items</h3>
+                        <div className="border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
+                          <div className="divide-y divide-gray-200">
+                            {generateInvoiceForm.items.map((item, index) => (
+                              <div key={item.id} className="p-4 hover:bg-gray-50">
+                                <div className="flex items-center justify-between gap-4">
+                                  <div className="flex-1">
+                                    <h4 className="text-base font-semibold text-gray-800 mb-1">
+                                      {item.partName}
+                                    </h4>
+                                    <p className="text-sm text-gray-600">
+                                      {item.price} • Stock: {item.quantity}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600">Qty</label>
+                                    <div className="flex items-center border border-gray-300 rounded-lg">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newItems = [...generateInvoiceForm.items];
+                                          if (newItems[index].selectedQuantity > 0) {
+                                            newItems[index].selectedQuantity -= 1;
+                                            setGenerateInvoiceForm({ ...generateInvoiceForm, items: newItems });
+                                          }
+                                        }}
+                                        className="px-3 py-2 text-gray-600 hover:bg-gray-100"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        value={item.selectedQuantity || 0}
+                                        onChange={(e) => {
+                                          const newItems = [...generateInvoiceForm.items];
+                                          const val = parseInt(e.target.value) || 0;
+                                          newItems[index].selectedQuantity = Math.min(val, item.quantity);
+                                          setGenerateInvoiceForm({ ...generateInvoiceForm, items: newItems });
+                                        }}
+                                        min="0"
+                                        max={item.quantity}
+                                        className="w-16 px-2 py-2 text-center border-0 focus:ring-0 text-gray-900"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newItems = [...generateInvoiceForm.items];
+                                          if (newItems[index].selectedQuantity < item.quantity) {
+                                            newItems[index].selectedQuantity += 1;
+                                            setGenerateInvoiceForm({ ...generateInvoiceForm, items: newItems });
+                                          }
+                                        }}
+                                        className="px-3 py-2 text-gray-600 hover:bg-gray-100"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Payment Method
+                        </label>
+                        <select
+                          value={generateInvoiceForm.paymentMethod}
+                          onChange={(e) =>
+                            setGenerateInvoiceForm({ ...generateInvoiceForm, paymentMethod: e.target.value })
+                          }
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                          required
+                        >
+                          <option value="Cash">Cash</option>
+                          <option value="Credit Card">Credit Card</option>
+                          <option value="Debit Card">Debit Card</option>
+                          <option value="UPI">UPI</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1565,8 +2247,8 @@ export default function ServiceCenterDetailPage() {
             </div>
           )}
 
-          {/* OTC Order */}
-          {activeTab === "OTC Order" && (
+          {/* OTC Order - Removed, integrated into Generate Invoice */}
+          {false && activeTab === "OTC Order" && (
             <div>
               <div className="flex items-center gap-2 mb-6">
                 <ShoppingBag size={24} className="text-purple-600" />
@@ -1732,6 +2414,533 @@ export default function ServiceCenterDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Vehicle Selection Popup */}
+      {showVehiclePopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button
+              className="absolute top-4 right-4 text-black hover:text-gray-700"
+              onClick={() => {
+                setShowVehiclePopup(false);
+                setVehicleSearchQuery("");
+              }}
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 pr-8">Select Vehicle</h2>
+            <div className="mb-4 flex gap-2">
+              <input
+                type="text"
+                placeholder="Search vehicles..."
+                value={vehicleSearchQuery}
+                onChange={(e) => setVehicleSearchQuery(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+              />
+              <button
+                onClick={() => setShowAddVehiclePopup(true)}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+              >
+                <Plus size={16} />
+                Add New
+              </button>
+            </div>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {vehicles
+                .filter((v) =>
+                  v.registrationNumber.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+                  v.customerName.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+                  v.vin.toLowerCase().includes(vehicleSearchQuery.toLowerCase())
+                )
+                .map((vehicle) => (
+                  <div
+                    key={vehicle.id}
+                    onClick={() => {
+                      setCreateRequestForm({ ...createRequestForm, vehicle: vehicle.id.toString() });
+                      setShowVehiclePopup(false);
+                      setVehicleSearchQuery("");
+                    }}
+                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <p className="font-semibold text-black">{vehicle.registrationNumber}</p>
+                    <p className="text-sm text-gray-600">{vehicle.make || ""} {vehicle.model} ({vehicle.year}) - {vehicle.customerName}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Vehicle Popup */}
+      {showAddVehiclePopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+            <button
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowAddVehiclePopup(false);
+                setNewVehicleForm({
+                  registrationNumber: "",
+                  model: "",
+                  year: "",
+                  customerName: "",
+                  phone: "",
+                  vin: "",
+                });
+              }}
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 pr-8">Add New Vehicle</h2>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const newVehicle = {
+                  id: vehicles.length + 1,
+                  ...newVehicleForm,
+                  year: parseInt(newVehicleForm.year),
+                };
+                setVehicles([...vehicles, newVehicle]);
+                setCreateRequestForm({ ...createRequestForm, vehicle: newVehicle.id.toString() });
+                setShowAddVehiclePopup(false);
+                setShowVehiclePopup(false);
+                setNewVehicleForm({
+                  registrationNumber: "",
+                  model: "",
+                  year: "",
+                  customerName: "",
+                  phone: "",
+                  vin: "",
+                });
+                alert("Vehicle added successfully!");
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Registration Number</label>
+                <input
+                  type="text"
+                  value={newVehicleForm.registrationNumber}
+                  onChange={(e) => setNewVehicleForm({ ...newVehicleForm, registrationNumber: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                <input
+                  type="text"
+                  value={newVehicleForm.model}
+                  onChange={(e) => setNewVehicleForm({ ...newVehicleForm, model: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                <input
+                  type="number"
+                  value={newVehicleForm.year}
+                  onChange={(e) => setNewVehicleForm({ ...newVehicleForm, year: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
+                <input
+                  type="text"
+                  value={newVehicleForm.customerName}
+                  onChange={(e) => setNewVehicleForm({ ...newVehicleForm, customerName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={newVehicleForm.phone}
+                  onChange={(e) => setNewVehicleForm({ ...newVehicleForm, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
+                <input
+                  type="text"
+                  value={newVehicleForm.vin}
+                  onChange={(e) => setNewVehicleForm({ ...newVehicleForm, vin: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition"
+              >
+                Add Vehicle
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Engineer Search Popup */}
+      {showEngineerPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative max-h-[90vh] overflow-y-auto">
+            <button
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowEngineerPopup(false);
+                setEngineerSearchQuery("");
+              }}
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 pr-8">Search Engineer</h2>
+            <input
+              type="text"
+              placeholder="Search engineers..."
+              value={engineerSearchQuery}
+              onChange={(e) => setEngineerSearchQuery(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900 mb-4"
+            />
+            <div className="space-y-2">
+              {center.staffMembers
+                .filter((staff) => 
+                  staff.role === "Technician" &&
+                  (staff.name.toLowerCase().includes(engineerSearchQuery.toLowerCase()) ||
+                   staff.email.toLowerCase().includes(engineerSearchQuery.toLowerCase()))
+                )
+                .map((staff) => (
+                  <div
+                    key={staff.id}
+                    onClick={() => {
+                      setJobs(jobs.map(j => j.id === showEngineerPopup ? { ...j, technician: staff.name } : j));
+                      setShowEngineerPopup(false);
+                      setEngineerSearchQuery("");
+                      alert("Engineer assigned successfully!");
+                    }}
+                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <p className="font-semibold text-black">{staff.name}</p>
+                    <p className="text-sm text-gray-600">{staff.email}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Part Search Popup */}
+      {showPartPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative max-h-[90vh] overflow-y-auto">
+            <button
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowPartPopup(false);
+                setPartSearchQuery("");
+              }}
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 pr-8">Search Part</h2>
+            <div className="mb-4 flex gap-2">
+              <input
+                type="text"
+                placeholder="Search parts..."
+                value={partSearchQuery}
+                onChange={(e) => setPartSearchQuery(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+              />
+              <button
+                onClick={() => {
+                  setShowPartPopup(false);
+                  setShowAddPartPopup(true);
+                }}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+              >
+                <Plus size={16} />
+                Add Custom
+              </button>
+            </div>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {partsData
+                .filter((p) =>
+                  p.name.toLowerCase().includes(partSearchQuery.toLowerCase())
+                )
+                .map((part) => (
+                  <div
+                    key={part.id}
+                    onClick={() => {
+                      setRequestPartsForm({ ...requestPartsForm, part: part.id.toString(), partName: part.name });
+                      setShowPartPopup(false);
+                      setPartSearchQuery("");
+                    }}
+                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <p className="font-semibold text-black">{part.name}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Custom Part Popup */}
+      {showAddPartPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+            <button
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowAddPartPopup(false);
+                setNewPartForm({
+                  partName: "",
+                  sku: "",
+                  category: "",
+                  quantity: "",
+                  price: "",
+                });
+              }}
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 pr-8">Add Custom Part</h2>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const newPart = {
+                  id: partsData.length + 1,
+                  name: newPartForm.partName,
+                };
+                setRequestPartsForm({ ...requestPartsForm, part: newPart.id.toString(), partName: newPart.name });
+                setShowAddPartPopup(false);
+                setNewPartForm({
+                  partName: "",
+                  sku: "",
+                  category: "",
+                  quantity: "",
+                  price: "",
+                });
+                alert("Custom part added successfully!");
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Part Name</label>
+                <input
+                  type="text"
+                  value={newPartForm.partName}
+                  onChange={(e) => setNewPartForm({ ...newPartForm, partName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition"
+              >
+                Add Part
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Search Popup */}
+      {showInvoiceSearchPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowInvoiceSearchPopup(false);
+                setInvoiceSearchQuery("");
+              }}
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 pr-8">Search Job Card / Vehicle</h2>
+            <input
+              type="text"
+              placeholder="Search by job card ID, vehicle registration, or customer name..."
+              value={invoiceSearchQuery}
+              onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900 mb-4"
+            />
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {jobCardsForInvoice
+                .filter((jc) =>
+                  jc.id.toLowerCase().includes(invoiceSearchQuery.toLowerCase()) ||
+                  jc.vehicle.toLowerCase().includes(invoiceSearchQuery.toLowerCase()) ||
+                  jc.customerName.toLowerCase().includes(invoiceSearchQuery.toLowerCase())
+                )
+                .map((jobCard) => (
+                  <div
+                    key={jobCard.id}
+                    onClick={() => {
+                      setGenerateInvoiceForm({ ...generateInvoiceForm, jobCard: jobCard.id });
+                      setShowInvoiceSearchPopup(false);
+                      setInvoiceSearchQuery("");
+                    }}
+                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <p className="font-semibold text-black">{jobCard.id}</p>
+                    <p className="text-sm text-gray-600">{jobCard.vehicle} - {jobCard.customerName}</p>
+                    <p className="text-sm text-gray-500">{jobCard.serviceType}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inventory Add/Edit Popup */}
+      {showInventoryAddEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative max-h-[90vh] overflow-y-auto">
+            <button
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowInventoryAddEdit(false);
+                setEditingInventoryItem(null);
+                setInventoryForm({
+                  partName: "",
+                  sku: "",
+                  category: "",
+                  quantity: "",
+                  price: "",
+                  status: "In Stock",
+                });
+              }}
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 pr-8">
+              {editingInventoryItem ? "Edit Part" : "Add New Part"}
+            </h2>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (editingInventoryItem) {
+                  setInventory(inventory.map(item =>
+                    item.id === editingInventoryItem.id
+                      ? {
+                          ...item,
+                          partName: inventoryForm.partName,
+                          sku: inventoryForm.sku,
+                          category: inventoryForm.category,
+                          quantity: parseInt(inventoryForm.quantity),
+                          price: `₹${inventoryForm.price}`,
+                          status: inventoryForm.status,
+                        }
+                      : item
+                  ));
+                  alert("Part updated successfully!");
+                } else {
+                  const newPart = {
+                    id: inventory.length + 1,
+                    partName: inventoryForm.partName,
+                    sku: inventoryForm.sku,
+                    category: inventoryForm.category,
+                    quantity: parseInt(inventoryForm.quantity),
+                    price: `₹${inventoryForm.price}`,
+                    status: inventoryForm.status,
+                  };
+                  setInventory([...inventory, newPart]);
+                  alert("Part added successfully!");
+                }
+                setShowInventoryAddEdit(false);
+                setEditingInventoryItem(null);
+                setInventoryForm({
+                  partName: "",
+                  sku: "",
+                  category: "",
+                  quantity: "",
+                  price: "",
+                  status: "In Stock",
+                });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Part Name</label>
+                <input
+                  type="text"
+                  value={inventoryForm.partName}
+                  onChange={(e) => setInventoryForm({ ...inventoryForm, partName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+                <input
+                  type="text"
+                  value={inventoryForm.sku}
+                  onChange={(e) => setInventoryForm({ ...inventoryForm, sku: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <input
+                  type="text"
+                  value={inventoryForm.category}
+                  onChange={(e) => setInventoryForm({ ...inventoryForm, category: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  value={inventoryForm.quantity}
+                  onChange={(e) => setInventoryForm({ ...inventoryForm, quantity: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                <input
+                  type="number"
+                  value={inventoryForm.price}
+                  onChange={(e) => setInventoryForm({ ...inventoryForm, price: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={inventoryForm.status}
+                  onChange={(e) => setInventoryForm({ ...inventoryForm, status: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-900"
+                  required
+                >
+                  <option value="In Stock">In Stock</option>
+                  <option value="Low Stock">Low Stock</option>
+                  <option value="Out of Stock">Out of Stock</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition"
+              >
+                {editingInventoryItem ? "Update Part" : "Add Part"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
