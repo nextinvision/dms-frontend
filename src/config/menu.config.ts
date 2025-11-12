@@ -1,0 +1,82 @@
+/**
+ * Menu configuration
+ */
+import { ADMIN_MENU_ITEMS } from "@/shared/constants/menu-items";
+import type { MenuItem } from "@/shared/constants/menu-items";
+import {
+  Home,
+  Search,
+  FileText,
+  ClipboardList,
+  Wrench,
+  Package,
+  ShoppingCart,
+  DollarSign,
+  Calendar,
+  Users,
+  MessageSquare,
+  Settings,
+  Truck,
+  BarChart3,
+} from "lucide-react";
+import type { UserRole } from "@/shared/types";
+
+export const SC_MENU_ITEMS: Record<UserRole, MenuItem[]> = {
+  sc_manager: [
+    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
+    { name: "Vehicle Search", icon: Search, href: "/sc/vehicle-search" },
+    { name: "Service Requests", icon: FileText, href: "/sc/service-requests" },
+    { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
+    { name: "Workshop", icon: Wrench, href: "/sc/workshop" },
+    { name: "Inventory", icon: Package, href: "/sc/inventory" },
+    { name: "OTC Orders", icon: ShoppingCart, href: "/sc/otc-orders" },
+    { name: "Home Service", icon: Truck, href: "/sc/home-service" },
+    { name: "Invoices", icon: DollarSign, href: "/sc/invoices" },
+    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
+    { name: "Technicians", icon: Users, href: "/sc/technicians" },
+    { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
+    { name: "Reports", icon: BarChart3, href: "/sc/reports" },
+    { name: "Approvals", icon: FileText, href: "/sc/approvals" },
+    { name: "Settings", icon: Settings, href: "/sc/settings" },
+  ],
+  sc_staff: [
+    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
+    { name: "Vehicle Search", icon: Search, href: "/sc/vehicle-search" },
+    { name: "Service Requests", icon: FileText, href: "/sc/service-requests" },
+    { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
+    { name: "Workshop", icon: Wrench, href: "/sc/workshop" },
+    { name: "Inventory", icon: Package, href: "/sc/inventory" },
+    { name: "OTC Orders", icon: ShoppingCart, href: "/sc/otc-orders" },
+    { name: "Invoices", icon: DollarSign, href: "/sc/invoices" },
+    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
+  ],
+  service_engineer: [
+    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
+    { name: "My Jobs", icon: ClipboardList, href: "/sc/job-cards" },
+    { name: "Home Service", icon: Truck, href: "/sc/home-service" },
+    { name: "Parts Request", icon: Package, href: "/sc/parts-request" },
+  ],
+  service_advisor: [
+    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
+    { name: "Vehicle Search", icon: Search, href: "/sc/vehicle-search" },
+    { name: "Service Requests", icon: FileText, href: "/sc/service-requests" },
+    { name: "Leads", icon: Users, href: "/sc/leads" },
+    { name: "Quotations", icon: FileText, href: "/sc/quotations" },
+    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
+  ],
+  call_center: [
+    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
+    { name: "Service Requests", icon: FileText, href: "/sc/service-requests" },
+    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
+    { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
+    { name: "Follow-ups", icon: Calendar, href: "/sc/follow-ups" },
+  ],
+  admin: [],
+  super_admin: [],
+};
+
+export const MENU_CONFIG = {
+  admin: ADMIN_MENU_ITEMS,
+  serviceCenter: SC_MENU_ITEMS,
+} as const;
+
