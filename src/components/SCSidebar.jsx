@@ -1,4 +1,5 @@
 "use client";
+import { useState, useEffect } from "react";
 import {
   Home,
   Search,
@@ -80,24 +81,31 @@ export default function SCSidebar({ open, setOpen, role = "sc_manager" }) {
   const pathname = usePathname();
   const router = useRouter();
   const menu = roleMenus[role] || roleMenus.sc_manager;
+  const [user, setUser] = useState({
+    name: "SC Manager",
+    role: "SC Manager",
+    initials: "SC",
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
+      setUser({
+        name: userInfo.name || "SC Manager",
+        role: userInfo.role || "SC Manager",
+        initials: userInfo.initials || "SC",
+      });
+    }
+  }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("userRole");
-    localStorage.removeItem("userInfo");
-    localStorage.removeItem("isLoggedIn");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("userInfo");
+      localStorage.removeItem("isLoggedIn");
+    }
     router.push("/");
   };
-
-  const getUserDisplay = () => {
-    const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
-    return {
-      name: userInfo.name || "SC Manager",
-      role: userInfo.role || "SC Manager",
-      initials: userInfo.initials || "SC",
-    };
-  };
-
-  const user = getUserDisplay();
 
   return (
     <aside

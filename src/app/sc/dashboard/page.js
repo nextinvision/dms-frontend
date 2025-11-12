@@ -22,11 +22,13 @@ export default function SCDashboard() {
   const [serviceCenter, setServiceCenter] = useState("Pune Phase 1");
 
   useEffect(() => {
-    const role = localStorage.getItem("userRole") || "sc_manager";
-    const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
-    setUserRole(role);
-    if (userInfo.serviceCenter) {
-      setServiceCenter(userInfo.serviceCenter);
+    if (typeof window !== "undefined") {
+      const role = localStorage.getItem("userRole") || "sc_manager";
+      const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
+      setUserRole(role);
+      if (userInfo.serviceCenter) {
+        setServiceCenter(userInfo.serviceCenter);
+      }
     }
   }, []);
 

@@ -8,14 +8,28 @@ export default function Navbar({ setOpen }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
+  const [dashboardTitle, setDashboardTitle] = useState("Dashboard");
   const searchRef = useRef(null);
   const resultsRef = useRef(null);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const role = localStorage.getItem("userRole");
+      if (role === "admin" || role === "super_admin") {
+        setDashboardTitle("Admin Dashboard");
+      } else {
+        setDashboardTitle("Service Center Dashboard");
+      }
+    }
+  }, []);
+
   const handleLogout = () => {
     // Clear all auth data
-    localStorage.removeItem("userRole");
-    localStorage.removeItem("userInfo");
-    localStorage.removeItem("isLoggedIn");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("userInfo");
+      localStorage.removeItem("isLoggedIn");
+    }
     router.push("/");
   };
 
@@ -167,14 +181,7 @@ export default function Navbar({ setOpen }) {
 
         {/* Dashboard Title - Centered */}
         <h1 className="absolute left-1/2 transform -translate-x-1/2 text-lg md:text-xl font-semibold text-[#6f42c1] hidden md:block">
-          {(() => {
-            if (typeof window !== "undefined") {
-              const role = localStorage.getItem("userRole");
-              if (role === "admin" || role === "super_admin") return "Admin Dashboard";
-              return "Service Center Dashboard";
-            }
-            return "Dashboard";
-          })()}
+          {dashboardTitle}
         </h1>
 
         {/* Right side: Search, Logout, Avatar */}
