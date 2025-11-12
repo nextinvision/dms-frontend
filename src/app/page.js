@@ -1,21 +1,122 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Building2 } from "lucide-react";
+import { Building2, User, ChevronDown } from "lucide-react";
 import Link from "next/link";
+
+// Mock user database - In production, this would be from API
+const users = [
+  {
+    email: "admin@service.com",
+    password: "admin123",
+    role: "admin",
+    name: "Rajesh Kumar Singh",
+    initials: "RKS",
+    serviceCenter: null,
+  },
+  {
+    email: "scmanager@service.com",
+    password: "sc123",
+    role: "sc_manager",
+    name: "SC Manager",
+    initials: "SCM",
+    serviceCenter: "Pune Phase 1",
+  },
+  {
+    email: "scstaff@service.com",
+    password: "staff123",
+    role: "sc_staff",
+    name: "SC Staff",
+    initials: "SCS",
+    serviceCenter: "Pune Phase 1",
+  },
+  {
+    email: "engineer@service.com",
+    password: "eng123",
+    role: "service_engineer",
+    name: "Service Engineer",
+    initials: "SE",
+    serviceCenter: "Pune Phase 1",
+  },
+  {
+    email: "advisor@service.com",
+    password: "adv123",
+    role: "service_advisor",
+    name: "Service Advisor",
+    initials: "SA",
+    serviceCenter: "Pune Phase 1",
+  },
+  {
+    email: "callcenter@service.com",
+    password: "cc123",
+    role: "call_center",
+    name: "Call Center Staff",
+    initials: "CC",
+    serviceCenter: "Pune Phase 1",
+  },
+];
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
+  const [showRoleSelector, setShowRoleSelector] = useState(false);
+  const [selectedRole, setSelectedRole] = useState(null);
+  const [error, setError] = useState("");
+  const roleSelectorRef = useRef(null);
+
+  // Close role selector when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (roleSelectorRef.current && !roleSelectorRef.current.contains(event.target)) {
+        setShowRoleSelector(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (email && password) {
-      router.push("/dashboarda");
+    setError("");
+
+    if (!email || !password) {
+      setError("Please enter email and password");
+      return;
+    }
+
+    // Find user by email and password
+    const user = users.find(
+      (u) => u.email === email.toLowerCase() && u.password === password
+    );
+
+    if (user) {
+      // Store user info in localStorage
+      localStorage.setItem("userRole", user.role);
+      localStorage.setItem("userInfo", JSON.stringify(user));
+      localStorage.setItem("isLoggedIn", "true");
+
+      // Redirect based on role
+      if (user.role === "admin") {
+        router.push("/dashboarda");
+      } else {
+        // All service center roles go to SC dashboard
+        router.push("/sc/dashboard");
+      }
     } else {
-      alert("Please enter valid credentials!");
+      setError("Invalid email or password");
+    }
+  };
+
+  const quickLogin = (role) => {
+    const user = users.find((u) => u.role === role);
+    if (user) {
+      setEmail(user.email);
+      setPassword(user.password);
+      setSelectedRole(user);
+      setShowRoleSelector(false);
     }
   };
 
@@ -37,8 +138,69 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-gray-800 mb-1">Admin Login</h1>
-        <p className="text-gray-500 mb-8">Service Center Management System</p>
+        <h1 className="text-3xl font-bold text-gray-800 mb-1">Login</h1>
+        <p className="text-gray-500 mb-4">Service Center Management System</p>
+        
+        {/* Quick Role Selector */}
+        <div className="relative mb-4" ref={roleSelectorRef}>
+          <button
+            type="button"
+            onClick={() => setShowRoleSelector(!showRoleSelector)}
+            className="w-full flex items-center justify-between px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100"
+          >
+            <span className="flex items-center gap-2">
+              <User size={16} />
+              {selectedRole ? `Login as ${selectedRole.name}` : "Quick Login (Select Role)"}
+            </span>
+            <ChevronDown size={16} />
+          </button>
+          
+          {showRoleSelector && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg shadow-lg z-10">
+              <div className="p-2">
+                <p className="text-xs text-gray-500 px-2 py-1 mb-1">Admin</p>
+                <button
+                  onClick={() => quickLogin("admin")}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded"
+                >
+                  admin@service.com
+                </button>
+                
+                <p className="text-xs text-gray-500 px-2 py-1 mt-2 mb-1">Service Center Roles</p>
+                <button
+                  onClick={() => quickLogin("sc_manager")}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded"
+                >
+                  SC Manager
+                </button>
+                <button
+                  onClick={() => quickLogin("sc_staff")}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded"
+                >
+                  SC Staff
+                </button>
+                <button
+                  onClick={() => quickLogin("service_engineer")}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded"
+                >
+                  Service Engineer
+                </button>
+                <button
+                  onClick={() => quickLogin("service_advisor")}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded"
+                >
+                  Service Advisor
+                </button>
+                <button
+                  onClick={() => quickLogin("call_center")}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded"
+                >
+                  Call Center
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -86,6 +248,12 @@ export default function LoginPage() {
             </Link>
           </div>
 
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
           <button
             type="submit"
             className="w-full py-3 bg-[#3B82F6] text-white rounded-lg hover:bg-[#2563EB] transition-all font-semibold shadow-sm"
@@ -93,6 +261,19 @@ export default function LoginPage() {
             Sign in
           </button>
         </form>
+
+        {/* Demo Credentials Info */}
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-left">
+          <p className="text-xs font-semibold text-blue-800 mb-2">Demo Credentials:</p>
+          <div className="text-xs text-blue-700 space-y-1">
+            <p><strong>Admin:</strong> admin@service.com / admin123</p>
+            <p><strong>SC Manager:</strong> scmanager@service.com / sc123</p>
+            <p><strong>SC Staff:</strong> scstaff@service.com / staff123</p>
+            <p><strong>Engineer:</strong> engineer@service.com / eng123</p>
+            <p><strong>Advisor:</strong> advisor@service.com / adv123</p>
+            <p><strong>Call Center:</strong> callcenter@service.com / cc123</p>
+          </div>
+        </div>
       </div>
     </div>
   );

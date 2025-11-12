@@ -12,6 +12,10 @@ export default function Navbar({ setOpen }) {
   const resultsRef = useRef(null);
 
   const handleLogout = () => {
+    // Clear all auth data
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userInfo");
+    localStorage.removeItem("isLoggedIn");
     router.push("/");
   };
 
@@ -161,9 +165,16 @@ export default function Navbar({ setOpen }) {
           <Menu size={24} />
         </button>
 
-        {/* Admin Dashboard - Centered */}
+        {/* Dashboard Title - Centered */}
         <h1 className="absolute left-1/2 transform -translate-x-1/2 text-lg md:text-xl font-semibold text-[#6f42c1] hidden md:block">
-          Admin Dashboard
+          {(() => {
+            if (typeof window !== "undefined") {
+              const role = localStorage.getItem("userRole");
+              if (role === "admin" || role === "super_admin") return "Admin Dashboard";
+              return "Service Center Dashboard";
+            }
+            return "Dashboard";
+          })()}
         </h1>
 
         {/* Right side: Search, Logout, Avatar */}
