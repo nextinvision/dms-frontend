@@ -1,8 +1,14 @@
 "use client";
 import { FileText, Download, TrendingUp, BarChart3 } from "lucide-react";
 
+interface Report {
+  id: number;
+  name: string;
+  type: string;
+}
+
 export default function Reports() {
-  const reports = [
+  const reports: Report[] = [
     { id: 1, name: "Daily Sales Summary", type: "Financial" },
     { id: 2, name: "Service Volume Report", type: "Operational" },
     { id: 3, name: "Technician Performance", type: "Performance" },

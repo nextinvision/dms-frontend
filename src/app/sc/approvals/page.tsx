@@ -2,8 +2,18 @@
 import { useState } from "react";
 import { CheckCircle, XCircle, Clock, Eye } from "lucide-react";
 
+interface Approval {
+  id: string;
+  type: string;
+  description: string;
+  customer: string;
+  amount: string;
+  status: "Pending" | "Approved" | "Rejected";
+  date: string;
+}
+
 export default function Approvals() {
-  const [approvals, setApprovals] = useState([
+  const [approvals, setApprovals] = useState<Approval[]>([
     {
       id: "APP-001",
       type: "Service Request",
@@ -15,12 +25,12 @@ export default function Approvals() {
     },
   ]);
 
-  const handleApprove = (id) => {
+  const handleApprove = (id: string): void => {
     setApprovals(approvals.map(a => a.id === id ? {...a, status: "Approved"} : a));
     alert("Request approved!");
   };
 
-  const handleReject = (id) => {
+  const handleReject = (id: string): void => {
     setApprovals(approvals.map(a => a.id === id ? {...a, status: "Rejected"} : a));
     alert("Request rejected!");
   };

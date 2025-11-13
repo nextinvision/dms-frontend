@@ -1,6 +1,10 @@
-// Utility function to get redirect path based on role
-export function getRedirectPath(role) {
-  const rolePaths = {
+import type { UserRole } from "@/shared/types";
+
+/**
+ * Utility function to get redirect path based on role
+ */
+export function getRedirectPath(role: UserRole): string {
+  const rolePaths: Record<UserRole, string> = {
     admin: "/dashboarda",
     super_admin: "/dashboarda",
     sc_manager: "/sc/dashboard",
@@ -13,15 +17,17 @@ export function getRedirectPath(role) {
   return rolePaths[role] || "/dashboarda";
 }
 
-// Check if user has access to a route
-export function hasAccess(role, path) {
+/**
+ * Check if user has access to a route
+ */
+export function hasAccess(role: UserRole, path: string): boolean {
   // Admin has access to everything
   if (role === "admin" || role === "super_admin") {
     return true;
   }
 
   // Service center roles can only access SC routes
-  const scRoles = ["sc_manager", "sc_staff", "service_engineer", "service_advisor", "call_center"];
+  const scRoles: UserRole[] = ["sc_manager", "sc_staff", "service_engineer", "service_advisor", "call_center"];
   if (scRoles.includes(role)) {
     return path.startsWith("/sc");
   }

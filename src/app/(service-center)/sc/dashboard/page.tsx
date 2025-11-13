@@ -15,6 +15,11 @@ import {
   PlusCircle,
   ShoppingCart,
   LucideIcon,
+  Calendar,
+  Building2,
+  UserCheck,
+  AlertCircle,
+  ArrowRightLeft,
 } from "lucide-react";
 import Link from "next/link";
 import { useRole } from "@/shared/hooks";
@@ -28,6 +33,7 @@ interface DashboardData {
     jobsCompletedToday?: number;
     jobsInProgress?: number;
     jobsPending?: number;
+    revenueToday?: string;
     revenueThisWeek?: string;
     revenueThisMonth?: string;
   };
@@ -56,6 +62,14 @@ export default function SCDashboard() {
             text: "text-green-600",
           },
           {
+            title: "Services Completed Today",
+            value: "5",
+            change: "+2",
+            icon: CheckCircle,
+            color: "from-emerald-400/20 to-emerald-100",
+            text: "text-emerald-600",
+          },
+          {
             title: "Active Job Cards",
             value: "12",
             change: "+2",
@@ -72,28 +86,28 @@ export default function SCDashboard() {
             text: "text-orange-600",
           },
           {
+            title: "Workshop Capacity",
+            value: "4/6",
+            change: "2 Available",
+            icon: Building2,
+            color: "from-indigo-400/20 to-indigo-100",
+            text: "text-indigo-600",
+          },
+          {
+            title: "Overdue Payments",
+            value: "₹16,500",
+            change: "3 invoices",
+            icon: AlertCircle,
+            color: "from-red-400/20 to-red-100",
+            text: "text-red-600",
+          },
+          {
             title: "Low Stock Items",
             value: "4",
             change: "Alert",
             icon: Package,
             color: "from-red-400/20 to-red-100",
             text: "text-red-600",
-          },
-          {
-            title: "Technician Utilization",
-            value: "78%",
-            change: "+5%",
-            icon: Users,
-            color: "from-purple-400/20 to-purple-100",
-            text: "text-purple-600",
-          },
-          {
-            title: "Pending Invoices",
-            value: "7",
-            change: "₹85,000",
-            icon: FileText,
-            color: "from-yellow-400/20 to-yellow-100",
-            text: "text-yellow-600",
           },
         ],
         alerts: [
@@ -105,10 +119,31 @@ export default function SCDashboard() {
             action: "Request Parts",
           },
           {
+            icon: UserCheck,
+            color: "text-cyan-500 border-cyan-500",
+            title: "8 pending customer requests need attention",
+            time: "1 hour ago",
+            action: "View",
+          },
+          {
             icon: CheckCircle,
             color: "text-blue-500 border-blue-500",
             title: "Service request pending approval - ₹3,500",
             time: "1 hour ago",
+            action: "Review",
+          },
+          {
+            icon: Wrench,
+            color: "text-amber-500 border-amber-500",
+            title: "6 parts needed for active jobs",
+            time: "2 hours ago",
+            action: "View",
+          },
+          {
+            icon: ArrowRightLeft,
+            color: "text-violet-500 border-violet-500",
+            title: "2 pending transfer requests from central",
+            time: "3 hours ago",
             action: "Review",
           },
           {
@@ -133,22 +168,29 @@ export default function SCDashboard() {
             link: "/sc/vehicle-search",
           },
           {
-            label: "Approve Requests",
+            label: "Generate Invoice",
+            icon: FileText,
+            bg: "bg-gradient-to-r from-purple-500 to-pink-500",
+            link: "/sc/invoices?action=create",
+          },
+          {
+            label: "View Pending Approvals",
             icon: CheckCircle,
             bg: "bg-gradient-to-r from-orange-500 to-yellow-500",
             link: "/sc/approvals",
           },
           {
-            label: "Generate Invoice",
-            icon: FileText,
-            bg: "bg-gradient-to-r from-purple-500 to-pink-500",
-            link: "/sc/invoices?action=create",
+            label: "Check Appointments",
+            icon: Calendar,
+            bg: "bg-gradient-to-r from-teal-500 to-cyan-500",
+            link: "/sc/appointments",
           },
         ],
         stats: {
           jobsCompletedToday: 5,
           jobsInProgress: 8,
           jobsPending: 4,
+          revenueToday: "₹45,000",
           revenueThisWeek: "₹2,45,000",
           revenueThisMonth: "₹8,90,000",
         },
@@ -363,6 +405,36 @@ export default function SCDashboard() {
             Welcome to <span className="font-semibold text-purple-600">{serviceCenter}</span>
           </p>
         </div>
+
+        {/* Revenue Summary Section */}
+        {dashboardData.stats && userRole === "sc_manager" && (
+          <div className="mb-6 bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <TrendingUp className="text-green-600" size={20} />
+              Revenue Summary
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
+                <p className="text-sm text-gray-600 mb-1">Today</p>
+                <p className="text-2xl font-bold text-green-700">
+                  {dashboardData.stats.revenueToday || "₹45,000"}
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+                <p className="text-sm text-gray-600 mb-1">This Week</p>
+                <p className="text-2xl font-bold text-blue-700">
+                  {dashboardData.stats.revenueThisWeek || "₹2,45,000"}
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
+                <p className="text-sm text-gray-600 mb-1">This Month</p>
+                <p className="text-2xl font-bold text-purple-700">
+                  {dashboardData.stats.revenueThisMonth || "₹8,90,000"}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-10">
           {dashboardData.cards.map((card, idx) => {

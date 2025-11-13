@@ -15,14 +15,17 @@ import {
   Car,
   DollarSign,
 } from "lucide-react";
+import type { ServiceRequest, RequestStatus, Urgency } from "@/shared/types";
+
+type FilterType = "all" | "pending" | "approved" | "rejected";
 
 export default function ServiceRequests() {
-  const [filter, setFilter] = useState("all"); // all, pending, approved, rejected
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [showDetails, setShowDetails] = useState(false);
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
 
   // Mock data
-  const [requests, setRequests] = useState([
+  const [requests, setRequests] = useState<ServiceRequest[]>([
     {
       id: "SR-2025-001",
       customerName: "Rajesh Kumar",
@@ -84,27 +87,29 @@ export default function ServiceRequests() {
     return true;
   });
 
-  const handleApprove = (id) => {
+  const handleApprove = (id: string): void => {
     setRequests(
       requests.map((req) =>
-        req.id === id ? { ...req, status: "Approved" } : req
+        req.id === id ? { ...req, status: "Approved" as RequestStatus } : req
       )
     );
     alert("Service request approved! Job card will be created automatically.");
   };
 
-  const handleReject = (id) => {
+  const handleReject = (id: string): void => {
     const reason = prompt("Enter rejection reason:");
     if (reason) {
       setRequests(
         requests.map((req) =>
-          req.id === id ? { ...req, status: "Rejected", rejectionReason: reason } : req
+          req.id === id
+            ? { ...req, status: "Rejected" as RequestStatus, rejectionReason: reason }
+            : req
         )
       );
     }
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: RequestStatus): string => {
     switch (status) {
       case "Pending Approval":
         return "bg-yellow-100 text-yellow-700 border-yellow-300";
@@ -117,7 +122,7 @@ export default function ServiceRequests() {
     }
   };
 
-  const getUrgencyColor = (urgency) => {
+  const getUrgencyColor = (urgency: Urgency): string => {
     switch (urgency) {
       case "High":
         return "bg-red-500";
@@ -155,7 +160,7 @@ export default function ServiceRequests() {
               />
             </div>
             <div className="flex gap-2">
-              {["all", "pending", "approved", "rejected"].map((f) => (
+              {(["all", "pending", "approved", "rejected"] as FilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}

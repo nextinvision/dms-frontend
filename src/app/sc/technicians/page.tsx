@@ -2,8 +2,18 @@
 import { useState } from "react";
 import { Users, UserPlus, TrendingUp, Clock, CheckCircle } from "lucide-react";
 
+interface Technician {
+  id: number;
+  name: string;
+  status: string;
+  currentJobs: number;
+  completedToday: number;
+  utilization: number;
+  skills: string[];
+}
+
 export default function Technicians() {
-  const technicians = [
+  const technicians: Technician[] = [
     {
       id: 1,
       name: "Engineer 1",

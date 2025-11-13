@@ -15,14 +15,15 @@ import {
   FileText,
   PlusCircle,
 } from "lucide-react";
+import type { HomeService, HomeServiceStatus, HomeServiceStats, HomeServiceFilterType } from "@/shared/types";
 
 export default function HomeService() {
-  const [filter, setFilter] = useState("all"); // all, scheduled, in_progress, completed
-  const [selectedService, setSelectedService] = useState(null);
-  const [showDetails, setShowDetails] = useState(false);
+  const [filter, setFilter] = useState<HomeServiceFilterType>("all");
+  const [selectedService, setSelectedService] = useState<HomeService | null>(null);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
 
   // Mock home service data
-  const [homeServices, setHomeServices] = useState([
+  const [homeServices, setHomeServices] = useState<HomeService[]>([
     {
       id: "HS-2025-001",
       customerName: "Rajesh Kumar",
@@ -77,8 +78,8 @@ export default function HomeService() {
     return service.status.toLowerCase().replace(" ", "_") === filter;
   });
 
-  const getStatusColor = (status) => {
-    const colors = {
+  const getStatusColor = (status: HomeServiceStatus): string => {
+    const colors: Record<HomeServiceStatus, string> = {
       Scheduled: "bg-blue-100 text-blue-700 border-blue-300",
       "In Progress": "bg-yellow-100 text-yellow-700 border-yellow-300",
       Completed: "bg-green-100 text-green-700 border-green-300",
@@ -87,7 +88,7 @@ export default function HomeService() {
     return colors[status] || colors.Scheduled;
   };
 
-  const stats = {
+  const stats: HomeServiceStats = {
     scheduled: homeServices.filter((s) => s.status === "Scheduled").length,
     inProgress: homeServices.filter((s) => s.status === "In Progress").length,
     completed: homeServices.filter((s) => s.status === "Completed").length,
@@ -155,7 +156,7 @@ export default function HomeService() {
         {/* Filters */}
         <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
           <div className="flex gap-2">
-            {["all", "scheduled", "in_progress", "completed"].map((f) => (
+            {(["all", "scheduled", "in_progress", "completed"] as HomeServiceFilterType[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}

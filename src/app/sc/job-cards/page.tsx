@@ -19,15 +19,19 @@ import {
   Calendar,
 } from "lucide-react";
 import Link from "next/link";
+import type { JobCard, JobCardStatus, Priority, KanbanColumn } from "@/shared/types";
+
+type ViewType = "kanban" | "list";
+type FilterType = "all" | "created" | "assigned" | "in_progress" | "completed";
 
 export default function JobCards() {
-  const [view, setView] = useState("kanban"); // kanban, list
-  const [filter, setFilter] = useState("all"); // all, created, assigned, in_progress, completed
-  const [selectedJob, setSelectedJob] = useState(null);
-  const [showDetails, setShowDetails] = useState(false);
+  const [view, setView] = useState<ViewType>("kanban");
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [selectedJob, setSelectedJob] = useState<JobCard | null>(null);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
 
   // Mock job cards data
-  const [jobCards, setJobCards] = useState([
+  const [jobCards, setJobCards] = useState<JobCard[]>([
     {
       id: "JC-2025-001",
       customerName: "Rajesh Kumar",
@@ -96,8 +100,8 @@ export default function JobCards() {
     },
   ]);
 
-  const getStatusColor = (status) => {
-    const colors = {
+  const getStatusColor = (status: JobCardStatus): string => {
+    const colors: Record<JobCardStatus, string> = {
       Created: "bg-gray-100 text-gray-700 border-gray-300",
       Assigned: "bg-blue-100 text-blue-700 border-blue-300",
       "In Progress": "bg-yellow-100 text-yellow-700 border-yellow-300",
@@ -108,8 +112,8 @@ export default function JobCards() {
     return colors[status] || colors.Created;
   };
 
-  const getPriorityColor = (priority) => {
-    const colors = {
+  const getPriorityColor = (priority: Priority): string => {
+    const colors: Record<Priority, string> = {
       Low: "bg-gray-500",
       Normal: "bg-blue-500",
       High: "bg-orange-500",
@@ -123,7 +127,7 @@ export default function JobCards() {
     return job.status.toLowerCase().replace(" ", "_") === filter;
   });
 
-  const kanbanColumns = [
+  const kanbanColumns: KanbanColumn[] = [
     { id: "created", title: "Created", status: "Created" },
     { id: "assigned", title: "Assigned", status: "Assigned" },
     { id: "in_progress", title: "In Progress", status: "In Progress" },
@@ -131,11 +135,11 @@ export default function JobCards() {
     { id: "completed", title: "Completed", status: "Completed" },
   ];
 
-  const getJobsByStatus = (status) => {
+  const getJobsByStatus = (status: JobCardStatus): JobCard[] => {
     return filteredJobs.filter((job) => job.status === status);
   };
 
-  const handleStatusChange = (jobId, newStatus) => {
+  const handleStatusChange = (jobId: string, newStatus: JobCardStatus): void => {
     setJobCards(
       jobCards.map((job) =>
         job.id === jobId ? { ...job, status: newStatus } : job
@@ -197,7 +201,7 @@ export default function JobCards() {
               />
             </div>
             <div className="flex gap-2">
-              {["all", "created", "assigned", "in_progress", "completed"].map((f) => (
+              {(["all", "created", "assigned", "in_progress", "completed"] as FilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}

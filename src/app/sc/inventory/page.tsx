@@ -13,15 +13,16 @@ import {
   ShoppingCart,
   CheckCircle,
 } from "lucide-react";
+import type { InventoryItem, StockStatus, FilterType as InventoryFilterType, StockIndicator } from "@/shared/types";
 
 export default function SCInventory() {
-  const [filter, setFilter] = useState("all"); // all, low_stock, out_of_stock
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedPart, setSelectedPart] = useState(null);
-  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [filter, setFilter] = useState<InventoryFilterType>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedPart, setSelectedPart] = useState<InventoryItem | null>(null);
+  const [showRequestModal, setShowRequestModal] = useState<boolean>(false);
 
   // Mock inventory data
-  const [inventory, setInventory] = useState([
+  const [inventory, setInventory] = useState<InventoryItem[]>([
     {
       id: 1,
       partName: "Engine Oil 5W-30",
@@ -113,8 +114,8 @@ export default function SCInventory() {
     0
   );
 
-  const getStatusColor = (status) => {
-    const colors = {
+  const getStatusColor = (status: StockStatus): string => {
+    const colors: Record<StockStatus, string> = {
       "In Stock": "bg-green-100 text-green-700 border-green-300",
       "Low Stock": "bg-yellow-100 text-yellow-700 border-yellow-300",
       "Out of Stock": "bg-red-100 text-red-700 border-red-300",
@@ -122,7 +123,7 @@ export default function SCInventory() {
     return colors[status] || colors["In Stock"];
   };
 
-  const getStockIndicator = (current, min) => {
+  const getStockIndicator = (current: number, min: number): StockIndicator => {
     if (current === 0) return { color: "bg-red-500", text: "Out of Stock" };
     if (current <= min) return { color: "bg-yellow-500", text: "Low Stock" };
     return { color: "bg-green-500", text: "In Stock" };
@@ -209,7 +210,7 @@ export default function SCInventory() {
               />
             </div>
             <div className="flex gap-2">
-              {["all", "low_stock", "out_of_stock"].map((f) => (
+              {(["all", "low_stock", "out_of_stock"] as InventoryFilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}

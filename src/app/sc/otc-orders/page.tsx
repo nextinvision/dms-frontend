@@ -13,23 +13,24 @@ import {
   Car,
   Package,
 } from "lucide-react";
+import type { OTCPart, CartItem, CustomerInfo, InvoiceData } from "@/shared/types";
 
 export default function OTCOrders() {
-  const [cart, setCart] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showCart, setShowCart] = useState(false);
-  const [customerInfo, setCustomerInfo] = useState({
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [showCart, setShowCart] = useState<boolean>(false);
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
     phone: "",
     name: "",
     vehicleNumber: "",
     vin: "",
   });
-  const [discount, setDiscount] = useState(0);
-  const [showInvoice, setShowInvoice] = useState(false);
-  const [invoiceData, setInvoiceData] = useState(null);
+  const [discount, setDiscount] = useState<number>(0);
+  const [showInvoice, setShowInvoice] = useState<boolean>(false);
+  const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
 
   // Mock parts inventory for OTC
-  const availableParts = [
+  const availableParts: OTCPart[] = [
     { id: 1, name: "Engine Oil 5W-30", sku: "EO-001", price: 450, stock: 45, category: "Lubricants" },
     { id: 2, name: "Brake Pads - Front", sku: "BP-002", price: 1200, stock: 8, category: "Brakes" },
     { id: 3, name: "Air Filter", sku: "AF-003", price: 350, stock: 0, category: "Filters" },
@@ -44,7 +45,7 @@ export default function OTCOrders() {
       part.sku.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const addToCart = (part) => {
+  const addToCart = (part: OTCPart): void => {
     const existingItem = cart.find((item) => item.id === part.id);
     if (existingItem) {
       setCart(
@@ -58,11 +59,11 @@ export default function OTCOrders() {
     setShowCart(true);
   };
 
-  const removeFromCart = (id) => {
+  const removeFromCart = (id: number): void => {
     setCart(cart.filter((item) => item.id !== id));
   };
 
-  const updateQuantity = (id, quantity) => {
+  const updateQuantity = (id: number, quantity: number): void => {
     if (quantity <= 0) {
       removeFromCart(id);
       return;
@@ -77,12 +78,12 @@ export default function OTCOrders() {
   const tax = ((subtotal - discountAmount) * 18) / 100; // 18% GST
   const total = subtotal - discountAmount + tax;
 
-  const handleGenerateInvoice = () => {
+  const handleGenerateInvoice = (): void => {
     if (cart.length === 0) {
       alert("Cart is empty!");
       return;
     }
-    const invoice = {
+    const invoice: InvoiceData = {
       invoiceNumber: `OTC-${Date.now()}`,
       date: new Date().toLocaleDateString("en-IN"),
       customer: customerInfo,
@@ -97,7 +98,7 @@ export default function OTCOrders() {
     setShowInvoice(true);
   };
 
-  const handleCompleteSale = () => {
+  const handleCompleteSale = (): void => {
     alert("Payment recorded! Invoice generated successfully.");
     setCart([]);
     setCustomerInfo({ phone: "", name: "", vehicleNumber: "", vin: "" });
@@ -483,7 +484,7 @@ export default function OTCOrders() {
               <div>
                 <h3 className="font-semibold text-gray-800 mb-2">Payment Method</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {["Cash", "Card", "UPI", "Online"].map((method) => (
+                  {(["Cash", "Card", "UPI", "Online"] as const).map((method) => (
                     <button
                       key={method}
                       onClick={handleCompleteSale}

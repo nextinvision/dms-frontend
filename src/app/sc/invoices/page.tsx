@@ -14,15 +14,18 @@ import {
   Printer,
   Mail,
 } from "lucide-react";
+import type { Invoice, PaymentStatus, InvoiceStats } from "@/shared/types";
+
+type FilterType = "all" | "paid" | "unpaid" | "overdue";
 
 export default function Invoices() {
-  const [filter, setFilter] = useState("all"); // all, unpaid, paid, overdue
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [showDetails, setShowDetails] = useState(false);
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
 
   // Mock invoices data
-  const [invoices, setInvoices] = useState([
+  const [invoices, setInvoices] = useState<Invoice[]>([
     {
       id: "INV-2025-001",
       jobCardId: "JC-2025-001",
@@ -85,8 +88,8 @@ export default function Invoices() {
     return matchesSearch && invoice.status.toLowerCase() === filter;
   });
 
-  const getStatusColor = (status) => {
-    const colors = {
+  const getStatusColor = (status: PaymentStatus): string => {
+    const colors: Record<PaymentStatus, string> = {
       Paid: "bg-green-100 text-green-700 border-green-300",
       Unpaid: "bg-yellow-100 text-yellow-700 border-yellow-300",
       Overdue: "bg-red-100 text-red-700 border-red-300",
@@ -95,7 +98,7 @@ export default function Invoices() {
     return colors[status] || colors.Unpaid;
   };
 
-  const stats = {
+  const stats: InvoiceStats = {
     total: invoices.length,
     paid: invoices.filter((i) => i.status === "Paid").length,
     unpaid: invoices.filter((i) => i.status === "Unpaid").length,
@@ -110,7 +113,7 @@ export default function Invoices() {
     ),
   };
 
-  const handleRecordPayment = (invoiceId) => {
+  const handleRecordPayment = (invoiceId: string): void => {
     const method = prompt("Enter payment method (Cash/Card/UPI/Online):");
     if (method) {
       setInvoices(
@@ -118,10 +121,10 @@ export default function Invoices() {
           inv.id === invoiceId
             ? {
                 ...inv,
-                status: "Paid",
+                status: "Paid" as PaymentStatus,
                 paidAmount: inv.amount,
                 balance: "₹0",
-                paymentMethod: method,
+                paymentMethod: method as "Cash" | "Card" | "UPI" | "Online" | "Cheque",
               }
             : inv
         )
@@ -227,7 +230,7 @@ export default function Invoices() {
               />
             </div>
             <div className="flex gap-2">
-              {["all", "paid", "unpaid", "overdue"].map((f) => (
+              {(["all", "paid", "unpaid", "overdue"] as FilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}

@@ -54,3 +54,13 @@ export type FilterOption = "all" | string;
  */
 export type ViewType = "list" | "kanban" | "calendar";
 
+/**
+ * Service location type - shared across service requests and job cards
+ */
+export type ServiceLocation = "Station" | "Home Service";
+
+/**
+ * Priority type - shared across job cards, workshop, and other modules
+ */
+export type Priority = "Low" | "Normal" | "High" | "Critical";
+

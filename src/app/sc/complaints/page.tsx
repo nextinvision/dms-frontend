@@ -2,10 +2,23 @@
 import { useState } from "react";
 import { AlertCircle, Search, Filter, Eye, CheckCircle } from "lucide-react";
 
-export default function Complaints() {
-  const [filter, setFilter] = useState("all");
+interface Complaint {
+  id: string;
+  customerName: string;
+  phone: string;
+  vehicle: string;
+  complaint: string;
+  status: string;
+  date: string;
+  severity: string;
+}
 
-  const complaints = [
+type FilterType = "all" | "open" | "resolved" | "closed";
+
+export default function Complaints() {
+  const [filter, setFilter] = useState<FilterType>("all");
+
+  const complaints: Complaint[] = [
     {
       id: "COMP-001",
       customerName: "Rajesh Kumar",

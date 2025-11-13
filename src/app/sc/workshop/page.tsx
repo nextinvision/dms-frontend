@@ -12,12 +12,13 @@ import {
   UserPlus,
   Filter,
 } from "lucide-react";
+import type { Engineer, WorkshopStats, ActiveJob, EngineerStatus, Workload, Priority } from "@/shared/types";
 
 export default function Workshop() {
-  const [selectedEngineer, setSelectedEngineer] = useState(null);
+  const [selectedEngineer, setSelectedEngineer] = useState<Engineer | null>(null);
 
   // Mock data
-  const engineers = [
+  const engineers: Engineer[] = [
     {
       id: 1,
       name: "Engineer 1",
@@ -50,7 +51,7 @@ export default function Workshop() {
     },
   ];
 
-  const workshopStats = {
+  const workshopStats: WorkshopStats = {
     totalBays: 6,
     occupiedBays: 4,
     availableBays: 2,
@@ -60,7 +61,7 @@ export default function Workshop() {
     utilizationRate: 78,
   };
 
-  const activeJobs = [
+  const activeJobs: ActiveJob[] = [
     {
       id: "JC-2025-001",
       customer: "Rajesh Kumar",
@@ -85,14 +86,14 @@ export default function Workshop() {
     },
   ];
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: EngineerStatus): string => {
     return status === "Available"
       ? "bg-green-100 text-green-700"
       : "bg-red-100 text-red-700";
   };
 
-  const getWorkloadColor = (workload) => {
-    const colors = {
+  const getWorkloadColor = (workload: Workload): string => {
+    const colors: Record<Workload, string> = {
       Low: "bg-green-500",
       Medium: "bg-yellow-500",
       High: "bg-red-500",

@@ -2,11 +2,25 @@
 import { useState } from "react";
 import { Calendar, Clock, User, Car, PlusCircle, Search, Filter } from "lucide-react";
 
-export default function Appointments() {
-  const [view, setView] = useState("calendar"); // calendar, list
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+interface Appointment {
+  id: number;
+  customerName: string;
+  vehicle: string;
+  phone: string;
+  serviceType: string;
+  date: string;
+  time: string;
+  duration: string;
+  status: string;
+}
 
-  const appointments = [
+export default function Appointments() {
+  const [view, setView] = useState<"calendar" | "list">("calendar");
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
+
+  const appointments: Appointment[] = [
     {
       id: 1,
       customerName: "Rajesh Kumar",
