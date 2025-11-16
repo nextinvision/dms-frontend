@@ -5,7 +5,7 @@ import type { UserRole } from '../types/auth.types';
  */
 export const ROUTES = {
   LOGIN: "/",
-  ADMIN_DASHBOARD: "/dashboarda",
+  ADMIN_DASHBOARD: "/dashboard",
   SC_DASHBOARD: "/sc/dashboard",
   VEHICLE_SEARCH: "/sc/vehicle-search",
   SERVICE_REQUESTS: "/sc/service-requests",

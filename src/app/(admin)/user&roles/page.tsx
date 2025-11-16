@@ -190,8 +190,10 @@ export default function UsersAndRolesPage() {
       .toUpperCase();
 
     // Get service center name
-    const selectedCenter = centers.find(c => c.id === parseInt(formData.serviceCenter));
-    const assignedSC = selectedCenter ? selectedCenter.name : "Not Assigned";
+    // Call center doesn't need a service center assignment
+    const assignedSC = formData.role === "Call Center" 
+      ? "All Service Centers" 
+      : (centers.find(c => c.id === parseInt(formData.serviceCenter))?.name || "Not Assigned");
 
     const newUser: User = {
       initials,
@@ -445,15 +447,24 @@ export default function UsersAndRolesPage() {
                   value={formData.serviceCenter}
                   onChange={handleChange}
                   className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-400 outline-none"
-                  required
+                  required={formData.role !== "Call Center"}
                 >
-                  <option value="">Select Service Center</option>
+                  <option value="">
+                    {formData.role === "Call Center" 
+                      ? "Not Required (Can assign to any service center)" 
+                      : "Select Service Center"}
+                  </option>
                   {centers.map((center) => (
                     <option key={center.id} value={center.id}>
                       {center.name}
                     </option>
                   ))}
                 </select>
+                {formData.role === "Call Center" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Call center staff can assign customers to any service center
+                  </p>
+                )}
               </div>
 
               <div>

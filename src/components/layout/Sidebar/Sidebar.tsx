@@ -26,7 +26,7 @@ export interface SidebarProps {
 }
 
 const menu = [
-  { name: "Dashboard", icon: Home, href: "/dashboarda" },
+  { name: "Dashboard", icon: Home, href: "/dashboard" },
   { name: "Service Centers", icon: Building, href: "/servicecenters" },
   { name: "Users & Roles", icon: Users, href: "/user&roles" },
   { name: "Inventory", icon: Package, href: "/inventory" },

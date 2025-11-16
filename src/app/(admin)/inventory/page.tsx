@@ -200,9 +200,16 @@ export default function InventoryPage() {
 
     if (editingItem) {
       // Update existing item
+      const selectedCenterName = centers.find(c => c.id === parseInt(form.centerId))?.name || "";
       const updated = inventory.map(item =>
         item.id === editingItem.id
-          ? { ...item, ...form, quantity: parseInt(form.quantity) || 0 }
+          ? { 
+              ...item, 
+              ...form, 
+              quantity: parseInt(form.quantity) || 0,
+              centerId: parseInt(form.centerId) || item.centerId,
+              centerName: selectedCenterName || item.centerName
+            }
           : item
       );
       setInventory(updated);

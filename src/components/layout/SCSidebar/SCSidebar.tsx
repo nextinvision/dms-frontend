@@ -94,17 +94,23 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
   super_admin: [],
 };
 
-export function SCSidebar({ open, setOpen, role = "sc_manager" }: SCSidebarProps) {
+export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { userInfo } = useRole();
-  const menu = roleMenus[role] || roleMenus.sc_manager;
+  const { userInfo, userRole, isLoading } = useRole();
   const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState({
     name: "SC Manager",
     role: "SC Manager",
     initials: "SC",
   });
+
+  // Use role from hook (most reliable) - it reads directly from localStorage
+  // Once mounted, always prefer hook value over prop to avoid stale data
+  const effectiveRole = mounted && userRole && userRole !== "admin" && userRole !== "super_admin"
+    ? userRole
+    : (roleProp || "sc_manager");
+  const menu = roleMenus[effectiveRole] || roleMenus.sc_manager;
 
   useEffect(() => {
     setMounted(true);
@@ -169,7 +175,7 @@ export function SCSidebar({ open, setOpen, role = "sc_manager" }: SCSidebarProps
       </div>
 
       <nav className="mt-6 flex flex-col flex-grow overflow-y-auto">
-        {menu.map((item) => {
+        {mounted && menu.length > 0 && menu.map((item) => {
           const Icon = item.icon;
           // Only check active state after mount to avoid hydration mismatch
           const active = mounted && pathname === item.href;
