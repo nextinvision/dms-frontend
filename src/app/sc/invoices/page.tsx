@@ -1,0 +1,483 @@
+"use client";
+import { useState } from "react";
+import {
+  FileText,
+  Search,
+  Filter,
+  Download,
+  Eye,
+  CheckCircle,
+  Clock,
+  XCircle,
+  DollarSign,
+  PlusCircle,
+  Printer,
+  Mail,
+} from "lucide-react";
+import type { Invoice, PaymentStatus, InvoiceStats } from "@/shared/types";
+
+type FilterType = "all" | "paid" | "unpaid" | "overdue";
+
+export default function Invoices() {
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
+
+  // Mock invoices data
+  const [invoices, setInvoices] = useState<Invoice[]>([
+    {
+      id: "INV-2025-001",
+      jobCardId: "JC-2025-001",
+      customerName: "Rajesh Kumar",
+      vehicle: "Honda City 2020",
+      date: "2025-01-15",
+      dueDate: "2025-01-25",
+      amount: "₹4,000",
+      paidAmount: "₹0",
+      balance: "₹4,000",
+      status: "Unpaid",
+      paymentMethod: null,
+      items: [
+        { name: "Engine Oil", qty: 1, price: "₹2,500" },
+        { name: "Labor Charges", qty: 1, price: "₹1,500" },
+      ],
+    },
+    {
+      id: "INV-2025-002",
+      jobCardId: "JC-2025-002",
+      customerName: "Priya Sharma",
+      vehicle: "Maruti Swift 2019",
+      date: "2025-01-15",
+      dueDate: "2025-01-25",
+      amount: "₹4,950",
+      paidAmount: "₹4,950",
+      balance: "₹0",
+      status: "Paid",
+      paymentMethod: "UPI",
+      items: [
+        { name: "Brake Pads", qty: 1, price: "₹3,200" },
+        { name: "Labor Charges", qty: 1, price: "₹1,750" },
+      ],
+    },
+    {
+      id: "INV-2025-003",
+      jobCardId: "JC-2025-003",
+      customerName: "Amit Patel",
+      vehicle: "Hyundai i20 2021",
+      date: "2025-01-10",
+      dueDate: "2025-01-20",
+      amount: "₹1,770",
+      paidAmount: "₹0",
+      balance: "₹1,770",
+      status: "Overdue",
+      paymentMethod: null,
+      items: [
+        { name: "Inspection Charges", qty: 1, price: "₹1,500" },
+      ],
+    },
+  ]);
+
+  const filteredInvoices = invoices.filter((invoice) => {
+    const matchesSearch =
+      invoice.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      invoice.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      invoice.vehicle.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (filter === "all") return matchesSearch;
+    return matchesSearch && invoice.status.toLowerCase() === filter;
+  });
+
+  const getStatusColor = (status: PaymentStatus): string => {
+    const colors: Record<PaymentStatus, string> = {
+      Paid: "bg-green-100 text-green-700 border-green-300",
+      Unpaid: "bg-yellow-100 text-yellow-700 border-yellow-300",
+      Overdue: "bg-red-100 text-red-700 border-red-300",
+      "Partially Paid": "bg-blue-100 text-blue-700 border-blue-300",
+    };
+    return colors[status] || colors.Unpaid;
+  };
+
+  const stats: InvoiceStats = {
+    total: invoices.length,
+    paid: invoices.filter((i) => i.status === "Paid").length,
+    unpaid: invoices.filter((i) => i.status === "Unpaid").length,
+    overdue: invoices.filter((i) => i.status === "Overdue").length,
+    totalAmount: invoices.reduce(
+      (sum, inv) => sum + parseFloat(inv.amount.replace("₹", "").replace(",", "")),
+      0
+    ),
+    paidAmount: invoices.reduce(
+      (sum, inv) => sum + parseFloat(inv.paidAmount.replace("₹", "").replace(",", "")),
+      0
+    ),
+  };
+
+  const handleRecordPayment = (invoiceId: string): void => {
+    const method = prompt("Enter payment method (Cash/Card/UPI/Online):");
+    if (method) {
+      setInvoices(
+        invoices.map((inv) =>
+          inv.id === invoiceId
+            ? {
+                ...inv,
+                status: "Paid" as PaymentStatus,
+                paidAmount: inv.amount,
+                balance: "₹0",
+                paymentMethod: method as "Cash" | "Card" | "UPI" | "Online" | "Cheque",
+              }
+            : inv
+        )
+      );
+      alert("Payment recorded successfully!");
+    }
+  };
+
+  return (
+    <div className="bg-[#f9f9fb] min-h-screen">
+      <div className="pt-6 pb-10">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-blue-600 mb-2">Invoices</h1>
+            <p className="text-gray-500">Manage invoices and track payments</p>
+          </div>
+          <button className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition shadow-md inline-flex items-center gap-2">
+            <PlusCircle size={20} />
+            Generate Invoice
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-3 rounded-xl bg-blue-100 text-blue-600">
+                <FileText size={24} />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800">{stats.total}</h2>
+            <p className="text-sm text-gray-600">Total Invoices</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-3 rounded-xl bg-green-100 text-green-600">
+                <CheckCircle size={24} />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800">{stats.paid}</h2>
+            <p className="text-sm text-gray-600">Paid</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-3 rounded-xl bg-yellow-100 text-yellow-600">
+                <Clock size={24} />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800">{stats.unpaid}</h2>
+            <p className="text-sm text-gray-600">Unpaid</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-3 rounded-xl bg-red-100 text-red-600">
+                <XCircle size={24} />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800">{stats.overdue}</h2>
+            <p className="text-sm text-gray-600">Overdue</p>
+          </div>
+        </div>
+
+        {/* Financial Summary */}
+        <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Financial Summary</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-50 p-4 rounded-xl">
+              <p className="text-sm text-gray-600 mb-1">Total Invoice Amount</p>
+              <p className="text-2xl font-bold text-blue-600">
+                ₹{stats.totalAmount.toLocaleString("en-IN")}
+              </p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-xl">
+              <p className="text-sm text-gray-600 mb-1">Total Paid</p>
+              <p className="text-2xl font-bold text-green-600">
+                ₹{stats.paidAmount.toLocaleString("en-IN")}
+              </p>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-xl">
+              <p className="text-sm text-gray-600 mb-1">Outstanding</p>
+              <p className="text-2xl font-bold text-orange-600">
+                ₹{(stats.totalAmount - stats.paidAmount).toLocaleString("en-IN")}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Search by invoice number, customer, vehicle..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              {(["all", "paid", "unpaid", "overdue"] as FilterType[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                    filter === f
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Invoices List */}
+        <div className="space-y-4">
+          {filteredInvoices.map((invoice) => (
+            <div
+              key={invoice.id}
+              className="bg-white rounded-2xl shadow-md p-6 hover:shadow-lg transition"
+            >
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
+                      {invoice.id}
+                    </span>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
+                        invoice.status
+                      )}`}
+                    >
+                      {invoice.status}
+                    </span>
+                    {invoice.jobCardId && (
+                      <span className="text-xs text-gray-500">
+                        Job Card: {invoice.jobCardId}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                    <div>
+                      <p className="text-sm text-gray-600">Customer</p>
+                      <p className="font-medium text-gray-800">{invoice.customerName}</p>
+                      <p className="text-xs text-gray-500">{invoice.vehicle}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Dates</p>
+                      <p className="font-medium text-gray-800">
+                        {invoice.date} (Due: {invoice.dueDate})
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-6 text-sm">
+                    <div>
+                      <span className="text-gray-600">Amount: </span>
+                      <span className="font-semibold text-gray-800">{invoice.amount}</span>
+                    </div>
+                    {invoice.status !== "Paid" && (
+                      <div>
+                        <span className="text-gray-600">Balance: </span>
+                        <span className="font-semibold text-red-600">{invoice.balance}</span>
+                      </div>
+                    )}
+                    {invoice.paymentMethod && (
+                      <div>
+                        <span className="text-gray-600">Payment: </span>
+                        <span className="font-medium text-gray-800">{invoice.paymentMethod}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 lg:items-end">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedInvoice(invoice);
+                        setShowDetails(true);
+                      }}
+                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition inline-flex items-center gap-2"
+                    >
+                      <Eye size={16} />
+                      View
+                    </button>
+                    <button className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-200 transition inline-flex items-center gap-2">
+                      <Download size={16} />
+                      Download
+                    </button>
+                    <button className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-200 transition inline-flex items-center gap-2">
+                      <Mail size={16} />
+                      Email
+                    </button>
+                  </div>
+                  {invoice.status !== "Paid" && (
+                    <button
+                      onClick={() => handleRecordPayment(invoice.id)}
+                      className="bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition"
+                    >
+                      Record Payment
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {filteredInvoices.length === 0 && (
+          <div className="bg-white rounded-2xl shadow-md p-12 text-center">
+            <FileText className="mx-auto text-gray-400 mb-4" size={64} />
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">No Invoices Found</h3>
+            <p className="text-gray-500">No invoices match the current filter criteria.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Invoice Details Modal */}
+      {showDetails && selectedInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Invoice Details</h2>
+              <div className="flex gap-2">
+                <button className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200">
+                  <Printer size={20} />
+                </button>
+                <button className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200">
+                  <Download size={20} />
+                </button>
+                <button
+                  onClick={() => setShowDetails(false)}
+                  className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* Invoice Header */}
+              <div className="border-b border-gray-200 pb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="text-sm text-gray-600">Invoice Number</p>
+                    <p className="text-xl font-bold text-gray-800">{selectedInvoice.id}</p>
+                  </div>
+                  <span
+                    className={`px-4 py-2 rounded-lg text-sm font-medium border ${getStatusColor(
+                      selectedInvoice.status
+                    )}`}
+                  >
+                    {selectedInvoice.status}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 mt-2">
+                  Date: {selectedInvoice.date} • Due Date: {selectedInvoice.dueDate}
+                </p>
+              </div>
+
+              {/* Customer Info */}
+              <div>
+                <h3 className="font-semibold text-gray-800 mb-2">Customer Information</h3>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-700">{selectedInvoice.customerName}</p>
+                  <p className="text-sm text-gray-700">{selectedInvoice.vehicle}</p>
+                </div>
+              </div>
+
+              {/* Items */}
+              <div>
+                <h3 className="font-semibold text-gray-800 mb-2">Items</h3>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">
+                          Item
+                        </th>
+                        <th className="px-4 py-2 text-center text-xs font-semibold text-gray-700">
+                          Qty
+                        </th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold text-gray-700">
+                          Price
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {selectedInvoice.items.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="px-4 py-2 text-sm text-gray-800">{item.name}</td>
+                          <td className="px-4 py-2 text-sm text-center text-gray-700">
+                            {item.qty}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-right font-medium text-gray-800">
+                            {item.price}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex justify-between text-lg font-bold">
+                  <span>Total Amount</span>
+                  <span className="text-blue-600">{selectedInvoice.amount}</span>
+                </div>
+                {selectedInvoice.status !== "Paid" && (
+                  <div className="flex justify-between text-sm text-red-600 mt-2">
+                    <span>Outstanding</span>
+                    <span>{selectedInvoice.balance}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={() => setShowDetails(false)}
+                  className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
+                >
+                  Close
+                </button>
+                {selectedInvoice.status !== "Paid" && (
+                  <button
+                    onClick={() => {
+                      handleRecordPayment(selectedInvoice.id);
+                      setShowDetails(false);
+                    }}
+                    className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+                  >
+                    Record Payment
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
