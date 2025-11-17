@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Trash } from "lucide-react";
+import { Trash, Key, History, UserCog, Edit, Power, Eye } from "lucide-react";
 
 // Types
 interface User {
@@ -73,6 +73,10 @@ export default function UsersAndRolesPage() {
   const [showUserDetails, setShowUserDetails] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [showActivityLogs, setShowActivityLogs] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [activityLogs, setActivityLogs] = useState<Array<{ action: string; timestamp: string; details: string }>>([]);
 
   const [formData, setFormData] = useState<UserFormData>({
     fullName: "",
@@ -270,6 +274,50 @@ export default function UsersAndRolesPage() {
   const cancelDelete = () => {
     setShowDeleteConfirm(false);
     setUserToDelete(null);
+  };
+
+  const handlePasswordReset = () => {
+    if (!selectedUser || !newPassword) {
+      alert("Please enter a new password");
+      return;
+    }
+    // TODO: Replace with API call
+    alert(`Password reset for ${selectedUser.email}. New password: ${newPassword}`);
+    setNewPassword("");
+    setShowPasswordReset(false);
+  };
+
+  const handleImpersonate = (user: User) => {
+    if (confirm(`Impersonate user ${user.name}? You will be logged in as this user.`)) {
+      // TODO: Replace with API call
+      alert(`Impersonating ${user.name}. Redirecting...`);
+      // router.push(`/login?impersonate=${user.email}`);
+    }
+  };
+
+  const handleToggleUserStatus = (user: User) => {
+    const newStatus: "Active" | "Inactive" = user.status === "Active" ? "Inactive" : "Active";
+    const updatedUsers = users.map((u) =>
+      u.email === user.email ? { ...u, status: newStatus } : u
+    );
+    setUsers(updatedUsers);
+    setFilteredUsers(updatedUsers);
+    if (selectedUser && selectedUser.email === user.email) {
+      setSelectedUser({ ...selectedUser, status: newStatus });
+    }
+    alert(`User ${newStatus === "Active" ? "activated" : "deactivated"} successfully!`);
+  };
+
+  const loadActivityLogs = (user: User) => {
+    // TODO: Replace with API call
+    const mockLogs = [
+      { action: "Login", timestamp: "2024-11-15 10:30 AM", details: "Logged in from Chrome on Windows" },
+      { action: "View Job Cards", timestamp: "2024-11-15 10:35 AM", details: "Viewed 12 job cards" },
+      { action: "Update Invoice", timestamp: "2024-11-15 11:20 AM", details: "Updated invoice INV-2024-001" },
+      { action: "Create Service Request", timestamp: "2024-11-15 02:15 PM", details: "Created service request SR-2024-045" },
+    ];
+    setActivityLogs(mockLogs);
+    setShowActivityLogs(true);
   };
 
   return (
@@ -581,27 +629,162 @@ export default function UsersAndRolesPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-4">
+              <div className="grid grid-cols-2 gap-3 pt-4 border-t">
+                <button
+                  onClick={() => {
+                    setShowPasswordReset(true);
+                  }}
+                  className="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 transition flex items-center justify-center gap-2 text-sm"
+                >
+                  <Key size={16} />
+                  Reset Password
+                </button>
+                <button
+                  onClick={() => loadActivityLogs(selectedUser)}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition flex items-center justify-center gap-2 text-sm"
+                >
+                  <History size={16} />
+                  Activity Logs
+                </button>
+                <button
+                  onClick={() => handleImpersonate(selectedUser)}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition flex items-center justify-center gap-2 text-sm"
+                >
+                  <Eye size={16} />
+                  Impersonate
+                </button>
+                <button
+                  onClick={() => handleToggleUserStatus(selectedUser)}
+                  className={`px-4 py-2 rounded-md transition flex items-center justify-center gap-2 text-sm ${
+                    selectedUser.status === "Active"
+                      ? "bg-orange-600 text-white hover:bg-orange-700"
+                      : "bg-green-600 text-white hover:bg-green-700"
+                  }`}
+                >
+                  <Power size={16} />
+                  {selectedUser.status === "Active" ? "Deactivate" : "Activate"}
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDeleteClick(selectedUser, e);
                   }}
-                  className="bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition flex items-center gap-2"
+                  className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition flex items-center justify-center gap-2 text-sm"
                 >
                   <Trash size={16} />
-                  Delete User
+                  Delete
                 </button>
                 <button
                   onClick={() => {
                     setShowUserDetails(false);
                     setSelectedUser(null);
                   }}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition"
+                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition text-sm"
                 >
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {showPasswordReset && selectedUser && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-lg w-[90%] max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-800">Reset Password</h2>
+              <button
+                onClick={() => {
+                  setShowPasswordReset(false);
+                  setNewPassword("");
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Reset password for <span className="font-semibold">{selectedUser.name}</span> ({selectedUser.email})
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-400 outline-none"
+                  placeholder="Enter new password"
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowPasswordReset(false);
+                    setNewPassword("");
+                  }}
+                  className="bg-gray-300 px-4 py-2 rounded-md hover:bg-gray-400 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePasswordReset}
+                  className="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 transition"
+                >
+                  Reset Password
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activity Logs Modal */}
+      {showActivityLogs && selectedUser && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-lg w-[90%] max-w-2xl p-6 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-800">Activity Logs</h2>
+              <button
+                onClick={() => {
+                  setShowActivityLogs(false);
+                  setActivityLogs([]);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Activity logs for <span className="font-semibold">{selectedUser.name}</span>
+            </p>
+            <div className="space-y-3">
+              {activityLogs.length > 0 ? (
+                activityLogs.map((log, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <span className="font-semibold text-gray-800">{log.action}</span>
+                      <span className="text-sm text-gray-500">{log.timestamp}</span>
+                    </div>
+                    <p className="text-sm text-gray-600">{log.details}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-gray-500 py-8">No activity logs found</p>
+              )}
+            </div>
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => {
+                  setShowActivityLogs(false);
+                  setActivityLogs([]);
+                }}
+                className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
