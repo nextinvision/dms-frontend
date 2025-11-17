@@ -101,24 +101,21 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
   const [isMounted] = useState(() => typeof window !== "undefined");
 
   // Use role from hook (most reliable) - it reads directly from localStorage
-  // Once mounted, always prefer hook value over prop to avoid stale data
-  const effectiveRole = isMounted && userRole && userRole !== "admin" && userRole !== "super_admin"
+  // Use consistent role during SSR to avoid hydration mismatch
+  // Default to sc_manager during SSR, then use actual role after mount
+  const effectiveRole = (isMounted && userRole && userRole !== "admin" && userRole !== "super_admin")
     ? userRole
     : (roleProp || "sc_manager");
+  // Always use the same menu structure - roleProp should be provided from parent
   const menu = roleMenus[effectiveRole] || roleMenus.sc_manager;
 
-  // Compute user info directly from userInfo when available, with fallback defaults
-  const user = isMounted && userInfo
-    ? {
-        name: userInfo.name || "SC Manager",
-        role: userInfo.role || "SC Manager",
-        initials: userInfo.initials || "SC",
-      }
-    : {
-        name: "SC Manager",
-        role: "SC Manager",
-        initials: "SC",
-      };
+  // Compute user info with consistent defaults for SSR and client
+  // Use consistent defaults during SSR to avoid hydration mismatch
+  const user = {
+    name: (isMounted && userInfo?.name) ? userInfo.name : "SC Manager",
+    role: (isMounted && userInfo?.role) ? userInfo.role : "SC Manager",
+    initials: (isMounted && userInfo?.initials) ? userInfo.initials : "SC",
+  };
 
   const handleLogout = () => {
     safeStorage.removeItem("userRole");
@@ -168,16 +165,16 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
       </div>
 
       <nav className="mt-6 flex flex-col flex-grow overflow-y-auto">
-        {isMounted && menu.length > 0 && menu.map((item) => {
+        {menu.length > 0 && menu.map((item) => {
           const Icon = item.icon;
-          // Only check active state after mount to avoid hydration mismatch
-          const active = isMounted && pathname === item.href;
+          // Check active state - pathname is available on both server and client
+          const active = pathname === item.href;
           return (
             <Link
               key={item.name}
               href={item.href}
               onClick={() => {
-                if (isMounted && typeof window !== "undefined" && window.innerWidth < 768) {
+                if (typeof window !== "undefined" && window.innerWidth < 768) {
                   setOpen(false);
                 }
               }}
