@@ -2,11 +2,35 @@
 import { useState } from "react";
 import { Trash } from "lucide-react";
 
+// Types
+interface User {
+  initials: string;
+  name: string;
+  email: string;
+  role: string;
+  assigned: string;
+  status: "Active" | "Inactive";
+}
+
+interface ServiceCenter {
+  id: number;
+  name: string;
+}
+
+interface UserFormData {
+  fullName: string;
+  email: string;
+  password: string;
+  role: string;
+  status: "Active" | "Inactive";
+  serviceCenter: string;
+}
+
 export default function UsersAndRolesPage() {
   const [showModal, setShowModal] = useState(false);
 
   // Dummy users
-  const [users, setUsers] = useState([
+  const [users, setUsers] = useState<User[]>([
     {
       initials: "RKS",
       name: "Rajesh Kumar Singh",
@@ -41,16 +65,16 @@ export default function UsersAndRolesPage() {
     },
   ]);
 
-  const [filteredUsers, setFilteredUsers] = useState(users);
+  const [filteredUsers, setFilteredUsers] = useState<User[]>(users);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showUserDetails, setShowUserDetails] = useState(false);
-  const [userToDelete, setUserToDelete] = useState(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<UserFormData>({
     fullName: "",
     email: "",
     password: "",
@@ -60,10 +84,10 @@ export default function UsersAndRolesPage() {
   });
 
   // Load service centers using lazy initializer
-  const [centers, setCenters] = useState(() => {
+  const [centers, setCenters] = useState<ServiceCenter[]>(() => {
     if (typeof window !== 'undefined') {
       const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
-      const staticCenters = [
+      const staticCenters: ServiceCenter[] = [
         { id: 1, name: "Delhi Central Hub" },
         { id: 2, name: "Mumbai Metroplex" },
         { id: 3, name: "Bangalore Innovation Center" },
@@ -71,7 +95,7 @@ export default function UsersAndRolesPage() {
       
       // Merge static and stored centers
       const allCenters = [...staticCenters];
-      Object.values(storedCenters).forEach(center => {
+      Object.values(storedCenters).forEach((center: any) => {
         if (!allCenters.find(c => c.id === center.id)) {
           allCenters.push({ id: center.id, name: center.name });
         }
@@ -82,7 +106,7 @@ export default function UsersAndRolesPage() {
   });
 
   // Helper function to get service center name(s) from assigned field
-  const getServiceCenterName = (assigned) => {
+  const getServiceCenterName = (assigned: string): string => {
     if (!assigned) return "Not Assigned";
     
     // If it's already a name (contains spaces or common words), return as is
@@ -107,17 +131,17 @@ export default function UsersAndRolesPage() {
   };
 
   // Handle Filters
-  const handleSearch = (value) => {
+  const handleSearch = (value: string) => {
     setSearchTerm(value);
     applyFilters(value, roleFilter, statusFilter);
   };
 
-  const handleRoleChange = (value) => {
+  const handleRoleChange = (value: string) => {
     setRoleFilter(value);
     applyFilters(searchTerm, value, statusFilter);
   };
 
-  const handleStatusChange = (value) => {
+  const handleStatusChange = (value: string) => {
     setStatusFilter(value);
     applyFilters(searchTerm, roleFilter, value);
   };
@@ -129,7 +153,7 @@ export default function UsersAndRolesPage() {
     setFilteredUsers(users);
   };
 
-  const applyFilters = (search, role, status) => {
+  const applyFilters = (search: string, role: string, status: string) => {
     let filtered = [...users];
 
     if (search.trim() !== "") {
@@ -152,11 +176,11 @@ export default function UsersAndRolesPage() {
   };
 
   // Handle New User
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     const initials = formData.fullName
@@ -166,10 +190,12 @@ export default function UsersAndRolesPage() {
       .toUpperCase();
 
     // Get service center name
-    const selectedCenter = centers.find(c => c.id === parseInt(formData.serviceCenter));
-    const assignedSC = selectedCenter ? selectedCenter.name : "Not Assigned";
+    // Call center doesn't need a service center assignment
+    const assignedSC = formData.role === "Call Center" 
+      ? "All Service Centers" 
+      : (centers.find(c => c.id === parseInt(formData.serviceCenter))?.name || "Not Assigned");
 
-    const newUser = {
+    const newUser: User = {
       initials,
       name: formData.fullName,
       email: formData.email,
@@ -194,7 +220,7 @@ export default function UsersAndRolesPage() {
   };
 
   // Handle Delete User
-  const handleDeleteClick = (user, e) => {
+  const handleDeleteClick = (user: User, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
     }
@@ -421,15 +447,24 @@ export default function UsersAndRolesPage() {
                   value={formData.serviceCenter}
                   onChange={handleChange}
                   className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-400 outline-none"
-                  required
+                  required={formData.role !== "Call Center"}
                 >
-                  <option value="">Select Service Center</option>
+                  <option value="">
+                    {formData.role === "Call Center" 
+                      ? "Not Required (Can assign to any service center)" 
+                      : "Select Service Center"}
+                  </option>
                   {centers.map((center) => (
                     <option key={center.id} value={center.id}>
                       {center.name}
                     </option>
                   ))}
                 </select>
+                {formData.role === "Call Center" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Call center staff can assign customers to any service center
+                  </p>
+                )}
               </div>
 
               <div>
@@ -600,3 +635,4 @@ export default function UsersAndRolesPage() {
     </div>
   );
 }
+

@@ -63,7 +63,7 @@ const users: MockUser[] = [
     role: "call_center",
     name: "Call Center Staff",
     initials: "CC",
-    serviceCenter: "Pune Phase 1",
+    serviceCenter: null, // Call center can assign to any service center
   },
 ];
 

@@ -3,8 +3,38 @@
 import { useState, useMemo, useEffect, startTransition } from "react";
 import { Plus, Edit, Package, CheckCircle, AlertTriangle, DollarSign, X, Search } from "lucide-react";
 
+// Types
+interface InventoryItem {
+  id: number;
+  partName: string;
+  sku: string;
+  partCode?: string;
+  category: string;
+  quantity: number;
+  price: string;
+  status: "In Stock" | "Low Stock";
+  centerId: number;
+  centerName: string;
+}
+
+interface ServiceCenter {
+  id: number;
+  name: string;
+}
+
+interface InventoryForm {
+  partName: string;
+  sku: string;
+  partCode: string;
+  category: string;
+  quantity: string;
+  price: string;
+  status: "In Stock" | "Low Stock";
+  centerId: string;
+}
+
 // Sample inventory data structure - in real app, this would come from API
-const defaultInventoryData = [
+const defaultInventoryData: InventoryItem[] = [
   {
     id: 1,
     partName: "Engine Oil 5L",
@@ -74,7 +104,7 @@ const defaultInventoryData = [
 ];
 
 // Default static centers - same on server and client to prevent hydration mismatch
-const staticCenters = [
+const staticCenters: ServiceCenter[] = [
   { id: 1, name: "Delhi Central Hub" },
   { id: 2, name: "Mumbai Metroplex" },
   { id: 3, name: "Bangalore Innovation Center" },
@@ -82,13 +112,13 @@ const staticCenters = [
 
 export default function InventoryPage() {
   // Initialize with static centers to ensure server/client match
-  const [centers, setCenters] = useState(staticCenters);
+  const [centers, setCenters] = useState<ServiceCenter[]>(staticCenters);
 
   // Load additional centers from localStorage after mount (client-side only)
   useEffect(() => {
     const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
     const allCenters = [...staticCenters];
-    Object.values(storedCenters).forEach(center => {
+    Object.values(storedCenters).forEach((center: any) => {
       if (!allCenters.find(c => c.id === center.id)) {
         allCenters.push({ id: center.id, name: center.name });
       }
@@ -102,7 +132,7 @@ export default function InventoryPage() {
   }, []);
 
   // Initialize with default data to ensure server/client match
-  const [inventory, setInventory] = useState(defaultInventoryData);
+  const [inventory, setInventory] = useState<InventoryItem[]>(defaultInventoryData);
 
   // Load inventory from localStorage after mount (client-side only)
   useEffect(() => {
@@ -114,14 +144,14 @@ export default function InventoryPage() {
     }
   }, []);
 
-  const [selectedCenter, setSelectedCenter] = useState("all");
+  const [selectedCenter, setSelectedCenter] = useState<string>("all");
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [itemToDelete, setItemToDelete] = useState(null);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<InventoryForm>({
     partName: "",
     sku: "",
     partCode: "",
@@ -161,7 +191,7 @@ export default function InventoryPage() {
     return sum + (price * item.quantity);
   }, 0);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!form.partName.trim() || !form.sku.trim() || !form.centerId) {
       alert("Please fill all required fields!");
@@ -170,9 +200,16 @@ export default function InventoryPage() {
 
     if (editingItem) {
       // Update existing item
+      const selectedCenterName = centers.find(c => c.id === parseInt(form.centerId))?.name || "";
       const updated = inventory.map(item =>
         item.id === editingItem.id
-          ? { ...item, ...form, quantity: parseInt(form.quantity) || 0 }
+          ? { 
+              ...item, 
+              ...form, 
+              quantity: parseInt(form.quantity) || 0,
+              centerId: parseInt(form.centerId) || item.centerId,
+              centerName: selectedCenterName || item.centerName
+            }
           : item
       );
       setInventory(updated);
@@ -183,10 +220,15 @@ export default function InventoryPage() {
     } else {
       // Add new item
       const selectedCenterName = centers.find(c => c.id === parseInt(form.centerId))?.name || "";
-      const newItem = {
+      const newItem: InventoryItem = {
         id: inventory.length > 0 ? Math.max(...inventory.map(i => i.id)) + 1 : 1,
-        ...form,
+        partName: form.partName,
+        sku: form.sku,
+        partCode: form.partCode || undefined,
+        category: form.category,
         quantity: parseInt(form.quantity) || 0,
+        price: form.price,
+        status: form.status,
         centerName: selectedCenterName,
         centerId: parseInt(form.centerId),
       };
@@ -212,7 +254,7 @@ export default function InventoryPage() {
     setShowAddForm(false);
   };
 
-  const handleEdit = (item) => {
+  const handleEdit = (item: InventoryItem) => {
     setEditingItem(item);
     setForm({
       partName: item.partName,
@@ -227,9 +269,9 @@ export default function InventoryPage() {
     setShowAddForm(true);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = (id: number) => {
     const item = inventory.find(i => i.id === id);
-    setItemToDelete(item);
+    setItemToDelete(item || null);
     setShowDeleteConfirm(true);
   };
 
@@ -378,6 +420,7 @@ export default function InventoryPage() {
               price: "",
               status: "In Stock",
               centerId: "",
+              partCode: "",
             });
             setShowAddForm(true);
           }}
@@ -573,6 +616,7 @@ export default function InventoryPage() {
                     price: "",
                     status: "In Stock",
                     centerId: "",
+                    partCode: "",
                   });
                 }}
               >
@@ -664,7 +708,7 @@ export default function InventoryPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select
                   value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  onChange={(e) => setForm({ ...form, status: e.target.value as "In Stock" | "Low Stock" })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-gray-900 text-sm"
                 >
                   <option value="In Stock">In Stock</option>
@@ -710,3 +754,4 @@ export default function InventoryPage() {
     </div>
   );
 }
+

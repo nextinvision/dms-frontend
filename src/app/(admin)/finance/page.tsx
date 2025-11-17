@@ -3,10 +3,42 @@
 import { useState } from "react";
 import { Eye, FileText, BarChart3, Calendar, X, Building, DollarSign, Check, Download, Printer } from "lucide-react";
 
+// Types
+interface Invoice {
+  id: string;
+  scName: string;
+  customerName: string;
+  amount: string;
+  dateIssued: string;
+  dueDate: string;
+  paymentStatus: "Paid" | "Pending" | "Overdue";
+}
+
+interface DetailedInvoice extends Invoice {
+  location: string;
+  paymentTerms: string;
+  amountBreakdown: {
+    laborCost: string;
+    partsCost: string;
+    tax: string;
+    total: string;
+  };
+  paymentDate: string | null;
+}
+
+interface ReportFormData {
+  reportType: string;
+  fromDate: string;
+  toDate: string;
+  selectedServiceCenters: string[];
+  paymentStatus: string;
+  exportFormat: string;
+}
+
 // Helper function to get detailed invoice data
-const getDetailedInvoiceData = (invoice) => {
+const getDetailedInvoiceData = (invoice: Invoice): DetailedInvoice => {
   // Service center locations mapping
-  const scLocations = {
+  const scLocations: Record<string, string> = {
     "Delhi Central Hub": "Connaught Place, New Delhi",
     "Mumbai Metroplex": "Bandra Kurla Complex, Mumbai",
     "Bangalore Innovation Center": "Whitefield, Bangalore",
@@ -40,7 +72,7 @@ const getDetailedInvoiceData = (invoice) => {
 };
 
 // Sample invoice data
-const invoiceData = [
+const invoiceData: Invoice[] = [
   {
     id: "INV-2024-001",
     scName: "Delhi Central Hub",
@@ -152,7 +184,7 @@ const invoiceData = [
 ];
 
 // Service centers list
-const serviceCenters = [
+const serviceCenters: string[] = [
   "All Service Centers",
   "Delhi Central Hub",
   "Mumbai Metroplex",
@@ -162,7 +194,7 @@ const serviceCenters = [
 ];
 
 export default function FinancePage() {
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   
@@ -170,7 +202,7 @@ export default function FinancePage() {
   const [reportType, setReportType] = useState("");
   const [fromDate, setFromDate] = useState("2024-10-01");
   const [toDate, setToDate] = useState("2024-11-12");
-  const [selectedServiceCenters, setSelectedServiceCenters] = useState(["All Service Centers"]);
+  const [selectedServiceCenters, setSelectedServiceCenters] = useState<string[]>(["All Service Centers"]);
   const [paymentStatus, setPaymentStatus] = useState("All Status");
   const [exportFormat, setExportFormat] = useState("PDF");
 
@@ -185,7 +217,7 @@ export default function FinancePage() {
   const overdueAmount = "₹16.5K";
   const todayRevenue = "₹19.1K";
 
-  const handleViewDetails = (invoice) => {
+  const handleViewDetails = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
     setShowModal(true);
   };
@@ -203,7 +235,7 @@ export default function FinancePage() {
     setShowReportModal(false);
   };
 
-  const handleServiceCenterChange = (e) => {
+  const handleServiceCenterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const options = Array.from(e.target.selectedOptions, (option) => option.value);
     setSelectedServiceCenters(options);
   };
@@ -222,7 +254,7 @@ export default function FinancePage() {
     handleCloseReportModal();
   };
 
-  const getStatusBadgeClass = (status) => {
+  const getStatusBadgeClass = (status: Invoice["paymentStatus"]): string => {
     switch (status) {
       case "Paid":
         return "bg-green-100 text-green-800";
@@ -417,7 +449,7 @@ export default function FinancePage() {
                 ) : (
                   <tr>
                     <td
-                      colSpan="8"
+                      colSpan={8}
                       className="px-4 py-8 text-center text-gray-500"
                     >
                       No invoices found
@@ -832,3 +864,4 @@ export default function FinancePage() {
     </div>
   );
 }
+

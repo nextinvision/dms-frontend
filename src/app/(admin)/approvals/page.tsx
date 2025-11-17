@@ -3,8 +3,53 @@
 import { useState } from "react";
 import { Eye, X, Check, FileText, User, Building, Paperclip, Menu, ChevronDown } from "lucide-react";
 
+// Types
+interface SupportingDocument {
+  name: string;
+  url: string;
+}
+
+interface DetailedRequest {
+  id: string;
+  type: string;
+  description: string;
+  amount: string;
+  dateSubmitted: string;
+  priority: "High" | "Medium" | "Low";
+  status: string;
+  submittedBy: string;
+  submittedByInitial: string;
+  submittedByRole: string;
+  submittedByEmail: string;
+  submittedByPhone: string;
+  scLocation: string;
+  scManager: string;
+  supportingDocuments: SupportingDocument[];
+}
+
+interface ApprovalItem {
+  id: string;
+  type: string;
+  submittedBy: string;
+  submittedByInitial: string;
+  scLocation: string;
+  amount: string;
+  dateSubmitted: string;
+  status: string;
+}
+
+interface ApprovalData {
+  serviceRequests: ApprovalItem[];
+  warrantyClaims: ApprovalItem[];
+  inventoryTransfers: ApprovalItem[];
+  stockAdjustments: ApprovalItem[];
+  discountRequests: ApprovalItem[];
+}
+
+type TabType = "serviceRequests" | "warrantyClaims" | "inventoryTransfers" | "stockAdjustments" | "discountRequests";
+
 // Detailed warranty claim data
-const detailedWarrantyClaims = {
+const detailedWarrantyClaims: Record<string, DetailedRequest> = {
   "WC-001": {
     id: "WC-001",
     type: "Warranty Claim",
@@ -48,7 +93,7 @@ const detailedWarrantyClaims = {
 };
 
 // Detailed service request data
-const detailedServiceRequests = {
+const detailedServiceRequests: Record<string, DetailedRequest> = {
   "SR-001": {
     id: "SR-001",
     type: "Service Request",
@@ -112,7 +157,7 @@ const detailedServiceRequests = {
 };
 
 // Sample approval data
-const approvalData = {
+const approvalData: ApprovalData = {
   serviceRequests: [
     {
       id: "SR-001",
@@ -236,9 +281,9 @@ const approvalData = {
 };
 
 export default function ApprovalsPage() {
-  const [activeTab, setActiveTab] = useState("serviceRequests");
+  const [activeTab, setActiveTab] = useState<TabType>("serviceRequests");
   const [showModal, setShowModal] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [selectedRequest, setSelectedRequest] = useState<DetailedRequest | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Calculate total pending approvals
@@ -250,7 +295,7 @@ export default function ApprovalsPage() {
     approvalData.discountRequests.length;
 
   // Get current tab data
-  const getCurrentTabData = () => {
+  const getCurrentTabData = (): ApprovalItem[] => {
     switch (activeTab) {
       case "serviceRequests":
         return approvalData.serviceRequests;
@@ -268,7 +313,7 @@ export default function ApprovalsPage() {
   };
 
   // Get count for each tab
-  const getTabCount = (tab) => {
+  const getTabCount = (tab: TabType): number => {
     switch (tab) {
       case "serviceRequests":
         return approvalData.serviceRequests.length;
@@ -287,7 +332,7 @@ export default function ApprovalsPage() {
 
   const currentData = getCurrentTabData();
 
-  const handleView = (requestId) => {
+  const handleView = (requestId: string) => {
     // Show modal for service requests
     if (activeTab === "serviceRequests" && detailedServiceRequests[requestId]) {
       setSelectedRequest(detailedServiceRequests[requestId]);
@@ -317,13 +362,13 @@ export default function ApprovalsPage() {
     handleCloseModal();
   };
 
-  const handleDownload = (url) => {
+  const handleDownload = (url: string) => {
     // Handle download action
     console.log("Download:", url);
   };
 
   // Tab labels for mobile dropdown
-  const tabLabels = {
+  const tabLabels: Record<TabType, string> = {
     serviceRequests: "Service Requests (>₹5,000)",
     warrantyClaims: "Warranty Claims",
     inventoryTransfers: "Inventory Transfers",
@@ -362,7 +407,7 @@ export default function ApprovalsPage() {
           <div className="relative">
             <select
               value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value)}
+              onChange={(e) => setActiveTab(e.target.value as TabType)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="serviceRequests">
@@ -574,7 +619,7 @@ export default function ApprovalsPage() {
                 ) : (
                   <tr>
                     <td
-                      colSpan="8"
+                      colSpan={8}
                       className="px-4 py-8 text-center text-gray-500 text-sm sm:text-base"
                     >
                       No pending requests found
@@ -847,3 +892,4 @@ export default function ApprovalsPage() {
     </div>
   );
 }
+

@@ -4,9 +4,31 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Star, X, Edit } from "lucide-react";
 
+// Types
+interface ServiceCenter {
+  id: number;
+  name: string;
+  location: string;
+  pinCode?: string;
+  staff: number;
+  jobs: number;
+  revenue: string;
+  status: "Active" | "Inactive";
+  rating: number;
+}
+
+interface ServiceCenterForm {
+  name: string;
+  location: string;
+  pinCode: string;
+  staff: string;
+  jobs: string;
+  status: "Active" | "Inactive";
+}
+
 export default function ServiceCentersPage() {
   const router = useRouter();
-  const [centers, setCenters] = useState([
+  const [centers, setCenters] = useState<ServiceCenter[]>([
     {
       id: 1,
       name: "Delhi Central Hub",
@@ -40,8 +62,8 @@ export default function ServiceCentersPage() {
   ]);
 
   const [showForm, setShowForm] = useState(false);
-  const [editingCenter, setEditingCenter] = useState(null);
-  const [form, setForm] = useState({
+  const [editingCenter, setEditingCenter] = useState<ServiceCenter | null>(null);
+  const [form, setForm] = useState<ServiceCenterForm>({
     name: "",
     location: "",
     pinCode: "",
@@ -50,7 +72,7 @@ export default function ServiceCentersPage() {
     status: "Active",
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!form.name.trim() || !form.location.trim()) {
       alert("Please fill all required fields!");
@@ -93,12 +115,15 @@ export default function ServiceCentersPage() {
       alert("Service center updated successfully!");
     } else {
       // Create new center
-      const newCenter = {
+      const newCenter: ServiceCenter = {
         id: centers.length > 0 ? Math.max(...centers.map(c => c.id)) + 1 : 1,
-        ...form,
+        name: form.name,
+        location: form.location,
+        pinCode: form.pinCode || undefined,
         staff: Number(form.staff) || 0,
         jobs: Number(form.jobs) || 0,
         revenue: "₹0.0L",
+        status: form.status,
         rating: 4.5,
       };
 
@@ -309,7 +334,7 @@ export default function ServiceCentersPage() {
                 <label className="text-sm font-medium text-gray-600">Status</label>
                 <select
                   value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  onChange={(e) => setForm({ ...form, status: e.target.value as "Active" | "Inactive" })}
                   className="w-full border text-black border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="Active">Active</option>
@@ -330,3 +355,4 @@ export default function ServiceCentersPage() {
     </div>
   );
 }
+
