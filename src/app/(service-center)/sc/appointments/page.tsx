@@ -1,4 +1,5 @@
 "use client";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { useState } from "react";
 import { Calendar, Clock, User, Car, PlusCircle, Search, Filter, X } from "lucide-react";
 
@@ -293,9 +294,9 @@ export default function Appointments() {
 
                     setAppointments([...appointments, newAppointment]);
 
-                    const storedAppointments = JSON.parse(localStorage.getItem("appointments") || "[]");
+                    const storedAppointments = safeStorage.getItem<unknown[]>("appointments", []);
                     storedAppointments.push(newAppointment);
-                    localStorage.setItem("appointments", JSON.stringify(storedAppointments));
+                    safeStorage.setItem("appointments", storedAppointments);
 
                     setShowAppointmentModal(false);
                     setAppointmentForm({

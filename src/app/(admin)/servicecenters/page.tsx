@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Star, X, Edit } from "lucide-react";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 // Types
 interface ServiceCenter {
@@ -152,7 +153,7 @@ export default function ServiceCentersPage() {
       setCenters(updatedCenters);
       
       // Update in localStorage
-      const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
+      const storedCenters = safeStorage.getItem<Record<string, ServiceCenter>>('serviceCenters', {});
       const updatedCenter = updatedCenters.find(c => c.id === editingCenter.id);
       if (updatedCenter && storedCenters[editingCenter.id]) {
         storedCenters[editingCenter.id] = {
@@ -164,7 +165,7 @@ export default function ServiceCentersPage() {
           staff: updatedCenter.staff,
           jobs: updatedCenter.jobs,
         };
-        localStorage.setItem('serviceCenters', JSON.stringify(storedCenters));
+        safeStorage.setItem('serviceCenters', storedCenters);
       }
       
       alert("Service center updated successfully!");
@@ -197,9 +198,9 @@ export default function ServiceCentersPage() {
         ...form,
       };
       
-      const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
+      const storedCenters = safeStorage.getItem<Record<string, ServiceCenter>>('serviceCenters', {});
       storedCenters[newCenter.id] = centerDetailData;
-      localStorage.setItem('serviceCenters', JSON.stringify(storedCenters));
+      safeStorage.setItem('serviceCenters', storedCenters);
       
       alert("Service center created successfully!");
     }
@@ -259,7 +260,7 @@ export default function ServiceCentersPage() {
                     e.stopPropagation();
                     setEditingCenter(center);
                     // Try to load full form data from localStorage
-                    const storedCenters = JSON.parse(localStorage.getItem('serviceCenters') || '{}');
+                    const storedCenters = safeStorage.getItem<Record<string, ServiceCenter & Partial<ServiceCenterForm>>>('serviceCenters', {});
                     const storedCenter = storedCenters[center.id];
                     
                     if (storedCenter && storedCenter.address) {

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar, SCSidebar, Navbar } from "@/components/layout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useRole } from "@/shared/hooks";
 import type { UserRole } from "@/shared/types";
 import { TopLoadingBar } from "@/components/ui/TopLoadingBar";
@@ -62,29 +63,33 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
       <body className="antialiased bg-[#f9f9fb] flex" suppressHydrationWarning>
-        {isLoggedIn &&
-          (useSCSidebar ? (
-            <SCSidebar open={open} setOpen={setOpen} role={userRole} />
-          ) : (
-            <Sidebar open={open} setOpen={setOpen} />
-          ))}
+        <ErrorBoundary>
+          {isLoggedIn &&
+            (useSCSidebar ? (
+              <SCSidebar open={open} setOpen={setOpen} role={userRole} />
+            ) : (
+              <Sidebar open={open} setOpen={setOpen} />
+            ))}
 
-        <TopLoadingBar isLoading={isNavigating} />
-        <div
-          className={`flex-1 flex flex-col transition-all duration-300 relative ${
-            isLoggedIn
-              ? open
-                ? "ml-64 md:ml-64"
-                : "ml-0 md:ml-20"
-              : "ml-0"
-          }`}
-        >
-          {isLoggedIn && <Navbar open={open} setOpen={setOpen} isLoggedIn={isLoggedIn} />}
+          <TopLoadingBar isLoading={isNavigating} />
+          <div
+            className={`flex-1 flex flex-col transition-all duration-300 relative ${
+              isLoggedIn
+                ? open
+                  ? "ml-64 md:ml-64"
+                  : "ml-0 md:ml-20"
+                : "ml-0"
+            }`}
+          >
+            {isLoggedIn && <Navbar open={open} setOpen={setOpen} isLoggedIn={isLoggedIn} />}
 
-          <main className={`relative min-h-[calc(100vh-4rem)] ${isLoggedIn ? "pt-16 px-6 md:px-8" : "px-0"}`}>
-            {children}
-          </main>
-        </div>
+            <main className={`relative min-h-[calc(100vh-4rem)] ${isLoggedIn ? "pt-16 px-6 md:px-8" : "px-0"}`}>
+              <ErrorBoundary>
+                {children}
+              </ErrorBoundary>
+            </main>
+          </div>
+        </ErrorBoundary>
       </body>
     </html>
   );
