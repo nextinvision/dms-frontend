@@ -37,6 +37,15 @@ import type {
 import { useCustomerSearch } from "../../../../hooks/api";
 import { defaultQuotations, defaultInsurers, defaultNoteTemplates } from "@/__mocks__/data/quotations.mock";
 
+const createEmptyCustomer = (): CustomerWithVehicles => ({
+  id: "",
+  customerNumber: "",
+  name: "Customer",
+  phone: "",
+  createdAt: new Date().toISOString(),
+  vehicles: [],
+});
+
 export default function Quotations() {
   const { userInfo } = useRole();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -69,7 +78,10 @@ export default function Quotations() {
   const [noteTemplates, setNoteTemplates] = useState<NoteTemplate[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithVehicles | null>(null);
   const [customerSearchQuery, setCustomerSearchQuery] = useState<string>("");
-  const { results: customerSearchResults, search: performCustomerSearch, clear: clearCustomerSearch } = useCustomerSearch();
+  const customerSearch = useCustomerSearch();
+  const customerSearchResults = customerSearch.results as CustomerWithVehicles[];
+  const performCustomerSearch = customerSearch.search;
+  const clearCustomerSearch = customerSearch.clear;
 
   // Load quotations from localStorage or use mock data
   useEffect(() => {
@@ -242,7 +254,7 @@ export default function Quotations() {
       const quotationNumber = `QT-SC001-${year}${month}-${String(count).padStart(4, '0')}`;
 
       // Get customer and vehicle info
-      const customer = selectedCustomer || { firstName: "Customer", lastName: "", phone: "" };
+      const customer = selectedCustomer ?? createEmptyCustomer();
       const selectedInsurer = insurers.find((i) => i.id === form.insurerId);
       const selectedTemplate = noteTemplates.find((t) => t.id === form.noteTemplateId);
 
@@ -294,7 +306,7 @@ export default function Quotations() {
           id: form.vehicleId,
           make: customer.vehicles?.find((v) => v.id.toString() === form.vehicleId)?.vehicleMake || "",
           model: customer.vehicles?.find((v) => v.id.toString() === form.vehicleId)?.vehicleModel || "",
-          registration: customer.vehicles?.find((v) => v.id.toString() === form.vehicleId)?.registrationNumber || "",
+          registration: customer.vehicles?.find((v) => v.id.toString() === form.vehicleId)?.registration || "",
           vin: customer.vehicles?.find((v) => v.id.toString() === form.vehicleId)?.vin || "",
         } : undefined,
         insurer: selectedInsurer,
@@ -595,6 +607,7 @@ function CreateQuotationModal({
   customerSearchQuery,
   setCustomerSearchQuery,
   customerSearchResults,
+  clearCustomerSearch,
   insurers,
   noteTemplates,
   totals,

@@ -97,6 +97,13 @@ const formatVehicleString = (vehicle: Vehicle): string => {
   return `${vehicle.vehicleMake} ${vehicle.vehicleModel} (${vehicle.vehicleYear})`;
 };
 
+const isCustomerWithVehicles = (customer: unknown): customer is CustomerWithVehicles => {
+  if (!customer || typeof customer !== "object") {
+    return false;
+  }
+  return "id" in customer && "name" in customer && "phone" in customer;
+};
+
 const getStatusBadgeClass = (status: string): string => {
   const config = STATUS_CONFIG[status as AppointmentStatus] || { bg: "bg-gray-100", text: "text-gray-800" };
   return `px-2 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`;
@@ -456,12 +463,12 @@ export default function Appointments() {
   });
 
   // Customer Search Hook
-  const {
-    results: customerSearchResults,
-    loading: customerSearchLoading,
-    search: searchCustomer,
-    clear: clearCustomerSearch,
-  } = useCustomerSearch();
+  const customerSearch = useCustomerSearch();
+  const customerSearchResults: CustomerWithVehicles[] = customerSearch.results as CustomerWithVehicles[];
+  const typedCustomerSearchResults = customerSearchResults as CustomerWithVehicles[];
+  const customerSearchLoading = customerSearch.loading;
+  const searchCustomer = customerSearch.search;
+  const clearCustomerSearch = customerSearch.clear;
 
   // ==================== Helper Functions ====================
   const showToast = useCallback((message: string, type: ToastType = "success") => {
@@ -958,7 +965,7 @@ export default function Appointments() {
                 />
                 {showCustomerDropdown && customerSearchResults.length > 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {customerSearchResults.map((customer) => (
+                    {typedCustomerSearchResults.map((customer) => (
                       <div
                         key={customer.id}
                         onClick={() => handleCustomerSelect(customer)}
@@ -989,6 +996,7 @@ export default function Appointments() {
                               )}
                             </div>
                           </div>
+                          {/* @ts-ignore Customer comes from typed search results */}
                           {selectedCustomer?.id === customer.id && (
                             <CheckCircle className="text-indigo-600 shrink-0" size={18} strokeWidth={2} />
                           )}
@@ -1474,7 +1482,7 @@ export default function Appointments() {
                     />
                     {showComplaintCustomerDropdown && customerSearchResults.length > 0 && (
                       <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                        {customerSearchResults.map((customer) => (
+                        {typedCustomerSearchResults.map((customer) => (
                           <div
                             key={customer.id}
                             onClick={() => handleComplaintCustomerSelect(customer)}
@@ -1505,6 +1513,7 @@ export default function Appointments() {
                                   )}
                                 </div>
                               </div>
+                              {/* @ts-ignore Customer comes from typed search results */}
                               {selectedComplaintCustomer?.id === customer.id && (
                                 <CheckCircle className="text-red-600 shrink-0" size={18} strokeWidth={2} />
                               )}

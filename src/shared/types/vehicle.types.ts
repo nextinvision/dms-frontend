@@ -15,6 +15,8 @@ export interface Customer {
   phone: string;
   email?: string;
   address?: string;
+  cityState?: string;
+  pincode?: string;
   createdAt: string;
   totalVehicles?: number;
   totalSpent?: string;

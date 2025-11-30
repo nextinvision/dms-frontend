@@ -21,6 +21,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import type { SearchType, Vehicle, ServiceHistoryItem, NewVehicleForm } from "@/shared/types";
 import { defaultVehicles, defaultVehicleServiceHistory } from "@/__mocks__/data/vehicles.mock";
 

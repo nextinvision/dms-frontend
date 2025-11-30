@@ -150,7 +150,9 @@ class CustomerRepository {
     
     // If no recent customers, initialize with first few customers from mock data
     if (recentIds.length === 0 && this.customers.length > 0) {
-      recentIds = this.customers.slice(0, Math.min(limit, this.customers.length)).map((c) => c.id);
+      recentIds = this.customers
+        .slice(0, Math.min(limit, this.customers.length))
+        .map((c) => Number(c.id));
       safeStorage.setItem("recentCustomerIds", recentIds);
     }
     
