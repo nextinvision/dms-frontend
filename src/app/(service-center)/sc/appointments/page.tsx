@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Calendar, Clock, User, Car, PlusCircle, X, Edit, Phone, CheckCircle, AlertCircle, Eye, MapPin, Building2, AlertTriangle, Upload, FileText, Image as ImageIcon, Trash2 } from "lucide-react";
 import { useCustomerSearch } from "../../../../hooks/api";
 import { useRole } from "@/shared/hooks";
+import { useRouter } from "next/navigation";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 
 // ==================== Types ====================
@@ -949,8 +950,11 @@ export default function Appointments() {
     []
   );
 
-  // Service Intake Handlers
-  const handleServiceIntakeSubmit = useCallback(() => {
+  // Router for navigation
+  const router = useRouter();
+
+  // Service Intake Handlers - Convert to Estimation/Quotation
+  const handleConvertToQuotation = useCallback(() => {
     if (!selectedAppointment) return;
 
     // Basic validation
@@ -959,20 +963,38 @@ export default function Appointments() {
       return;
     }
 
-    // Here you would typically save the service intake data and upload files
-    // For now, we'll just show a success message
-    const totalFiles = 
-      serviceIntakeForm.customerIdProof.files.length +
-      serviceIntakeForm.vehicleRCCopy.files.length +
-      serviceIntakeForm.warrantyCardServiceBook.files.length +
-      serviceIntakeForm.photosVideos.files.length;
+    // Save service intake data to localStorage for quotation page to use
+    const serviceIntakeData = {
+      appointmentId: selectedAppointment.id,
+      customerName: selectedAppointment.customerName,
+      phone: selectedAppointment.phone,
+      vehicle: selectedAppointment.vehicle,
+      serviceIntakeForm: {
+        ...serviceIntakeForm,
+        // Convert File objects to URLs for storage (in real app, these would be uploaded first)
+        customerIdProof: {
+          files: [],
+          urls: serviceIntakeForm.customerIdProof.urls,
+        },
+        vehicleRCCopy: {
+          files: [],
+          urls: serviceIntakeForm.vehicleRCCopy.urls,
+        },
+        warrantyCardServiceBook: {
+          files: [],
+          urls: serviceIntakeForm.warrantyCardServiceBook.urls,
+        },
+        photosVideos: {
+          files: [],
+          urls: serviceIntakeForm.photosVideos.urls,
+        },
+      },
+    };
+
+    // Store service intake data for quotation page
+    safeStorage.setItem("pendingQuotationFromAppointment", serviceIntakeData);
     
-    showToast(
-      `Service intake form submitted successfully! ${totalFiles > 0 ? `${totalFiles} file(s) uploaded.` : ""}`,
-      "success"
-    );
-    
-    // Update appointment status to indicate customer has arrived
+    // Update appointment status to indicate customer has arrived and intake is done
     const updatedAppointments = appointments.map((apt) =>
       apt.id === selectedAppointment.id
         ? { ...apt, status: "In Progress" }
@@ -981,10 +1003,12 @@ export default function Appointments() {
     setAppointments(updatedAppointments);
     safeStorage.setItem("appointments", updatedAppointments);
     
-    // Reset form after submission
-    setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
-    setCustomerArrivalStatus(null);
-  }, [selectedAppointment, serviceIntakeForm, appointments, showToast]);
+    // Navigate to quotations page
+    router.push("/sc/quotations?fromAppointment=true");
+    
+    // Close the appointment detail modal
+    closeDetailModal();
+  }, [selectedAppointment, serviceIntakeForm, appointments, router, closeDetailModal]);
 
   // ==================== Effects ====================
   // Watch for customer search results to populate vehicle details
@@ -1858,7 +1882,7 @@ export default function Appointments() {
                   </div>
                 </div>
 
-                {/* Submit Button for Service Intake */}
+                {/* Convert to Estimation/Quotation Button */}
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
                   <button
                     onClick={() => {
@@ -1870,10 +1894,11 @@ export default function Appointments() {
                     Cancel
                   </button>
                   <button
-                    onClick={handleServiceIntakeSubmit}
-                    className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+                    onClick={handleConvertToQuotation}
+                    className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center gap-2"
                   >
-                    Submit Service Intake
+                    <FileText size={18} />
+                    Convert into Estimation/Quotation
                   </button>
                 </div>
               </div>

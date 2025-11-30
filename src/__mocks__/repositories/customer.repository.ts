@@ -34,9 +34,10 @@ class CustomerRepository {
     const results: CustomerWithVehicles[] = [];
 
     if (type === "phone") {
-      const cleaned = query.replace(/[\s-+]/g, "").replace(/^91/, "");
+      const cleaned = query.replace(/[\s-+().]/g, "").replace(/^91/, "");
       this.customers.forEach((customer) => {
-        if (customer.phone.includes(cleaned)) {
+        const customerPhone = customer.phone.replace(/[\s-+().]/g, "").replace(/^91/, "");
+        if (customerPhone.includes(cleaned) || cleaned.includes(customerPhone)) {
           results.push({ ...customer });
         }
       });

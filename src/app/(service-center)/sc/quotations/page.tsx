@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+import { useSearchParams } from "next/navigation";
 import type {
   Quotation,
   QuotationItem,
@@ -48,6 +49,9 @@ const createEmptyCustomer = (): CustomerWithVehicles => ({
 
 export default function Quotations() {
   const { userInfo } = useRole();
+  const searchParams = useSearchParams();
+  const fromAppointment = searchParams.get("fromAppointment") === "true";
+  
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [filter, setFilter] = useState<QuotationFilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -126,6 +130,66 @@ export default function Quotations() {
       clearCustomerSearch();
     }
   }, [customerSearchQuery, performCustomerSearch, clearCustomerSearch]);
+
+  // Handle pre-filling form from appointment service intake
+  useEffect(() => {
+    if (fromAppointment && typeof window !== "undefined") {
+      const serviceIntakeData = safeStorage.getItem<any>("pendingQuotationFromAppointment", null);
+      
+      if (serviceIntakeData) {
+        // Find customer by phone or name
+        const findCustomer = async () => {
+          try {
+            await performCustomerSearch(serviceIntakeData.customerName || serviceIntakeData.phone, "auto");
+            // Wait a bit for search results
+            setTimeout(() => {
+              const customers = customerSearchResults;
+              const customer = customers.find(
+                (c) => c.phone === serviceIntakeData.phone || c.name === serviceIntakeData.customerName
+              );
+              
+              if (customer) {
+                setSelectedCustomer(customer);
+                setForm((prev) => ({
+                  ...prev,
+                  customerId: String(customer.id),
+                  documentType: "Quotation",
+                  notes: serviceIntakeData.serviceIntakeForm.customerComplaintIssue || "",
+                  customNotes: serviceIntakeData.serviceIntakeForm.previousServiceHistory || "",
+                  batterySerialNumber: serviceIntakeData.serviceIntakeForm.chargerSerialNumber || "",
+                }));
+                
+                // Find matching vehicle
+                if (customer.vehicles && customer.vehicles.length > 0) {
+                  const vehicle = customer.vehicles.find(
+                    (v) => v.registration === serviceIntakeData.serviceIntakeForm.registrationNumber
+                  ) || customer.vehicles[0];
+                  
+                  if (vehicle) {
+                    setForm((prev) => ({
+                      ...prev,
+                      vehicleId: String(vehicle.id),
+                    }));
+                  }
+                }
+                
+                // Open create modal
+                setShowCreateModal(true);
+                
+                // Clear the stored data
+                safeStorage.removeItem("pendingQuotationFromAppointment");
+              }
+            }, 500);
+          } catch (error) {
+            console.error("Error finding customer:", error);
+          }
+        };
+        
+        findCustomer();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromAppointment]);
 
   // Calculate totals
   const calculateTotals = useCallback(() => {

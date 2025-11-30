@@ -355,6 +355,7 @@ export default function CustomerFind() {
   const [showVehicleDetails, setShowVehicleDetails] = useState<boolean>(false);
   const [showScheduleAppointment, setShowScheduleAppointment] = useState<boolean>(false);
   const [showComplaints, setShowComplaints] = useState<boolean>(false);
+  const [shouldOpenAppointmentAfterVehicleAdd, setShouldOpenAppointmentAfterVehicleAdd] = useState<boolean>(false);
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryItem[]>([]);
   const [validationError, setValidationError] = useState<string>("");
   const [detectedSearchType, setDetectedSearchType] = useState<CustomerSearchType | null>(null);
@@ -389,29 +390,29 @@ export default function CustomerFind() {
   const detectSearchType = (query: string): CustomerSearchType => {
     const trimmed = query.trim();
 
-    // Check for customer number pattern (CUST-YYYY-XXXX)
-    if (/^CUST-\d{4}-\d{4}$/i.test(trimmed)) {
+    // Check for customer number pattern (CUST-YYYY-XXXX) - allow partial matches
+    if (/^CUST-/i.test(trimmed)) {
       return "customerNumber";
     }
 
-    // Check for VIN (typically 17 alphanumeric characters)
-    if (/^[A-HJ-NPR-Z0-9]{17}$/i.test(trimmed)) {
+    // Check for VIN (typically 17 alphanumeric characters) - allow partial matches
+    if (/^[A-HJ-NPR-Z0-9]{8,}$/i.test(trimmed)) {
       return "vin";
     }
 
-    // Check for vehicle registration (typically 2 letters, 2 digits, 2 letters, 4 digits)
-    if (/^[A-Z]{2}\d{2}[A-Z]{2}\d{4}$/i.test(trimmed)) {
+    // Check for vehicle registration (typically 2 letters, 2 digits, 2 letters, 4 digits) - allow partial matches
+    if (/^[A-Z]{2}\d{2}/i.test(trimmed) || /^[A-Z]{2}\d{2}[A-Z]{2}/i.test(trimmed)) {
       return "vehicleNumber";
     }
 
-    // Check for email
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    // Check for email - allow partial matches (contains @)
+    if (trimmed.includes("@")) {
       return "email";
     }
 
-    // Check for phone (10 digits, with or without country code)
-    const cleanedPhone = trimmed.replace(/[\s-+]/g, "").replace(/^91/, "");
-    if (/^\d{10}$/.test(cleanedPhone)) {
+    // Check for phone - allow partial numbers (3+ digits)
+    const cleanedPhone = trimmed.replace(/[\s-+().]/g, "").replace(/^91/, "");
+    if (/^\d{3,}$/.test(cleanedPhone)) {
       return "phone";
     }
 
@@ -429,7 +430,15 @@ export default function CustomerFind() {
     setSelectedCustomer(null);
     setShowCreateCustomer(false);
 
-    if (value.trim().length >= 2) {
+    const trimmed = value.trim();
+    const cleanedPhone = trimmed.replace(/[\s-+().]/g, "").replace(/^91/, "");
+    const isPhoneNumber = /^\d{3,}$/.test(cleanedPhone);
+
+    // For phone numbers, start searching after 3 digits
+    // For other searches, start after 2 characters
+    const minLength = isPhoneNumber ? 3 : 2;
+
+    if (trimmed.length >= minLength) {
       const searchType = detectSearchType(value);
       setDetectedSearchType(searchType);
       performSearch(value, searchType);
@@ -501,6 +510,7 @@ export default function CustomerFind() {
     setShowAddVehiclePopup(false);
     setValidationError("");
     resetVehicleForm();
+    setShouldOpenAppointmentAfterVehicleAdd(false);
   }, [resetVehicleForm]);
 
   const closeAppointmentForm = useCallback(() => {
@@ -796,6 +806,7 @@ export default function CustomerFind() {
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicles</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Spent</th>
+                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -849,6 +860,51 @@ export default function CustomerFind() {
                           <span className="text-sm font-semibold text-gray-900">
                             {customer.totalSpent || "₹0"}
                           </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          {(() => {
+                            // Get available vehicles (status !== "Active Job Card")
+                            const availableVehicles = customer.vehicles?.filter(
+                              (v) => v.currentStatus !== "Active Job Card"
+                            ) || [];
+                            
+                            // Check if customer has any available vehicles or no vehicles (can add new)
+                            const canSchedule = availableVehicles.length > 0 || !customer.vehicles || customer.vehicles.length === 0;
+                            
+                            if (!canSchedule) {
+                              return (
+                                <span className="text-xs text-gray-400 italic">No available vehicles</span>
+                              );
+                            }
+                            
+                            return (
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCustomer(customer);
+                                  
+                                  // If customer has available vehicles, use the first one
+                                  if (availableVehicles.length > 0) {
+                                    setSelectedVehicle(availableVehicles[0]);
+                                    initializeAppointmentForm(customer, availableVehicles[0]);
+                                    setShowScheduleAppointment(true);
+                                  } else {
+                                    // No vehicles - allow scheduling for new vehicle
+                                    // First add a vehicle, then schedule
+                                    setShouldOpenAppointmentAfterVehicleAdd(true);
+                                    setShowAddVehiclePopup(true);
+                                    resetVehicleForm();
+                                  }
+                                }}
+                                variant="success"
+                                size="sm"
+                                icon={Calendar}
+                                className="px-3 py-1.5 text-xs"
+                              >
+                                Schedule
+                              </Button>
+                            );
+                          })()}
                         </td>
                       </tr>
                     ))}
@@ -1383,15 +1439,52 @@ export default function CustomerFind() {
 
                       setValidationError("");
 
-                      // TODO: Call API to create vehicle
-                      // For now, show success message
+                      // Create a new vehicle object
+                      const newVehicle: Vehicle = {
+                        id: Date.now(), // Temporary ID
+                        customerId: selectedCustomer.id,
+                        customerNumber: selectedCustomer.customerNumber,
+                        phone: selectedCustomer.phone,
+                        registration: newVehicleForm.registrationNumber || "",
+                        vin: newVehicleForm.vin || "",
+                        customerName: selectedCustomer.name,
+                        customerEmail: selectedCustomer.email || "",
+                        customerAddress: selectedCustomer.address || "",
+                        vehicleMake: newVehicleForm.vehicleBrand || "",
+                        vehicleModel: newVehicleForm.vehicleModel || "",
+                        vehicleYear: newVehicleForm.purchaseDate 
+                          ? new Date(newVehicleForm.purchaseDate).getFullYear()
+                          : new Date().getFullYear(),
+                        vehicleColor: "", // Not in form, can be added later
+                        lastServiceDate: "",
+                        totalServices: 0,
+                        totalSpent: "₹0",
+                        currentStatus: "Available",
+                        activeJobCardId: null,
+                      };
+
+                      // Add vehicle to customer's vehicles array
+                      const updatedCustomer: CustomerWithVehicles = {
+                        ...selectedCustomer,
+                        vehicles: [...(selectedCustomer.vehicles || []), newVehicle],
+                        totalVehicles: (selectedCustomer.vehicles?.length || 0) + 1,
+                      };
+
+                      // Update selected customer
+                      setSelectedCustomer(updatedCustomer);
+                      setSelectedVehicle(newVehicle);
+
                       showToast(`Vehicle added successfully! Brand: ${newVehicleForm.vehicleBrand} | Model: ${newVehicleForm.vehicleModel} | Registration: ${newVehicleForm.registrationNumber}`, "success");
 
                       // Close popup and reset form
                       closeVehicleForm();
 
-                      // Optionally refresh customer data to show new vehicle
-                      // You might want to refetch the customer data here
+                      // If we should open appointment after adding vehicle, do it now
+                      if (shouldOpenAppointmentAfterVehicleAdd) {
+                        initializeAppointmentForm(updatedCustomer, newVehicle);
+                        setShowScheduleAppointment(true);
+                        setShouldOpenAppointmentAfterVehicleAdd(false);
+                      }
                     }}
                     className="flex-1"
                   >
