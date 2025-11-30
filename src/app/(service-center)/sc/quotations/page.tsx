@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import {
   FileText,
   PlusCircle,
@@ -47,7 +47,7 @@ const createEmptyCustomer = (): CustomerWithVehicles => ({
   vehicles: [],
 });
 
-export default function Quotations() {
+function QuotationsContent() {
   const { userInfo } = useRole();
   const searchParams = useSearchParams();
   const fromAppointment = searchParams.get("fromAppointment") === "true";
@@ -426,7 +426,7 @@ export default function Quotations() {
   };
 
   // Reset form
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setForm({
       customerId: "",
       vehicleId: "",
@@ -443,7 +443,9 @@ export default function Quotations() {
       noteTemplateId: "",
     });
     setSelectedCustomer(null);
-  };
+    setCustomerSearchQuery("");
+    clearCustomerSearch();
+  }, [clearCustomerSearch]);
 
   // Filtered quotations
   const filteredQuotations = quotations.filter((q) => {
@@ -659,6 +661,15 @@ export default function Quotations() {
         />
       )}
     </div>
+  );
+}
+
+// Export with Suspense wrapper for useSearchParams
+export default function Quotations() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <QuotationsContent />
+    </Suspense>
   );
 }
 
