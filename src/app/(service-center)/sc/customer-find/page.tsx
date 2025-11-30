@@ -20,6 +20,9 @@ import {
   Wrench,
   FileText,
   AlertTriangle,
+  Upload,
+  Trash2,
+  Image as ImageIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRole } from "@/shared/hooks";
@@ -41,6 +44,7 @@ import type {
 import { getMockServiceHistory } from "@/__mocks__/data/customer-service-history.mock";
 import { getMockComplaints } from "@/__mocks__/data/complaints.mock";
 import { mockCustomers } from "@/__mocks__/data/customers.mock";
+import { serviceTypes } from "@/__mocks__/data/appointments.mock";
 
 // Initial form states (constants for reuse)
 const initialCustomerForm: NewCustomerForm = {
@@ -71,6 +75,17 @@ const initialVehicleForm: Partial<NewVehicleForm> = {
   insuranceCompanyName: "",
 };
 
+// Documentation Files interface
+interface DocumentationFiles {
+  files: File[];
+  urls: string[]; // For preview URLs
+}
+
+const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
+  files: [],
+  urls: [],
+};
+
 const initialAppointmentForm = {
   customerName: "",
   phone: "",
@@ -79,6 +94,35 @@ const initialAppointmentForm = {
   date: new Date().toISOString().split("T")[0],
   time: "",
   duration: "2",
+  // Customer Information
+  customerType: undefined as "B2C" | "B2B" | undefined,
+  // Service Details
+  customerComplaintIssue: undefined as string | undefined,
+  previousServiceHistory: undefined as string | undefined,
+  estimatedServiceTime: undefined as string | undefined,
+  estimatedCost: undefined as string | undefined,
+  odometerReading: undefined as string | undefined,
+  // Documentation
+  customerIdProof: undefined as DocumentationFiles | undefined,
+  vehicleRCCopy: undefined as DocumentationFiles | undefined,
+  warrantyCardServiceBook: undefined as DocumentationFiles | undefined,
+  photosVideos: undefined as DocumentationFiles | undefined,
+  // Operational Details
+  estimatedDeliveryDate: undefined as string | undefined,
+  assignedServiceAdvisor: undefined as string | undefined,
+  assignedTechnician: undefined as string | undefined,
+  pickupDropRequired: undefined as boolean | undefined,
+  pickupAddress: undefined as string | undefined,
+  dropAddress: undefined as string | undefined,
+  preferredCommunicationMode: undefined as "Phone" | "Email" | "SMS" | "WhatsApp" | undefined,
+  // Billing & Payment
+  paymentMethod: undefined as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | undefined,
+  gstRequirement: undefined as boolean | undefined,
+  businessNameForInvoice: undefined as string | undefined,
+  // Post-Service Survey
+  feedbackRating: undefined as number | undefined,
+  nextServiceDueDate: undefined as string | undefined,
+  amcSubscriptionStatus: undefined as string | undefined,
 };
 
 // Helper functions
@@ -229,9 +273,9 @@ const Modal = ({
             <X size={18} strokeWidth={2} />
             <span className="text-sm hidden sm:inline">Back</span>
           </button>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
-            {subtitle && <p className="text-sm text-gray-600 mt-1">{subtitle}</p>}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
+          {subtitle && <p className="text-sm text-gray-600 mt-1">{subtitle}</p>}
           </div>
         </div>
         <button
@@ -259,7 +303,7 @@ const Button = ({
   ...props 
 }: {
   children: React.ReactNode;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   variant?: "primary" | "secondary" | "success" | "warning" | "danger";
   size?: "sm" | "md" | "lg";
   disabled?: boolean;
@@ -283,7 +327,7 @@ const Button = ({
   
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => onClick?.(e)}
       disabled={disabled}
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${disabled ? "opacity-50 cursor-not-allowed disabled:active:scale-100" : ""} ${className}`}
       {...props}
@@ -345,7 +389,9 @@ const InfoCard = ({ icon: Icon, label, value }: { icon: React.ComponentType<{ si
 );
 
 export default function CustomerFind() {
-  const { userRole } = useRole();
+  const { userRole, userInfo } = useRole();
+  const isCallCenter = userRole === "call_center";
+  const isServiceAdvisor = userRole === "service_advisor";
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithVehicles | null>(null);
   const [showCreateCustomer, setShowCreateCustomer] = useState<boolean>(false);
@@ -355,6 +401,7 @@ export default function CustomerFind() {
   const [showVehicleDetails, setShowVehicleDetails] = useState<boolean>(false);
   const [showScheduleAppointment, setShowScheduleAppointment] = useState<boolean>(false);
   const [showComplaints, setShowComplaints] = useState<boolean>(false);
+  const [shouldOpenAppointmentAfterVehicleAdd, setShouldOpenAppointmentAfterVehicleAdd] = useState<boolean>(false);
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryItem[]>([]);
   const [validationError, setValidationError] = useState<string>("");
   const [detectedSearchType, setDetectedSearchType] = useState<CustomerSearchType | null>(null);
@@ -389,29 +436,29 @@ export default function CustomerFind() {
   const detectSearchType = (query: string): CustomerSearchType => {
     const trimmed = query.trim();
 
-    // Check for customer number pattern (CUST-YYYY-XXXX)
-    if (/^CUST-\d{4}-\d{4}$/i.test(trimmed)) {
+    // Check for customer number pattern (CUST-YYYY-XXXX) - allow partial matches
+    if (/^CUST-/i.test(trimmed)) {
       return "customerNumber";
     }
 
-    // Check for VIN (typically 17 alphanumeric characters)
-    if (/^[A-HJ-NPR-Z0-9]{17}$/i.test(trimmed)) {
+    // Check for VIN (typically 17 alphanumeric characters) - allow partial matches
+    if (/^[A-HJ-NPR-Z0-9]{8,}$/i.test(trimmed)) {
       return "vin";
     }
 
-    // Check for vehicle registration (typically 2 letters, 2 digits, 2 letters, 4 digits)
-    if (/^[A-Z]{2}\d{2}[A-Z]{2}\d{4}$/i.test(trimmed)) {
+    // Check for vehicle registration (typically 2 letters, 2 digits, 2 letters, 4 digits) - allow partial matches
+    if (/^[A-Z]{2}\d{2}/i.test(trimmed) || /^[A-Z]{2}\d{2}[A-Z]{2}/i.test(trimmed)) {
       return "vehicleNumber";
     }
 
-    // Check for email
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    // Check for email - allow partial matches (contains @)
+    if (trimmed.includes("@")) {
       return "email";
     }
 
-    // Check for phone (10 digits, with or without country code)
-    const cleanedPhone = trimmed.replace(/[\s-+]/g, "").replace(/^91/, "");
-    if (/^\d{10}$/.test(cleanedPhone)) {
+    // Check for phone - allow partial numbers (3+ digits)
+    const cleanedPhone = trimmed.replace(/[\s-+().]/g, "").replace(/^91/, "");
+    if (/^\d{3,}$/.test(cleanedPhone)) {
       return "phone";
     }
 
@@ -429,7 +476,15 @@ export default function CustomerFind() {
     setSelectedCustomer(null);
     setShowCreateCustomer(false);
 
-    if (value.trim().length >= 2) {
+    const trimmed = value.trim();
+    const cleanedPhone = trimmed.replace(/[\s-+().]/g, "").replace(/^91/, "");
+    const isPhoneNumber = /^\d{3,}$/.test(cleanedPhone);
+
+    // For phone numbers, start searching after 3 digits
+    // For other searches, start after 2 characters
+    const minLength = isPhoneNumber ? 3 : 2;
+
+    if (trimmed.length >= minLength) {
       const searchType = detectSearchType(value);
       setDetectedSearchType(searchType);
       performSearch(value, searchType);
@@ -480,6 +535,7 @@ export default function CustomerFind() {
   // Helper to initialize appointment form with customer and vehicle data
   const initializeAppointmentForm = useCallback((customer: CustomerWithVehicles, vehicle: Vehicle) => {
     setAppointmentForm({
+      ...initialAppointmentForm,
       customerName: customer.name,
       phone: customer.phone,
       vehicle: `${vehicle.vehicleMake} ${vehicle.vehicleModel} (${vehicle.vehicleYear})`,
@@ -488,7 +544,7 @@ export default function CustomerFind() {
       time: "",
       duration: "2",
     });
-  }, [setAppointmentForm]);
+  }, []);
 
   // Modal close handlers
   const closeCustomerForm = useCallback(() => {
@@ -501,12 +557,29 @@ export default function CustomerFind() {
     setShowAddVehiclePopup(false);
     setValidationError("");
     resetVehicleForm();
+    setShouldOpenAppointmentAfterVehicleAdd(false);
   }, [resetVehicleForm]);
 
   const closeAppointmentForm = useCallback(() => {
+    // Clean up file URLs before closing
+    setAppointmentForm((prev) => {
+      if (prev.customerIdProof?.urls) {
+        prev.customerIdProof.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      if (prev.vehicleRCCopy?.urls) {
+        prev.vehicleRCCopy.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      if (prev.warrantyCardServiceBook?.urls) {
+        prev.warrantyCardServiceBook.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      if (prev.photosVideos?.urls) {
+        prev.photosVideos.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      return { ...initialAppointmentForm, date: new Date().toISOString().split("T")[0] };
+    });
     setShowScheduleAppointment(false);
-    resetAppointmentForm();
-  }, [resetAppointmentForm]);
+    setValidationError("");
+  }, []);
 
   // Handle direct create customer button
   const handleDirectCreateCustomer = useCallback((): void => {
@@ -778,12 +851,12 @@ export default function CustomerFind() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 sm:p-6 mb-6">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2.5">
-                <div className="p-1.5 rounded-lg bg-indigo-100">
-                  <Clock className="text-indigo-600" size={18} strokeWidth={2} />
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900">Recent Customers</h2>
-                <span className="text-sm text-gray-500 font-medium">({recentCustomers.length})</span>
+              <div className="p-1.5 rounded-lg bg-indigo-100">
+                <Clock className="text-indigo-600" size={18} strokeWidth={2} />
               </div>
+              <h2 className="text-lg font-semibold text-gray-900">Recent Customers</h2>
+                <span className="text-sm text-gray-500 font-medium">({recentCustomers.length})</span>
+            </div>
             </div>
             <div className="overflow-x-auto">
               <div className="min-w-full">
@@ -796,43 +869,44 @@ export default function CustomerFind() {
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicles</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Spent</th>
+                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {recentCustomers.map((customer) => (
+                {recentCustomers.map((customer) => (
                       <tr
-                        key={customer.id}
-                        onClick={() => handleCustomerSelect(customer)}
+                    key={customer.id}
+                    onClick={() => handleCustomerSelect(customer)}
                         className="hover:bg-indigo-50/50 cursor-pointer transition-colors duration-150 group"
                       >
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white font-semibold text-sm shadow-sm group-hover:shadow-md transition-shadow">
                               {customer.name.charAt(0).toUpperCase()}
-                            </div>
+                        </div>
                             <div>
                               <p className="font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors">{customer.name}</p>
                               {customer.address && (
                                 <p className="text-xs text-gray-500 truncate max-w-[200px] mt-0.5">{customer.address}</p>
                               )}
-                            </div>
-                          </div>
+                      </div>
+                    </div>
                         </td>
                         <td className="py-4 px-4">
                           <span className="font-mono text-sm text-gray-700 font-medium">{customer.customerNumber}</span>
                         </td>
                         <td className="py-4 px-4">
-                          <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5">
                             <Phone size={14} className="text-gray-400" strokeWidth={2} />
                             <span className="text-sm text-gray-700">{customer.phone}</span>
-                          </div>
+                      </div>
                         </td>
                         <td className="py-4 px-4">
                           {customer.email ? (
-                            <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5">
                               <Mail size={14} className="text-gray-400" strokeWidth={2} />
                               <span className="text-sm text-gray-700 truncate max-w-[180px]">{customer.email}</span>
-                            </div>
+                      </div>
                           ) : (
                             <span className="text-sm text-gray-400">—</span>
                           )}
@@ -843,12 +917,57 @@ export default function CustomerFind() {
                             <span className="text-sm text-gray-700 font-medium">
                               {customer.totalVehicles || 0}
                             </span>
-                          </div>
+                    </div>
                         </td>
                         <td className="py-4 px-4">
                           <span className="text-sm font-semibold text-gray-900">
                             {customer.totalSpent || "₹0"}
                           </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          {(() => {
+                            // Get available vehicles (status !== "Active Job Card")
+                            const availableVehicles = customer.vehicles?.filter(
+                              (v) => v.currentStatus !== "Active Job Card"
+                            ) || [];
+                            
+                            // Check if customer has any available vehicles or no vehicles (can add new)
+                            const canSchedule = availableVehicles.length > 0 || !customer.vehicles || customer.vehicles.length === 0;
+                            
+                            if (!canSchedule) {
+                              return (
+                                <span className="text-xs text-gray-400 italic">No available vehicles</span>
+                              );
+                            }
+                            
+                            return (
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCustomer(customer);
+                                  
+                                  // If customer has available vehicles, use the first one
+                                  if (availableVehicles.length > 0) {
+                                    setSelectedVehicle(availableVehicles[0]);
+                                    initializeAppointmentForm(customer, availableVehicles[0]);
+                                    setShowScheduleAppointment(true);
+                                  } else {
+                                    // No vehicles - allow scheduling for new vehicle
+                                    // First add a vehicle, then schedule
+                                    setShouldOpenAppointmentAfterVehicleAdd(true);
+                                    setShowAddVehiclePopup(true);
+                                    resetVehicleForm();
+                                  }
+                                }}
+                                variant="success"
+                                size="sm"
+                                icon={Calendar}
+                                className="px-3 py-1.5 text-xs"
+                              >
+                                Schedule
+                              </Button>
+                            );
+                          })()}
                         </td>
                       </tr>
                     ))}
@@ -1044,7 +1163,7 @@ export default function CustomerFind() {
             }}
             maxWidth="max-w-6xl"
           >
-            <div className="space-y-6">
+          <div className="space-y-6">
             {/* Customer Info Card */}
             <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
               <div className="flex items-start justify-between mb-6">
@@ -1215,7 +1334,7 @@ export default function CustomerFind() {
                 </button>
               </div>
             )}
-            </div>
+          </div>
           </Modal>
         )}
 
@@ -1383,15 +1502,52 @@ export default function CustomerFind() {
 
                       setValidationError("");
 
-                      // TODO: Call API to create vehicle
-                      // For now, show success message
+                      // Create a new vehicle object
+                      const newVehicle: Vehicle = {
+                        id: Date.now(), // Temporary ID
+                        customerId: selectedCustomer.id,
+                        customerNumber: selectedCustomer.customerNumber,
+                        phone: selectedCustomer.phone,
+                        registration: newVehicleForm.registrationNumber || "",
+                        vin: newVehicleForm.vin || "",
+                        customerName: selectedCustomer.name,
+                        customerEmail: selectedCustomer.email || "",
+                        customerAddress: selectedCustomer.address || "",
+                        vehicleMake: newVehicleForm.vehicleBrand || "",
+                        vehicleModel: newVehicleForm.vehicleModel || "",
+                        vehicleYear: newVehicleForm.purchaseDate 
+                          ? new Date(newVehicleForm.purchaseDate).getFullYear()
+                          : new Date().getFullYear(),
+                        vehicleColor: "", // Not in form, can be added later
+                        lastServiceDate: "",
+                        totalServices: 0,
+                        totalSpent: "₹0",
+                        currentStatus: "Available",
+                        activeJobCardId: null,
+                      };
+
+                      // Add vehicle to customer's vehicles array
+                      const updatedCustomer: CustomerWithVehicles = {
+                        ...selectedCustomer,
+                        vehicles: [...(selectedCustomer.vehicles || []), newVehicle],
+                        totalVehicles: (selectedCustomer.vehicles?.length || 0) + 1,
+                      };
+
+                      // Update selected customer
+                      setSelectedCustomer(updatedCustomer);
+                      setSelectedVehicle(newVehicle);
+
                       showToast(`Vehicle added successfully! Brand: ${newVehicleForm.vehicleBrand} | Model: ${newVehicleForm.vehicleModel} | Registration: ${newVehicleForm.registrationNumber}`, "success");
 
                       // Close popup and reset form
                       closeVehicleForm();
 
-                      // Optionally refresh customer data to show new vehicle
-                      // You might want to refetch the customer data here
+                      // If we should open appointment after adding vehicle, do it now
+                      if (shouldOpenAppointmentAfterVehicleAdd) {
+                        initializeAppointmentForm(updatedCustomer, newVehicle);
+                        setShowScheduleAppointment(true);
+                        setShouldOpenAppointmentAfterVehicleAdd(false);
+                      }
                     }}
                     className="flex-1"
                   >
@@ -1562,7 +1718,7 @@ export default function CustomerFind() {
 
         {/* Schedule Appointment Modal */}
         {showScheduleAppointment && selectedVehicle && selectedCustomer && (
-          <Modal title="Schedule Appointment" onClose={closeAppointmentForm} maxWidth="max-w-2xl">
+          <Modal title="Schedule Appointment" onClose={closeAppointmentForm} maxWidth="2xl">
             <div className="space-y-6">
                 {validationError && <ErrorAlert message={validationError} />}
                 <CustomerInfoCard customer={selectedCustomer} title="Customer Information (Pre-filled)" />
@@ -1585,13 +1741,40 @@ export default function CustomerFind() {
                     maxLength={10}
                     readOnly
                   />
-                  <FormInput
-                    label="Vehicle"
-                    required
-                    value={appointmentForm.vehicle}
-                    onChange={() => {}}
-                    readOnly
-                  />
+                  <div>
+                    {selectedCustomer && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 1 ? (
+                      <FormSelect
+                        label="Vehicle"
+                        required
+                        value={appointmentForm.vehicle}
+                        onChange={(e) => setAppointmentForm({ ...appointmentForm, vehicle: e.target.value })}
+                        placeholder="Select vehicle"
+                        options={selectedCustomer.vehicles.map((v) => ({
+                          value: `${v.vehicleMake} ${v.vehicleModel} (${v.vehicleYear})`,
+                          label: `${v.vehicleMake} ${v.vehicleModel} (${v.vehicleYear})${v.registration ? ` - ${v.registration}` : ""}`,
+                        }))}
+                      />
+                    ) : (
+                      <FormInput
+                        label="Vehicle"
+                        required
+                        value={appointmentForm.vehicle}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    )}
+                    {selectedCustomer && appointmentForm.vehicle && (() => {
+                      const selectedVehicle = selectedCustomer.vehicles?.find((v) => 
+                        `${v.vehicleMake} ${v.vehicleModel} (${v.vehicleYear})` === appointmentForm.vehicle
+                      );
+                      return selectedVehicle?.lastServiceCenterName ? (
+                        <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                          <Building2 size={12} />
+                          Last serviced at: {selectedVehicle.lastServiceCenterName}
+                        </p>
+                      ) : null;
+                    })()}
+                  </div>
 
                   <FormSelect
                     label="Service Type"
@@ -1599,18 +1782,230 @@ export default function CustomerFind() {
                     value={appointmentForm.serviceType}
                     onChange={(e) => setAppointmentForm({ ...appointmentForm, serviceType: e.target.value })}
                     placeholder="Select service type"
-                    options={[
-                      { value: "Routine Maintenance", label: "Routine Maintenance" },
-                      { value: "AC Repair", label: "AC Repair" },
-                      { value: "Oil Change", label: "Oil Change" },
-                      { value: "Battery Replacement", label: "Battery Replacement" },
-                      { value: "Tire Service", label: "Tire Service" },
-                      { value: "Brake Service", label: "Brake Service" },
-                      { value: "Other", label: "Other" },
-                    ]}
+                    options={serviceTypes.map((type) => ({ value: type, label: type }))}
                   />
 
+                  {/* Customer Type (Call Center, Service Advisor) */}
+                  {(isCallCenter || isServiceAdvisor) && (
+                    <FormSelect
+                      label="Customer Type"
+                      value={appointmentForm.customerType || ""}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, customerType: e.target.value as "B2C" | "B2B" | undefined })}
+                      placeholder="Select customer type"
+                    options={[
+                        { value: "B2C", label: "B2C" },
+                        { value: "B2B", label: "B2B" },
+                      ]}
+                    />
+                  )}
+
+                  {/* Service Details Section (Call Center, Service Advisor) */}
+                  {(isCallCenter || isServiceAdvisor) && (
+                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <FileText className="text-purple-600" size={20} />
+                        Service Details
+                      </h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Customer Complaint / Issue Description {isCallCenter && <span className="text-red-500">*</span>}
+                          </label>
+                          <textarea
+                            value={appointmentForm.customerComplaintIssue || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, customerComplaintIssue: e.target.value })}
+                            rows={3}
+                            placeholder="Describe the customer complaint or issue..."
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
+                            required={isCallCenter}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Previous Service History
+                          </label>
+                          <textarea
+                            value={appointmentForm.previousServiceHistory || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, previousServiceHistory: e.target.value })}
+                            rows={3}
+                            placeholder="Enter previous service history..."
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
+                          />
+                        </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <FormInput
+                            label="Estimated Service Time"
+                            value={appointmentForm.estimatedServiceTime || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, estimatedServiceTime: e.target.value })}
+                            placeholder="e.g., 2 hours"
+                          />
+                          <FormInput
+                            label="Estimated Cost"
+                            type="number"
+                            value={appointmentForm.estimatedCost || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, estimatedCost: e.target.value })}
+                            placeholder="Enter estimated cost"
+                          />
+                        </div>
+                        {/* Odometer Reading - Only for Service Advisor */}
+                        {isServiceAdvisor && (
+                          <FormInput
+                            label="Odometer Reading"
+                            type="number"
+                            value={appointmentForm.odometerReading || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, odometerReading: e.target.value })}
+                            placeholder="Enter odometer reading"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Documentation Section (Call Center, Service Advisor) */}
+                  {(isCallCenter || isServiceAdvisor) && (
+                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <Upload className="text-amber-600" size={20} />
+                        Documentation
+                      </h3>
+                      <div className="space-y-4">
+                        {/* Customer ID Proof */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Customer ID Proof
+                          </label>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              const urls = files.map((file) => URL.createObjectURL(file));
+                              setAppointmentForm({
+                                ...appointmentForm,
+                                customerIdProof: {
+                                  files,
+                                  urls,
+                                },
+                              });
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                          />
+                          {appointmentForm.customerIdProof?.files && appointmentForm.customerIdProof.files.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {appointmentForm.customerIdProof.files.map((file, index) => (
+                                <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                                  {file.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Vehicle RC Copy */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Vehicle RC Copy
+                          </label>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              const urls = files.map((file) => URL.createObjectURL(file));
+                              setAppointmentForm({
+                                ...appointmentForm,
+                                vehicleRCCopy: {
+                                  files,
+                                  urls,
+                                },
+                              });
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                          />
+                          {appointmentForm.vehicleRCCopy?.files && appointmentForm.vehicleRCCopy.files.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {appointmentForm.vehicleRCCopy.files.map((file, index) => (
+                                <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                                  {file.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Warranty Card / Service Book */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Warranty Card / Service Book
+                          </label>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              const urls = files.map((file) => URL.createObjectURL(file));
+                              setAppointmentForm({
+                                ...appointmentForm,
+                                warrantyCardServiceBook: {
+                                  files,
+                                  urls,
+                                },
+                              });
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                          />
+                          {appointmentForm.warrantyCardServiceBook?.files && appointmentForm.warrantyCardServiceBook.files.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {appointmentForm.warrantyCardServiceBook.files.map((file, index) => (
+                                <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                                  {file.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Photos/Videos of Vehicle at Drop-off */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Photos/Videos of Vehicle at Drop-off
+                          </label>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,video/*"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              const urls = files.map((file) => URL.createObjectURL(file));
+                              setAppointmentForm({
+                                ...appointmentForm,
+                                photosVideos: {
+                                  files,
+                                  urls,
+                                },
+                              });
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                          />
+                          {appointmentForm.photosVideos?.files && appointmentForm.photosVideos.files.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {appointmentForm.photosVideos.files.map((file, index) => (
+                                <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                                  {file.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
                     <FormInput
                       label="Date"
                       required
@@ -1620,6 +2015,7 @@ export default function CustomerFind() {
                       // @ts-ignore
                       min={new Date().toISOString().split("T")[0]}
                     />
+                    </div>
                     <FormInput
                       label="Time"
                       required
@@ -1629,18 +2025,186 @@ export default function CustomerFind() {
                     />
                   </div>
 
+                  {/* Operational Details Section */}
+                  {(isCallCenter || isServiceAdvisor) && (
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <Clock className="text-blue-600" size={20} />
+                        Operational Details
+                      </h3>
+                      <div className="space-y-4">
+                        {/* Estimated Delivery Date (Service Advisor) */}
+                        {isServiceAdvisor && (
+                          <FormInput
+                            label="Estimated Delivery Date"
+                            type="date"
+                            value={appointmentForm.estimatedDeliveryDate || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, estimatedDeliveryDate: e.target.value })}
+                          />
+                        )}
+
+                        {/* Assigned Service Advisor (Call Center, Service Advisor) */}
+                        {(isCallCenter || isServiceAdvisor) && (
+                          <FormInput
+                            label="Assigned Service Advisor"
+                            value={appointmentForm.assignedServiceAdvisor || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, assignedServiceAdvisor: e.target.value })}
+                            placeholder="Enter service advisor name"
+                          />
+                        )}
+
+                        {/* Assigned Technician (Service Advisor) */}
+                        {isServiceAdvisor && (
+                          <FormInput
+                            label="Assigned Technician"
+                            value={appointmentForm.assignedTechnician || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, assignedTechnician: e.target.value })}
+                            placeholder="Enter technician name"
+                          />
+                        )}
+
+                        {/* Pickup / Drop Required */}
+                        {(isCallCenter || isServiceAdvisor) && (
+                          <div>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={appointmentForm.pickupDropRequired || false}
+                                onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupDropRequired: e.target.checked })}
+                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                              />
+                              <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
+                            </label>
+                          </div>
+                        )}
+
+                        {/* Pickup Address */}
+                        {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
+                          <FormInput
+                            label="Pickup Address"
+                            value={appointmentForm.pickupAddress || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupAddress: e.target.value })}
+                            placeholder="Enter pickup address"
+                          />
+                        )}
+
+                        {/* Drop Address */}
+                        {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
+                          <FormInput
+                            label="Drop Address"
+                            value={appointmentForm.dropAddress || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })}
+                            placeholder="Enter drop address"
+                          />
+                        )}
+
+                        {/* Preferred Communication Mode */}
+                        {(isCallCenter || isServiceAdvisor) && (
+                          <FormSelect
+                            label="Preferred Communication Mode"
+                            value={appointmentForm.preferredCommunicationMode || ""}
+                            onChange={(e) => setAppointmentForm({ ...appointmentForm, preferredCommunicationMode: e.target.value as "Phone" | "Email" | "SMS" | "WhatsApp" | undefined })}
+                            placeholder="Select communication mode"
+                            options={[
+                              { value: "Phone", label: "Phone" },
+                              { value: "Email", label: "Email" },
+                              { value: "SMS", label: "SMS" },
+                              { value: "WhatsApp", label: "WhatsApp" },
+                            ]}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Post-Service Survey Section */}
+                  {(isCallCenter || isServiceAdvisor) && (
+                    <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <CheckCircle className="text-teal-600" size={20} />
+                        Post-Service Survey
+                      </h3>
+                      <div className="space-y-4">
+                        {/* Feedback Rating */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Feedback Rating
+                          </label>
+                          <div className="flex items-center gap-2">
+                            {[1, 2, 3, 4, 5].map((rating) => (
+                              <button
+                                key={rating}
+                                type="button"
+                                onClick={() => setAppointmentForm({ ...appointmentForm, feedbackRating: rating })}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
+                                  appointmentForm.feedbackRating === rating
+                                    ? "bg-teal-600 text-white scale-110"
+                                    : "bg-gray-200 text-gray-600 hover:bg-teal-100 hover:text-teal-700"
+                                }`}
+                              >
+                                {rating}
+                              </button>
+                            ))}
+                            {appointmentForm.feedbackRating && (
+                              <span className="text-sm text-gray-600 ml-2">
+                                {appointmentForm.feedbackRating === 5
+                                  ? "Excellent"
+                                  : appointmentForm.feedbackRating === 4
+                                  ? "Very Good"
+                                  : appointmentForm.feedbackRating === 3
+                                  ? "Good"
+                                  : appointmentForm.feedbackRating === 2
+                                  ? "Fair"
+                                  : "Poor"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Next Service Due Date */}
+                        <FormInput
+                          label="Next Service Due Date"
+                          type="date"
+                          value={appointmentForm.nextServiceDueDate || ""}
+                          onChange={(e) => setAppointmentForm({ ...appointmentForm, nextServiceDueDate: e.target.value })}
+                        />
+
+                        {/* AMC / Subscription Status */}
+                        <FormSelect
+                          label="AMC / Subscription Status"
+                          value={appointmentForm.amcSubscriptionStatus || ""}
+                          onChange={(e) => setAppointmentForm({ ...appointmentForm, amcSubscriptionStatus: e.target.value })}
+                          placeholder="Select AMC/Subscription status"
+                          options={[
+                            { value: "Active", label: "Active" },
+                            { value: "Expired", label: "Expired" },
+                            { value: "Not Applicable", label: "Not Applicable" },
+                            { value: "Pending Renewal", label: "Pending Renewal" },
+                          ]}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3 pt-4">
-                  <Button onClick={closeAppointmentForm} variant="secondary" className="flex-1">
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={closeAppointmentForm}
+                    className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
+                  >
                     Cancel
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     onClick={() => {
                       // Validate form
                       if (!appointmentForm.customerName || !appointmentForm.phone || !appointmentForm.vehicle || !appointmentForm.serviceType || !appointmentForm.date || !appointmentForm.time) {
                         setValidationError("Please fill all required fields");
+                        return;
+                      }
+
+                      if (isCallCenter && !appointmentForm.customerComplaintIssue) {
+                        setValidationError("Customer Complaint / Issue Description is required");
                         return;
                       }
 
@@ -1651,24 +2215,8 @@ export default function CustomerFind() {
 
                       setValidationError("");
 
-                      // Get existing appointments from localStorage
-                      const existingAppointments = safeStorage.getItem<Array<{
-                        id: number;
-                        customerName: string;
-                        vehicle: string;
-                        phone: string;
-                        serviceType: string;
-                        date: string;
-                        time: string;
-                        duration: string;
-                        status: string;
-                      }>>("appointments", []);
-
-                      // Create new appointment
-                      const newAppointment = {
-                        id: existingAppointments.length > 0 
-                          ? Math.max(...existingAppointments.map((a) => a.id)) + 1 
-                          : 1,
+                      // Clean up file URLs before saving
+                      const appointmentData: any = {
                         customerName: appointmentForm.customerName,
                         vehicle: appointmentForm.vehicle,
                         phone: appointmentForm.phone,
@@ -1677,21 +2225,72 @@ export default function CustomerFind() {
                         time: formatTime(appointmentForm.time),
                         duration: `${appointmentForm.duration} hours`,
                         status: "Confirmed",
+                        customerType: appointmentForm.customerType,
+                        customerComplaintIssue: appointmentForm.customerComplaintIssue,
+                        previousServiceHistory: appointmentForm.previousServiceHistory,
+                        estimatedServiceTime: appointmentForm.estimatedServiceTime,
+                        estimatedCost: appointmentForm.estimatedCost,
+                        odometerReading: appointmentForm.odometerReading,
+                        estimatedDeliveryDate: appointmentForm.estimatedDeliveryDate,
+                        assignedServiceAdvisor: appointmentForm.assignedServiceAdvisor,
+                        assignedTechnician: appointmentForm.assignedTechnician,
+                        pickupDropRequired: appointmentForm.pickupDropRequired,
+                        pickupAddress: appointmentForm.pickupAddress,
+                        dropAddress: appointmentForm.dropAddress,
+                        preferredCommunicationMode: appointmentForm.preferredCommunicationMode,
+                        paymentMethod: appointmentForm.paymentMethod,
+                        gstRequirement: appointmentForm.gstRequirement,
+                        businessNameForInvoice: appointmentForm.businessNameForInvoice,
+                        feedbackRating: appointmentForm.feedbackRating,
+                        nextServiceDueDate: appointmentForm.nextServiceDueDate,
+                        amcSubscriptionStatus: appointmentForm.amcSubscriptionStatus,
+                        // Store file counts and names (in real app, these would be uploaded)
+                        documentationFiles: {
+                          customerIdProof: appointmentForm.customerIdProof?.files.length || 0,
+                          vehicleRCCopy: appointmentForm.vehicleRCCopy?.files.length || 0,
+                          warrantyCardServiceBook: appointmentForm.warrantyCardServiceBook?.files.length || 0,
+                          photosVideos: appointmentForm.photosVideos?.files.length || 0,
+                        },
+                      };
+
+                      // Get existing appointments from localStorage
+                      const existingAppointments = safeStorage.getItem<Array<any>>("appointments", []);
+
+                      // Create new appointment
+                      const newAppointment = {
+                        id: existingAppointments.length > 0 
+                          ? Math.max(...existingAppointments.map((a) => a.id)) + 1 
+                          : 1,
+                        ...appointmentData,
                       };
 
                       // Save to localStorage
                       const updatedAppointments = [...existingAppointments, newAppointment];
                       safeStorage.setItem("appointments", updatedAppointments);
 
+                      // Clean up file URLs
+                      if (appointmentForm.customerIdProof?.urls) {
+                        appointmentForm.customerIdProof.urls.forEach((url) => URL.revokeObjectURL(url));
+                      }
+                      if (appointmentForm.vehicleRCCopy?.urls) {
+                        appointmentForm.vehicleRCCopy.urls.forEach((url) => URL.revokeObjectURL(url));
+                      }
+                      if (appointmentForm.warrantyCardServiceBook?.urls) {
+                        appointmentForm.warrantyCardServiceBook.urls.forEach((url) => URL.revokeObjectURL(url));
+                      }
+                      if (appointmentForm.photosVideos?.urls) {
+                        appointmentForm.photosVideos.urls.forEach((url) => URL.revokeObjectURL(url));
+                      }
+
                       showToast(`Appointment scheduled successfully! Customer: ${appointmentForm.customerName} | Vehicle: ${appointmentForm.vehicle} | Service: ${appointmentForm.serviceType} | Date: ${appointmentForm.date} | Time: ${formatTime(appointmentForm.time)}`, "success");
 
                       // Close modal and reset form
                       closeAppointmentForm();
                     }}
-                    className="flex-1"
+                    className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
                   >
                     Schedule Appointment
-                  </Button>
+                  </button>
                 </div>
             </div>
           </Modal>

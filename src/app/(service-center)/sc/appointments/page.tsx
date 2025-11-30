@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Calendar, Clock, User, Car, PlusCircle, X, Edit, Phone, CheckCircle, AlertCircle, Eye, MapPin, Building2, AlertTriangle, Upload, FileText, Image as ImageIcon, Trash2 } from "lucide-react";
 import { useCustomerSearch } from "../../../../hooks/api";
 import { useRole } from "@/shared/hooks";
+import { useRouter } from "next/navigation";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 
 // ==================== Types ====================
@@ -19,6 +20,24 @@ interface Appointment {
   status: string;
   serviceCenterId?: number;
   serviceCenterName?: string;
+  // Customer Information
+  customerType?: "B2C" | "B2B";
+  // Operational Details
+  estimatedDeliveryDate?: string;
+  assignedServiceAdvisor?: string;
+  assignedTechnician?: string;
+  pickupDropRequired?: boolean;
+  pickupAddress?: string;
+  dropAddress?: string;
+  preferredCommunicationMode?: "Phone" | "Email" | "SMS" | "WhatsApp";
+  // Billing & Payment
+  paymentMethod?: "Cash" | "Card" | "UPI" | "Online" | "Cheque";
+  gstRequirement?: boolean;
+  businessNameForInvoice?: string;
+  // Post-Service Survey
+  feedbackRating?: number;
+  nextServiceDueDate?: string;
+  amcSubscriptionStatus?: string;
 }
 
 interface AppointmentForm {
@@ -30,6 +49,35 @@ interface AppointmentForm {
   time: string;
   duration: string;
   serviceCenterId?: number;
+  // Customer Information
+  customerType?: "B2C" | "B2B";
+  // Service Details
+  customerComplaintIssue?: string;
+  previousServiceHistory?: string;
+  estimatedServiceTime?: string;
+  estimatedCost?: string;
+  odometerReading?: string;
+  // Documentation
+  customerIdProof?: DocumentationFiles;
+  vehicleRCCopy?: DocumentationFiles;
+  warrantyCardServiceBook?: DocumentationFiles;
+  photosVideos?: DocumentationFiles;
+  // Operational Details
+  estimatedDeliveryDate?: string;
+  assignedServiceAdvisor?: string;
+  assignedTechnician?: string;
+  pickupDropRequired?: boolean;
+  pickupAddress?: string;
+  dropAddress?: string;
+  preferredCommunicationMode?: "Phone" | "Email" | "SMS" | "WhatsApp";
+  // Billing & Payment
+  paymentMethod?: "Cash" | "Card" | "UPI" | "Online" | "Cheque";
+  gstRequirement?: boolean;
+  businessNameForInvoice?: string;
+  // Post-Service Survey
+  feedbackRating?: number;
+  nextServiceDueDate?: string;
+  amcSubscriptionStatus?: string;
 }
 
 interface Complaint {
@@ -88,6 +136,20 @@ interface ServiceIntakeForm {
   estimatedServiceTime: string;
   estimatedCost: string;
   odometerReading: string;
+  
+  // Operational Details (Job Card)
+  estimatedDeliveryDate: string;
+  assignedServiceAdvisor: string;
+  assignedTechnician: string;
+  pickupDropRequired: boolean;
+  pickupAddress: string;
+  dropAddress: string;
+  preferredCommunicationMode: "Phone" | "Email" | "SMS" | "WhatsApp" | "";
+  
+  // Billing & Payment
+  paymentMethod: "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "";
+  gstRequirement: boolean;
+  businessNameForInvoice: string;
 }
 
 type ToastType = "success" | "error";
@@ -104,6 +166,34 @@ const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   time: "",
   duration: "2",
   serviceCenterId: undefined,
+  customerType: undefined,
+  // Service Details
+  customerComplaintIssue: undefined,
+  previousServiceHistory: undefined,
+  estimatedServiceTime: undefined,
+  estimatedCost: undefined,
+  odometerReading: undefined,
+  // Documentation
+  customerIdProof: undefined,
+  vehicleRCCopy: undefined,
+  warrantyCardServiceBook: undefined,
+  photosVideos: undefined,
+  // Operational Details
+  estimatedDeliveryDate: undefined,
+  assignedServiceAdvisor: undefined,
+  assignedTechnician: undefined,
+  pickupDropRequired: undefined,
+  pickupAddress: undefined,
+  dropAddress: undefined,
+  preferredCommunicationMode: undefined,
+  // Billing & Payment
+  paymentMethod: undefined,
+  gstRequirement: undefined,
+  businessNameForInvoice: undefined,
+  // Post-Service Survey
+  feedbackRating: undefined,
+  nextServiceDueDate: undefined,
+  amcSubscriptionStatus: undefined,
 };
 
 const INITIAL_COMPLAINT_FORM: ComplaintForm = {
@@ -149,6 +239,20 @@ const INITIAL_SERVICE_INTAKE_FORM: ServiceIntakeForm = {
   estimatedServiceTime: "",
   estimatedCost: "",
   odometerReading: "",
+  
+  // Operational Details (Job Card)
+  estimatedDeliveryDate: "",
+  assignedServiceAdvisor: "",
+  assignedTechnician: "",
+  pickupDropRequired: false,
+  pickupAddress: "",
+  dropAddress: "",
+  preferredCommunicationMode: "",
+  
+  // Billing & Payment
+  paymentMethod: "",
+  gstRequirement: false,
+  businessNameForInvoice: "",
 };
 
 import { defaultAppointments, serviceTypes, type ServiceType } from "@/__mocks__/data/appointments.mock";
@@ -557,7 +661,23 @@ export default function Appointments() {
   }, []);
 
   const resetAppointmentForm = useCallback(() => {
-    setAppointmentForm(INITIAL_APPOINTMENT_FORM);
+    // Clean up object URLs before resetting form
+    setAppointmentForm((prev) => {
+      // Revoke all object URLs to prevent memory leaks
+      if (prev.customerIdProof?.urls) {
+        prev.customerIdProof.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      if (prev.vehicleRCCopy?.urls) {
+        prev.vehicleRCCopy.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      if (prev.warrantyCardServiceBook?.urls) {
+        prev.warrantyCardServiceBook.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      if (prev.photosVideos?.urls) {
+        prev.photosVideos.urls.forEach((url) => URL.revokeObjectURL(url));
+      }
+      return INITIAL_APPOINTMENT_FORM;
+    });
     setCustomerSearchQuery("");
     setSelectedCustomer(null);
     setShowCustomerDropdown(false);
@@ -949,8 +1069,11 @@ export default function Appointments() {
     []
   );
 
-  // Service Intake Handlers
-  const handleServiceIntakeSubmit = useCallback(() => {
+  // Router for navigation
+  const router = useRouter();
+
+  // Service Intake Handlers - Convert to Estimation/Quotation
+  const handleConvertToQuotation = useCallback(() => {
     if (!selectedAppointment) return;
 
     // Basic validation
@@ -959,20 +1082,38 @@ export default function Appointments() {
       return;
     }
 
-    // Here you would typically save the service intake data and upload files
-    // For now, we'll just show a success message
-    const totalFiles = 
-      serviceIntakeForm.customerIdProof.files.length +
-      serviceIntakeForm.vehicleRCCopy.files.length +
-      serviceIntakeForm.warrantyCardServiceBook.files.length +
-      serviceIntakeForm.photosVideos.files.length;
+    // Save service intake data to localStorage for quotation page to use
+    const serviceIntakeData = {
+      appointmentId: selectedAppointment.id,
+      customerName: selectedAppointment.customerName,
+      phone: selectedAppointment.phone,
+      vehicle: selectedAppointment.vehicle,
+      serviceIntakeForm: {
+        ...serviceIntakeForm,
+        // Convert File objects to URLs for storage (in real app, these would be uploaded first)
+        customerIdProof: {
+          files: [],
+          urls: serviceIntakeForm.customerIdProof.urls,
+        },
+        vehicleRCCopy: {
+          files: [],
+          urls: serviceIntakeForm.vehicleRCCopy.urls,
+        },
+        warrantyCardServiceBook: {
+          files: [],
+          urls: serviceIntakeForm.warrantyCardServiceBook.urls,
+        },
+        photosVideos: {
+          files: [],
+          urls: serviceIntakeForm.photosVideos.urls,
+        },
+      },
+    };
+
+    // Store service intake data for quotation page
+    safeStorage.setItem("pendingQuotationFromAppointment", serviceIntakeData);
     
-    showToast(
-      `Service intake form submitted successfully! ${totalFiles > 0 ? `${totalFiles} file(s) uploaded.` : ""}`,
-      "success"
-    );
-    
-    // Update appointment status to indicate customer has arrived
+    // Update appointment status to indicate customer has arrived and intake is done
     const updatedAppointments = appointments.map((apt) =>
       apt.id === selectedAppointment.id
         ? { ...apt, status: "In Progress" }
@@ -981,10 +1122,12 @@ export default function Appointments() {
     setAppointments(updatedAppointments);
     safeStorage.setItem("appointments", updatedAppointments);
     
-    // Reset form after submission
-    setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
-    setCustomerArrivalStatus(null);
-  }, [selectedAppointment, serviceIntakeForm, appointments, showToast]);
+    // Navigate to quotations page
+    router.push("/sc/quotations?fromAppointment=true");
+    
+    // Close the appointment detail modal
+    closeDetailModal();
+  }, [selectedAppointment, serviceIntakeForm, appointments, router, closeDetailModal]);
 
   // ==================== Effects ====================
   // Watch for customer search results to populate vehicle details
@@ -1209,13 +1352,27 @@ export default function Appointments() {
               readOnly
             />
             <div>
-              <FormInput
-                label="Vehicle"
-                required
-                value={appointmentForm.vehicle}
-                onChange={() => {}}
-                readOnly
-              />
+              {selectedCustomer && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 1 ? (
+                <FormSelect
+                  label="Vehicle"
+                  required
+                  value={appointmentForm.vehicle}
+                  onChange={(e) => setAppointmentForm({ ...appointmentForm, vehicle: e.target.value })}
+                  placeholder="Select vehicle"
+                  options={selectedCustomer.vehicles.map((v) => ({
+                    value: formatVehicleString(v),
+                    label: `${formatVehicleString(v)}${v.registration ? ` - ${v.registration}` : ""}`,
+                  }))}
+                />
+              ) : (
+                <FormInput
+                  label="Vehicle"
+                  required
+                  value={appointmentForm.vehicle}
+                  onChange={() => {}}
+                  readOnly
+                />
+              )}
               {selectedCustomer && appointmentForm.vehicle && (() => {
                 const selectedVehicle = selectedCustomer.vehicles?.find((v) => 
                   formatVehicleString(v) === appointmentForm.vehicle
@@ -1237,6 +1394,225 @@ export default function Appointments() {
               placeholder="Select service type"
               options={SERVICE_TYPES.map((type) => ({ value: type, label: type }))}
             />
+
+            {/* Customer Type (Call Center, Service Advisor, Inventory Manager) */}
+            {(isCallCenter || isServiceAdvisor) && (
+              <FormSelect
+                label="Customer Type"
+                value={appointmentForm.customerType || ""}
+                onChange={(e) => setAppointmentForm({ ...appointmentForm, customerType: e.target.value as "B2C" | "B2B" | undefined })}
+                placeholder="Select customer type"
+                options={[
+                  { value: "B2C", label: "B2C" },
+                  { value: "B2B", label: "B2B" },
+                ]}
+              />
+            )}
+
+            {/* Service Details Section (Call Center, Service Advisor) */}
+            {(isCallCenter || isServiceAdvisor) && (
+              <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <FileText className="text-purple-600" size={20} />
+                  Service Details
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Customer Complaint / Issue Description <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={appointmentForm.customerComplaintIssue || ""}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, customerComplaintIssue: e.target.value })}
+                      rows={3}
+                      placeholder="Describe the customer complaint or issue..."
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
+                      required={isCallCenter}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Previous Service History
+                    </label>
+                    <textarea
+                      value={appointmentForm.previousServiceHistory || ""}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, previousServiceHistory: e.target.value })}
+                      rows={3}
+                      placeholder="Enter previous service history..."
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormInput
+                      label="Estimated Service Time"
+                      value={appointmentForm.estimatedServiceTime || ""}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, estimatedServiceTime: e.target.value })}
+                      placeholder="e.g., 2 hours"
+                    />
+                    <FormInput
+                      label="Estimated Cost"
+                      type="number"
+                      value={appointmentForm.estimatedCost || ""}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, estimatedCost: e.target.value })}
+                      placeholder="Enter estimated cost"
+                    />
+                  </div>
+                  {/* Odometer Reading - Only for Service Advisor, not Call Center */}
+                  {isServiceAdvisor && (
+                    <FormInput
+                      label="Odometer Reading"
+                      type="number"
+                      value={appointmentForm.odometerReading || ""}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, odometerReading: e.target.value })}
+                      placeholder="Enter odometer reading"
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Documentation Section (Call Center, Service Advisor, Service Manager) */}
+            {(isCallCenter || isServiceAdvisor) && (
+              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Upload className="text-amber-600" size={20} />
+                  Documentation
+                </h3>
+                <div className="space-y-4">
+                  {/* Customer ID Proof */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Customer ID Proof
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        const urls = files.map((file) => URL.createObjectURL(file));
+                        setAppointmentForm({
+                          ...appointmentForm,
+                          customerIdProof: {
+                            files,
+                            urls,
+                          },
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                    />
+                    {appointmentForm.customerIdProof?.files && appointmentForm.customerIdProof.files.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {appointmentForm.customerIdProof.files.map((file, index) => (
+                          <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                            {file.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Vehicle RC Copy */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Vehicle RC Copy
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        const urls = files.map((file) => URL.createObjectURL(file));
+                        setAppointmentForm({
+                          ...appointmentForm,
+                          vehicleRCCopy: {
+                            files,
+                            urls,
+                          },
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                    />
+                    {appointmentForm.vehicleRCCopy?.files && appointmentForm.vehicleRCCopy.files.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {appointmentForm.vehicleRCCopy.files.map((file, index) => (
+                          <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                            {file.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Warranty Card / Service Book */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Warranty Card / Service Book
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        const urls = files.map((file) => URL.createObjectURL(file));
+                        setAppointmentForm({
+                          ...appointmentForm,
+                          warrantyCardServiceBook: {
+                            files,
+                            urls,
+                          },
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                    />
+                    {appointmentForm.warrantyCardServiceBook?.files && appointmentForm.warrantyCardServiceBook.files.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {appointmentForm.warrantyCardServiceBook.files.map((file, index) => (
+                          <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                            {file.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Photos/Videos of Vehicle at Drop-off */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Photos/Videos of Vehicle at Drop-off
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        const urls = files.map((file) => URL.createObjectURL(file));
+                        setAppointmentForm({
+                          ...appointmentForm,
+                          photosVideos: {
+                            files,
+                            urls,
+                          },
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
+                    />
+                    {appointmentForm.photosVideos?.files && appointmentForm.photosVideos.files.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {appointmentForm.photosVideos.files.map((file, index) => (
+                          <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                            {file.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -1286,6 +1662,98 @@ export default function Appointments() {
               />
             </div>
           </div>
+
+          {/* Operational Details Section */}
+          {(isCallCenter || isServiceAdvisor) && (
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Clock className="text-blue-600" size={20} />
+                Operational Details
+              </h3>
+              <div className="space-y-4">
+                {/* Estimated Delivery Date (Service Advisor & Service Manager) */}
+                {isServiceAdvisor && (
+                  <FormInput
+                    label="Estimated Delivery Date"
+                    type="date"
+                    value={appointmentForm.estimatedDeliveryDate || ""}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, estimatedDeliveryDate: e.target.value })}
+                  />
+                )}
+
+                {/* Assigned Service Advisor (Call Center, Service Advisor, Service Manager) */}
+                {(isCallCenter || isServiceAdvisor) && (
+                  <FormInput
+                    label="Assigned Service Advisor"
+                    value={appointmentForm.assignedServiceAdvisor || ""}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, assignedServiceAdvisor: e.target.value })}
+                    placeholder="Enter service advisor name"
+                  />
+                )}
+
+                {/* Assigned Technician (Service Advisor & Service Manager) */}
+                {isServiceAdvisor && (
+                  <FormInput
+                    label="Assigned Technician"
+                    value={appointmentForm.assignedTechnician || ""}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, assignedTechnician: e.target.value })}
+                    placeholder="Enter technician name"
+                  />
+                )}
+
+                {/* Pickup / Drop Required */}
+                {(isCallCenter || isServiceAdvisor) && (
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={appointmentForm.pickupDropRequired || false}
+                        onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupDropRequired: e.target.checked })}
+                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Pickup Address */}
+                {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
+                  <FormInput
+                    label="Pickup Address"
+                    value={appointmentForm.pickupAddress || ""}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupAddress: e.target.value })}
+                    placeholder="Enter pickup address"
+                  />
+                )}
+
+                {/* Drop Address */}
+                {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
+                  <FormInput
+                    label="Drop Address"
+                    value={appointmentForm.dropAddress || ""}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })}
+                    placeholder="Enter drop address"
+                  />
+                )}
+
+                {/* Preferred Communication Mode */}
+                {(isCallCenter || isServiceAdvisor) && (
+                  <FormSelect
+                    label="Preferred Communication Mode"
+                    value={appointmentForm.preferredCommunicationMode || ""}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, preferredCommunicationMode: e.target.value as "Phone" | "Email" | "SMS" | "WhatsApp" | undefined })}
+                    placeholder="Select communication mode"
+                    options={[
+                      { value: "Phone", label: "Phone" },
+                      { value: "Email", label: "Email" },
+                      { value: "SMS", label: "SMS" },
+                      { value: "WhatsApp", label: "WhatsApp" },
+                    ]}
+                  />
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Service Center Selection (for Call Center only) */}
           {isCallCenter && (
@@ -1343,6 +1811,75 @@ export default function Appointments() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Post-Service Survey Section (Call Center, Service Advisor, Service Manager, Service Technician) */}
+          {(isCallCenter || isServiceAdvisor) && (
+            <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <CheckCircle className="text-teal-600" size={20} />
+                Post-Service Survey
+              </h3>
+              <div className="space-y-4">
+                {/* Feedback Rating */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Feedback Rating
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <button
+                        key={rating}
+                        type="button"
+                        onClick={() => setAppointmentForm({ ...appointmentForm, feedbackRating: rating })}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
+                          appointmentForm.feedbackRating === rating
+                            ? "bg-teal-600 text-white scale-110"
+                            : "bg-gray-200 text-gray-600 hover:bg-teal-100 hover:text-teal-700"
+                        }`}
+                      >
+                        {rating}
+                      </button>
+                    ))}
+                    {appointmentForm.feedbackRating && (
+                      <span className="text-sm text-gray-600 ml-2">
+                        {appointmentForm.feedbackRating === 5
+                          ? "Excellent"
+                          : appointmentForm.feedbackRating === 4
+                          ? "Very Good"
+                          : appointmentForm.feedbackRating === 3
+                          ? "Good"
+                          : appointmentForm.feedbackRating === 2
+                          ? "Fair"
+                          : "Poor"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Next Service Due Date */}
+                <FormInput
+                  label="Next Service Due Date"
+                  type="date"
+                  value={appointmentForm.nextServiceDueDate || ""}
+                  onChange={(e) => setAppointmentForm({ ...appointmentForm, nextServiceDueDate: e.target.value })}
+                />
+
+                {/* AMC / Subscription Status */}
+                <FormSelect
+                  label="AMC / Subscription Status"
+                  value={appointmentForm.amcSubscriptionStatus || ""}
+                  onChange={(e) => setAppointmentForm({ ...appointmentForm, amcSubscriptionStatus: e.target.value })}
+                  placeholder="Select AMC/Subscription status"
+                  options={[
+                    { value: "Active", label: "Active" },
+                    { value: "Expired", label: "Expired" },
+                    { value: "Not Applicable", label: "Not Applicable" },
+                    { value: "Pending Renewal", label: "Pending Renewal" },
+                  ]}
+                />
               </div>
             </div>
           )}
@@ -1858,7 +2395,138 @@ export default function Appointments() {
                   </div>
                 </div>
 
-                {/* Submit Button for Service Intake */}
+                {/* Operational Details Section (Job Card) */}
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-5 rounded-xl border border-blue-200">
+                  <h4 className="text-lg font-semibold text-blue-900 mb-4 flex items-center gap-2">
+                    <span className="w-1 h-6 bg-blue-600 rounded"></span>
+                    Operational Details (Job Card)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Estimated Delivery Date (Service Advisor & Service Manager) */}
+                    <FormInput
+                      label="Estimated Delivery Date"
+                      type="date"
+                      value={serviceIntakeForm.estimatedDeliveryDate}
+                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, estimatedDeliveryDate: e.target.value })}
+                    />
+                    
+                    {/* Assigned Service Advisor (Call Center, Service Advisor, Service Manager) */}
+                    <FormInput
+                      label="Assigned Service Advisor"
+                      value={serviceIntakeForm.assignedServiceAdvisor}
+                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, assignedServiceAdvisor: e.target.value })}
+                      placeholder="Enter service advisor name"
+                    />
+                    
+                    {/* Assigned Technician (Service Advisor & Service Manager) */}
+                    <FormInput
+                      label="Assigned Technician"
+                      value={serviceIntakeForm.assignedTechnician}
+                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, assignedTechnician: e.target.value })}
+                      placeholder="Enter technician name"
+                    />
+                    
+                    {/* Pickup / Drop Required */}
+                    <div className="md:col-span-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={serviceIntakeForm.pickupDropRequired}
+                          onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, pickupDropRequired: e.target.checked })}
+                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
+                      </label>
+                    </div>
+                    
+                    {/* Pickup Address */}
+                    {serviceIntakeForm.pickupDropRequired && (
+                      <FormInput
+                        label="Pickup Address"
+                        value={serviceIntakeForm.pickupAddress}
+                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, pickupAddress: e.target.value })}
+                        placeholder="Enter pickup address"
+                      />
+                    )}
+                    
+                    {/* Drop Address */}
+                    {serviceIntakeForm.pickupDropRequired && (
+                      <FormInput
+                        label="Drop Address"
+                        value={serviceIntakeForm.dropAddress}
+                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, dropAddress: e.target.value })}
+                        placeholder="Enter drop address"
+                      />
+                    )}
+                    
+                    {/* Preferred Communication Mode */}
+                    <div className="md:col-span-2">
+                      <FormSelect
+                        label="Preferred Communication Mode"
+                        value={serviceIntakeForm.preferredCommunicationMode}
+                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, preferredCommunicationMode: e.target.value as "Phone" | "Email" | "SMS" | "WhatsApp" | "" })}
+                        placeholder="Select communication mode"
+                        options={[
+                          { value: "Phone", label: "Phone" },
+                          { value: "Email", label: "Email" },
+                          { value: "SMS", label: "SMS" },
+                          { value: "WhatsApp", label: "WhatsApp" },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing & Payment Section */}
+                <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
+                  <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
+                    <span className="w-1 h-6 bg-green-600 rounded"></span>
+                    Billing & Payment
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Payment Method (Service Advisor & Service Manager) */}
+                    <FormSelect
+                      label="Payment Method"
+                      value={serviceIntakeForm.paymentMethod}
+                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, paymentMethod: e.target.value as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "" })}
+                      placeholder="Select payment method"
+                      options={[
+                        { value: "Cash", label: "Cash" },
+                        { value: "Card", label: "Card" },
+                        { value: "UPI", label: "UPI" },
+                        { value: "Online", label: "Online" },
+                        { value: "Cheque", label: "Cheque" },
+                      ]}
+                    />
+                    
+                    {/* GST Requirement (Service Advisor & Service Manager) */}
+                    <div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={serviceIntakeForm.gstRequirement}
+                          onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, gstRequirement: e.target.checked })}
+                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">GST Requirement</span>
+                      </label>
+                    </div>
+                    
+                    {/* Business Name for Invoice (Service Advisor & Service Manager) */}
+                    {serviceIntakeForm.gstRequirement && (
+                      <div className="md:col-span-2">
+                        <FormInput
+                          label="Business Name for Invoice"
+                          value={serviceIntakeForm.businessNameForInvoice}
+                          onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, businessNameForInvoice: e.target.value })}
+                          placeholder="Enter business name for invoice"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Convert to Estimation/Quotation Button */}
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
                   <button
                     onClick={() => {
@@ -1870,10 +2538,11 @@ export default function Appointments() {
                     Cancel
                   </button>
                   <button
-                    onClick={handleServiceIntakeSubmit}
-                    className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+                    onClick={handleConvertToQuotation}
+                    className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center gap-2"
                   >
-                    Submit Service Intake
+                    <FileText size={18} />
+                    Convert into Estimation/Quotation
                   </button>
                 </div>
               </div>
