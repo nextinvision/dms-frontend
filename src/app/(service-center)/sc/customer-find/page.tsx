@@ -303,7 +303,7 @@ const Button = ({
   ...props 
 }: {
   children: React.ReactNode;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   variant?: "primary" | "secondary" | "success" | "warning" | "danger";
   size?: "sm" | "md" | "lg";
   disabled?: boolean;
@@ -327,7 +327,7 @@ const Button = ({
   
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => onClick?.(e)}
       disabled={disabled}
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${disabled ? "opacity-50 cursor-not-allowed disabled:active:scale-100" : ""} ${className}`}
       {...props}
