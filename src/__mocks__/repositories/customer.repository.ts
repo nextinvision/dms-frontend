@@ -96,6 +96,12 @@ class CustomerRepository {
       throw new ApiError("Please enter a valid 10-digit phone number", 400, "VALIDATION_ERROR");
     }
 
+    // Normalize WhatsApp number, defaulting to primary phone if not provided
+    const cleanedWhatsapp =
+      data.whatsappNumber && data.whatsappNumber.trim().length > 0
+        ? data.whatsappNumber.replace(/[\s-+]/g, "").replace(/^91/, "")
+        : cleanedPhone;
+
     // Check if phone already exists
     const existing = this.customers.find((c) => c.phone === cleanedPhone);
     if (existing) {
@@ -115,6 +121,7 @@ class CustomerRepository {
       customerNumber,
       name: data.name,
       phone: cleanedPhone,
+      whatsappNumber: cleanedWhatsapp,
       email: data.email || undefined,
       address: data.address || undefined,
       createdAt: new Date().toISOString().split("T")[0],

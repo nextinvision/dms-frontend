@@ -50,6 +50,7 @@ import { serviceTypes } from "@/__mocks__/data/appointments.mock";
 const initialCustomerForm: NewCustomerForm = {
   name: "",
   phone: "",
+  whatsappNumber: "",
   alternateMobile: "",
   email: "",
   address: "",
@@ -407,6 +408,9 @@ export default function CustomerFind() {
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryItem[]>([]);
   const [validationError, setValidationError] = useState<string>("");
   const [detectedSearchType, setDetectedSearchType] = useState<CustomerSearchType | null>(null);
+  const [whatsappSameAsMobile, setWhatsappSameAsMobile] = useState<boolean>(false);
+  const [pickupAddressDifferent, setPickupAddressDifferent] = useState<boolean>(false);
+  const [customerPickupSameAsAddress, setCustomerPickupSameAsAddress] = useState<boolean>(false);
   
   // Toast notification state
   const [toast, setToast] = useState<{ show: boolean; message: string; type?: "success" | "error" }>({
@@ -528,6 +532,8 @@ export default function CustomerFind() {
       addressType: undefined,
       workAddress: "",
     });
+    setWhatsappSameAsMobile(false);
+    setCustomerPickupSameAsAddress(false);
   }, [setNewCustomerForm]);
 
   const resetVehicleForm = useCallback(() => {
@@ -1029,21 +1035,65 @@ export default function CustomerFind() {
                 placeholder="Enter full name"
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormInput
                   label="Mobile Number (Primary)"
                   required
                   type="tel"
                   value={newCustomerForm.phone}
-                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  onChange={(e) => {
+                    const phoneValue = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    setNewCustomerForm({
+                      ...newCustomerForm,
+                      phone: phoneValue,
+                      ...(whatsappSameAsMobile ? { whatsappNumber: phoneValue } : {}),
+                    });
+                  }}
                   placeholder="10-digit mobile number"
                   maxLength={10}
                 />
+                <div>
+                  <FormInput
+                    label="WhatsApp Number"
+                    type="tel"
+                    value={newCustomerForm.whatsappNumber || ""}
+                    onChange={(e) =>
+                      setNewCustomerForm({
+                        ...newCustomerForm,
+                        whatsappNumber: e.target.value.replace(/\D/g, "").slice(0, 10),
+                      })
+                    }
+                    placeholder="10-digit WhatsApp number"
+                    maxLength={10}
+                    disabled={whatsappSameAsMobile}
+                  />
+                  <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={whatsappSameAsMobile}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setWhatsappSameAsMobile(checked);
+                        setNewCustomerForm({
+                          ...newCustomerForm,
+                          whatsappNumber: checked ? newCustomerForm.phone : "",
+                        });
+                      }}
+                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-gray-600">Same as mobile number</span>
+                  </label>
+                </div>
                 <FormInput
                   label="Alternate Mobile Number"
                   type="tel"
                   value={newCustomerForm.alternateMobile || ""}
-                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, alternateMobile: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  onChange={(e) =>
+                    setNewCustomerForm({
+                      ...newCustomerForm,
+                      alternateMobile: e.target.value.replace(/\D/g, "").slice(0, 10),
+                    })
+                  }
                   placeholder="10-digit mobile number (optional)"
                   maxLength={10}
                 />
@@ -1057,47 +1107,10 @@ export default function CustomerFind() {
                 placeholder="Enter email address"
               />
 
-              {/* Address Type Selection - Always visible */}
+              {/* Full Address */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Address Type for Pickup/Drop
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setNewCustomerForm({ ...newCustomerForm, addressType: "home" })}
-                    className={`p-4 rounded-lg transition-all duration-200 flex flex-col items-center gap-2 border-2 ${
-                      newCustomerForm.addressType === "home"
-                        ? "bg-indigo-50 border-indigo-500"
-                        : "border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30"
-                    }`}
-                  >
-                    <Home className={`${newCustomerForm.addressType === "home" ? "text-indigo-600" : "text-gray-400"}`} size={24} strokeWidth={2} />
-                    <span className={`text-sm font-medium ${newCustomerForm.addressType === "home" ? "text-indigo-700" : "text-gray-600"}`}>Home Address</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewCustomerForm({ ...newCustomerForm, addressType: "work" })}
-                    className={`p-4 rounded-lg transition-all duration-200 flex flex-col items-center gap-2 border-2 ${
-                      newCustomerForm.addressType === "work"
-                        ? "bg-indigo-50 border-indigo-500"
-                        : "border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30"
-                    }`}
-                  >
-                    <Building2 className={`${newCustomerForm.addressType === "work" ? "text-indigo-600" : "text-gray-400"}`} size={24} strokeWidth={2} />
-                    <span className={`text-sm font-medium ${newCustomerForm.addressType === "work" ? "text-indigo-700" : "text-gray-600"}`}>Work Address</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Home Address */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {newCustomerForm.addressType === "home" 
-                    ? "Home Address (Pickup/Drop)" 
-                    : newCustomerForm.addressType === "work"
-                    ? "Home Address"
-                    : "Full Address"}
+                  Full Address <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   value={newCustomerForm.address || ""}
@@ -1105,45 +1118,12 @@ export default function CustomerFind() {
                     setNewCustomerForm({ ...newCustomerForm, address: e.target.value })
                   }
                   rows={3}
-                  placeholder="Enter complete address"
+                  placeholder="House / Flat, Street, Area, City, State, Pincode"
                   className="w-full px-4 py-2.5 rounded-lg bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:outline-none text-gray-900 transition-all duration-200 resize-none"
                 />
               </div>
 
-              {/* Work Address - Only show when Work Address is selected */}
-              {newCustomerForm.addressType === "work" && (
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Work Address (Pickup/Drop) <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={newCustomerForm.workAddress || ""}
-                    onChange={(e) =>
-                      setNewCustomerForm({ ...newCustomerForm, workAddress: e.target.value })
-                    }
-                    rows={3}
-                    placeholder="Enter work address for pickup/drop service"
-                    className="w-full px-4 py-2.5 rounded-lg bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:outline-none text-gray-900 transition-all duration-200 resize-none"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormInput
-                  label="City / State"
-                  value={newCustomerForm.cityState || ""}
-                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, cityState: e.target.value })}
-                  placeholder="Enter city and state"
-                />
-                <FormInput
-                  label="Pincode"
-                  value={newCustomerForm.pincode || ""}
-                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })}
-                  placeholder="6-digit pincode"
-                  maxLength={6}
-                />
-              </div>
-
+              {/* Service Type */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1193,6 +1173,147 @@ export default function CustomerFind() {
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Pickup / Drop Service Preference at Customer Level */}
+              <div className="space-y-3">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Pickup / Drop Service
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newCustomerForm.pickupDropRequired || false}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setNewCustomerForm({
+                        ...newCustomerForm,
+                        pickupDropRequired: checked,
+                        ...(checked
+                          ? {}
+                          : {
+                              pickupAddress: "",
+                              dropAddress: "",
+                            }),
+                      });
+                      if (!checked) {
+                        setCustomerPickupSameAsAddress(false);
+                      }
+                    }}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-gray-700">Customer wants Pickup / Drop service</span>
+                </label>
+
+                {newCustomerForm.pickupDropRequired && (
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={customerPickupSameAsAddress}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setCustomerPickupSameAsAddress(checked);
+                          setNewCustomerForm({
+                            ...newCustomerForm,
+                            pickupAddress: checked ? newCustomerForm.address || "" : "",
+                            dropAddress: checked ? newCustomerForm.address || "" : "",
+                          });
+                        }}
+                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">Same as full address provided</span>
+                    </label>
+
+                    {!customerPickupSameAsAddress && (
+                      <>
+                        <FormInput
+                          label="Pickup Address"
+                          value={newCustomerForm.pickupAddress || ""}
+                          onChange={(e) =>
+                            setNewCustomerForm({ ...newCustomerForm, pickupAddress: e.target.value })
+                          }
+                          placeholder="Enter pickup address (if different from full address)"
+                        />
+                        <FormInput
+                          label="Drop Address"
+                          value={newCustomerForm.dropAddress || ""}
+                          onChange={(e) =>
+                            setNewCustomerForm({ ...newCustomerForm, dropAddress: e.target.value })
+                          }
+                          placeholder="Enter drop address (if different from full address)"
+                        />
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Address Type Selection - Always visible */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Address Type for Pickup/Drop
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setNewCustomerForm({ ...newCustomerForm, addressType: "home" })}
+                    className={`p-4 rounded-lg transition-all duration-200 flex flex-col items-center gap-2 border-2 ${
+                      newCustomerForm.addressType === "home"
+                        ? "bg-indigo-50 border-indigo-500"
+                        : "border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30"
+                    }`}
+                  >
+                    <Home className={`${newCustomerForm.addressType === "home" ? "text-indigo-600" : "text-gray-400"}`} size={24} strokeWidth={2} />
+                    <span className={`text-sm font-medium ${newCustomerForm.addressType === "home" ? "text-indigo-700" : "text-gray-600"}`}>Home Address</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewCustomerForm({ ...newCustomerForm, addressType: "work" })}
+                    className={`p-4 rounded-lg transition-all duration-200 flex flex-col items-center gap-2 border-2 ${
+                      newCustomerForm.addressType === "work"
+                        ? "bg-indigo-50 border-indigo-500"
+                        : "border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30"
+                    }`}
+                  >
+                    <Building2 className={`${newCustomerForm.addressType === "work" ? "text-indigo-600" : "text-gray-400"}`} size={24} strokeWidth={2} />
+                    <span className={`text-sm font-medium ${newCustomerForm.addressType === "work" ? "text-indigo-700" : "text-gray-600"}`}>Work Address</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Work Address - Only show when Work Address is selected */}
+              {newCustomerForm.addressType === "work" && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Work Address (Pickup/Drop) <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={newCustomerForm.workAddress || ""}
+                    onChange={(e) =>
+                      setNewCustomerForm({ ...newCustomerForm, workAddress: e.target.value })
+                    }
+                    rows={3}
+                    placeholder="Enter work address for pickup/drop service"
+                    className="w-full px-4 py-2.5 rounded-lg bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:outline-none text-gray-900 transition-all duration-200 resize-none"
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormInput
+                  label="City / State"
+                  value={newCustomerForm.cityState || ""}
+                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, cityState: e.target.value })}
+                  placeholder="Enter city and state"
+                />
+                <FormInput
+                  label="Pincode"
+                  value={newCustomerForm.pincode || ""}
+                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                  placeholder="6-digit pincode"
+                  maxLength={6}
+                />
               </div>
 
               {validationError && <ErrorAlert message={validationError} />}
@@ -1346,7 +1467,7 @@ export default function CustomerFind() {
                             )}
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button
                             onClick={() => {
                               setSelectedVehicle(vehicle);
@@ -1359,19 +1480,27 @@ export default function CustomerFind() {
                           >
                             View Details
                           </Button>
-                          <Button
-                            onClick={() => {
-                              setSelectedVehicle(vehicle);
-                              setShowScheduleAppointment(true);
-                              initializeAppointmentForm(selectedCustomer, vehicle);
-                            }}
-                            variant="success"
-                            size="sm"
-                            icon={Calendar}
-                            className="px-4 py-2"
-                          >
-                            Schedule Appointment
-                          </Button>
+
+                          {/* Allow scheduling only when vehicle is not already under active service */}
+                          {vehicle.currentStatus !== "Active Job Card" ? (
+                            <Button
+                              onClick={() => {
+                                setSelectedVehicle(vehicle);
+                                setShowScheduleAppointment(true);
+                                initializeAppointmentForm(selectedCustomer, vehicle);
+                              }}
+                              variant="success"
+                              size="sm"
+                              icon={Calendar}
+                              className="px-4 py-2"
+                            >
+                              Schedule Appointment
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-orange-600 font-medium self-center">
+                              Appointment blocked: vehicle already in active service
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2130,37 +2259,81 @@ export default function CustomerFind() {
 
                         {/* Pickup / Drop Required */}
                         {(isCallCenter || isServiceAdvisor) && (
-                          <div>
+                          <div className="space-y-3">
                             <label className="flex items-center gap-2 cursor-pointer">
                               <input
                                 type="checkbox"
                                 checked={appointmentForm.pickupDropRequired || false}
-                                onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupDropRequired: e.target.checked })}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setAppointmentForm({
+                                    ...appointmentForm,
+                                    pickupDropRequired: checked,
+                                    ...(checked
+                                      ? {}
+                                      : {
+                                          pickupAddress: undefined,
+                                          dropAddress: undefined,
+                                        }),
+                                  });
+                                  if (!checked) {
+                                    setPickupAddressDifferent(false);
+                                  }
+                                }}
                                 className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                               />
                               <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
                             </label>
+
+                            {/* If pickup/drop is required, ask only when address is different */}
+                            {appointmentForm.pickupDropRequired && (
+                              <div className="space-y-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={pickupAddressDifferent}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setPickupAddressDifferent(checked);
+                                      if (!checked) {
+                                        setAppointmentForm({
+                                          ...appointmentForm,
+                                          pickupAddress: undefined,
+                                          dropAddress: undefined,
+                                        });
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                  />
+                                  <span className="text-sm text-gray-700">
+                                    Pickup / Drop address is different from customer address
+                                  </span>
+                                </label>
+
+                                {pickupAddressDifferent && (
+                                  <>
+                                    <FormInput
+                                      label="Pickup Address"
+                                      value={appointmentForm.pickupAddress || ""}
+                                      onChange={(e) =>
+                                        setAppointmentForm({ ...appointmentForm, pickupAddress: e.target.value })
+                                      }
+                                      placeholder="Enter pickup address"
+                                    />
+
+                                    <FormInput
+                                      label="Drop Address"
+                                      value={appointmentForm.dropAddress || ""}
+                                      onChange={(e) =>
+                                        setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })
+                                      }
+                                      placeholder="Enter drop address"
+                                    />
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        )}
-
-                        {/* Pickup Address */}
-                        {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
-                          <FormInput
-                            label="Pickup Address"
-                            value={appointmentForm.pickupAddress || ""}
-                            onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupAddress: e.target.value })}
-                            placeholder="Enter pickup address"
-                          />
-                        )}
-
-                        {/* Drop Address */}
-                        {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
-                          <FormInput
-                            label="Drop Address"
-                            value={appointmentForm.dropAddress || ""}
-                            onChange={(e) => setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })}
-                            placeholder="Enter drop address"
-                          />
                         )}
 
                         {/* Preferred Communication Mode */}

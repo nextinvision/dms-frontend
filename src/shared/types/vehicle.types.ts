@@ -13,6 +13,8 @@ export interface Customer {
   customerNumber: string; // Unique customer number
   name: string;
   phone: string;
+  // Primary WhatsApp number for communication (can be same as phone)
+  whatsappNumber?: string;
   email?: string;
   address?: string;
   cityState?: string;
@@ -95,6 +97,8 @@ export type CustomerType = "B2C" | "B2B";
 export interface NewCustomerForm {
   name: string;
   phone: string;
+  // Dedicated WhatsApp number field captured at creation time
+  whatsappNumber?: string;
   alternateMobile?: string;
   email?: string;
   address?: string;
@@ -104,6 +108,10 @@ export interface NewCustomerForm {
   serviceType?: ServiceType;
   addressType?: "home" | "work";
   workAddress?: string;
+  // Pickup / Drop preferences at customer level
+  pickupDropRequired?: boolean;
+  pickupAddress?: string;
+  dropAddress?: string;
 }
 
 export interface CustomerWithVehicles extends Customer {
