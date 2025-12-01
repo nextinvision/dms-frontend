@@ -426,13 +426,102 @@ function QuotationsContent() {
       setQuotations(updatedQuotations);
       safeStorage.setItem("quotations", updatedQuotations);
       
-      // Open WhatsApp with quotation details
-      const customerPhone = quotation.customer?.phone?.replace(/\D/g, "") || "";
-      const message = `Hello ${quotation.customer?.firstName || "Customer"}, your quotation ${quotation.quotationNumber} is ready. Please review and approve.`;
-      const whatsappUrl = `https://wa.me/${customerPhone}?text=${encodeURIComponent(message)}`;
-      window.open(whatsappUrl, "_blank");
+      // Prefer customer's WhatsApp number; fall back to phone if not available
+      const rawWhatsapp =
+        (quotation.customer as any)?.whatsappNumber ||
+        quotation.customer?.phone ||
+        "";
+      const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
+
+      // Generate PDF by triggering print/download
+      // In a real implementation, you would use a PDF library like jsPDF or html2pdf
+      // For now, we'll use the browser's print functionality to generate PDF
+      const printQuotation = () => {
+        // Create a temporary modal with the quotation content for printing
+        const printWindow = window.open("", "_blank");
+        if (!printWindow) {
+          alert("Please allow popups to generate PDF");
+          return;
+        }
+        
+        // Get quotation HTML content (simplified version for PDF)
+        const quotationHTML = `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Quotation ${quotation.quotationNumber}</title>
+              <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                .header { border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
+                .quotation-number { font-size: 24px; font-weight: bold; }
+                .details { margin: 20px 0; }
+                .items { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                .items th, .items td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                .total { text-align: right; font-weight: bold; font-size: 18px; margin-top: 20px; }
+              </style>
+            </head>
+            <body>
+              <div class="header">
+                <div class="quotation-number">Quotation ${quotation.quotationNumber}</div>
+                <div>Date: ${new Date(quotation.quotationDate).toLocaleDateString("en-IN")}</div>
+              </div>
+              <div class="details">
+                <p><strong>Customer:</strong> ${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}</p>
+                <p><strong>Vehicle:</strong> ${quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model} (${quotation.vehicle.registration})` : "N/A"}</p>
+              </div>
+              <table class="items">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Quantity</th>
+                    <th>Rate</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${quotation.items.map(item => `
+                    <tr>
+                      <td>${item.partName}</td>
+                      <td>${item.quantity}</td>
+                      <td>₹${item.rate.toLocaleString("en-IN")}</td>
+                      <td>₹${item.amount.toLocaleString("en-IN")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+              <div class="total">
+                <p>Total Amount: ₹${quotation.totalAmount.toLocaleString("en-IN")}</p>
+              </div>
+            </body>
+          </html>
+        `;
+        
+        printWindow.document.write(quotationHTML);
+        printWindow.document.close();
+        
+        // Wait for content to load, then trigger print
+        setTimeout(() => {
+          printWindow.print();
+          // After printing, close the window
+          setTimeout(() => printWindow.close(), 1000);
+        }, 500);
+      };
       
-      alert("Quotation sent to customer via WhatsApp!");
+      // Generate PDF first
+      printQuotation();
+      
+      // Open WhatsApp with quotation details and approval/rejection links
+      const approvalLink = `${window.location.origin}/sc/quotations/approve/${quotation.id}`;
+      const rejectionLink = `${window.location.origin}/sc/quotations/reject/${quotation.id}`;
+      
+      const message = `Hello ${quotation.customer?.firstName || "Customer"}, your quotation ${quotation.quotationNumber} is ready.\n\n📄 A PDF copy has been generated. Please review it.\n\n✅ To Approve: Click here - ${approvalLink}\n❌ To Reject or Request Changes: Click here - ${rejectionLink}\n\nOr reply with "APPROVE" or "REJECT" in this chat.`;
+      const whatsappUrl = `https://wa.me/${customerWhatsapp}?text=${encodeURIComponent(message)}`;
+      
+      // Small delay to allow PDF generation
+      setTimeout(() => {
+        window.open(whatsappUrl, "_blank");
+        alert("Quotation PDF generated and sent to customer via WhatsApp!\n\nCustomer can approve or reject via the links provided.");
+      }, 1000);
     } catch (error) {
       console.error("Error sending quotation:", error);
       alert("Failed to send quotation. Please try again.");
@@ -441,15 +530,113 @@ function QuotationsContent() {
     }
   };
 
+  // Convert Quotation to Job Card
+  const convertQuotationToJobCard = (quotation: Quotation) => {
+    const serviceCenterCode = "SC001"; // In production, get from user context
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    
+    // Get next sequence number
+    const existingJobCards = safeStorage.getItem<any[]>("jobCards", []);
+    const lastJobCard = existingJobCards
+      .filter((jc) => jc.jobCardNumber?.startsWith(`${serviceCenterCode}-${year}-${month}`))
+      .sort((a, b) => {
+        const aSeq = parseInt(a.jobCardNumber?.split("-")[3] || "0");
+        const bSeq = parseInt(b.jobCardNumber?.split("-")[3] || "0");
+        return bSeq - aSeq;
+      })[0];
+    
+    const nextSequence = lastJobCard
+      ? parseInt(lastJobCard.jobCardNumber?.split("-")[3] || "0") + 1
+      : 1;
+    
+    const jobCardNumber = `${serviceCenterCode}-${year}-${month}-${String(nextSequence).padStart(4, "0")}`;
+    
+    // Create job card from quotation
+    const newJobCard = {
+      id: `JC-${Date.now()}`,
+      jobCardNumber,
+      serviceCenterId: quotation.serviceCenterId || "sc-001",
+      serviceCenterCode,
+      customerId: quotation.customerId,
+      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      vehicleId: quotation.vehicleId,
+      vehicle: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "Unknown",
+      registration: quotation.vehicle?.registration || "",
+      vehicleMake: quotation.vehicle?.make,
+      vehicleModel: quotation.vehicle?.model,
+      serviceType: quotation.items?.[0]?.partName || "Service",
+      description: quotation.notes || quotation.customNotes || "Service as per quotation",
+      status: "Created" as const,
+      priority: "Normal" as const,
+      assignedEngineer: null,
+      estimatedCost: `₹${quotation.totalAmount.toLocaleString("en-IN")}`,
+      estimatedTime: "To be determined",
+      createdAt: new Date().toISOString(),
+      parts: quotation.items?.map((item) => item.partName) || [],
+      location: "Station" as const,
+      quotationId: quotation.id,
+      hasInsurance: quotation.hasInsurance,
+      insurerName: quotation.insurer?.name,
+    };
+    
+    // Save job card
+    const updatedJobCards = [...existingJobCards, newJobCard];
+    safeStorage.setItem("jobCards", updatedJobCards);
+    
+    return newJobCard;
+  };
+
+  // Add Rejected Quotation to Leads
+  const addRejectedQuotationToLeads = (quotation: Quotation) => {
+    const existingLeads = safeStorage.getItem<any[]>("leads", []);
+    
+    const newLead: any = {
+      id: `lead-${Date.now()}`,
+      customerId: quotation.customerId,
+      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      phone: quotation.customer?.phone || "",
+      email: quotation.customer?.email,
+      vehicleDetails: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "",
+      vehicleMake: quotation.vehicle?.make,
+      vehicleModel: quotation.vehicle?.model,
+      inquiryType: "Service",
+      serviceType: quotation.items?.[0]?.partName || "Service",
+      source: "quotation_rejection",
+      status: "in_discussion" as const,
+      notes: `Quotation ${quotation.quotationNumber} was rejected by customer. Amount: ₹${quotation.totalAmount.toLocaleString("en-IN")}. Reason: Customer did not approve the quotation.`,
+      followUpDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0], // 7 days from now
+      assignedTo: quotation.serviceAdvisorId || userInfo?.id,
+      serviceCenterId: quotation.serviceCenterId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      convertedTo: "quotation" as const,
+      convertedId: quotation.id,
+    };
+    
+    const updatedLeads = [...existingLeads, newLead];
+    safeStorage.setItem("leads", updatedLeads);
+    
+    return newLead;
+  };
+
   // Customer Approval
   const handleCustomerApproval = async (quotationId: string) => {
-    if (!confirm("Mark this quotation as customer approved and send to manager?")) {
+    if (!confirm("Customer has approved this quotation. Convert to job card and notify advisor?")) {
       return;
     }
 
     try {
       setLoading(true);
       
+      const quotation = quotations.find((q) => q.id === quotationId);
+      if (!quotation) {
+        alert("Quotation not found!");
+        return;
+      }
+      
+      // Update quotation status
       const updatedQuotations = quotations.map((q) =>
         q.id === quotationId
           ? {
@@ -464,7 +651,20 @@ function QuotationsContent() {
       setQuotations(updatedQuotations);
       safeStorage.setItem("quotations", updatedQuotations);
       
-      alert("Quotation marked as customer approved!");
+      // Convert to job card
+      const jobCard = convertQuotationToJobCard(quotation);
+      
+      // Show notification to advisor
+      alert(`✅ Customer Approved!\n\nQuotation ${quotation.quotationNumber} has been approved by the customer.\n\nJob Card Created: ${jobCard.jobCardNumber}\n\nYou can now proceed with the service.`);
+      
+      // In production, you would send a notification/email to the advisor here
+      console.log("Notification to advisor:", {
+        advisorId: quotation.serviceAdvisorId,
+        message: `Quotation ${quotation.quotationNumber} approved by customer. Job Card ${jobCard.jobCardNumber} created.`,
+        quotationId: quotation.id,
+        jobCardId: jobCard.id,
+      });
+      
     } catch (error) {
       console.error("Error approving quotation:", error);
       alert("Failed to approve quotation. Please try again.");
@@ -475,13 +675,20 @@ function QuotationsContent() {
 
   // Customer Rejection
   const handleCustomerRejection = async (quotationId: string) => {
-    if (!confirm("Mark this quotation as customer rejected? This will end the process.")) {
+    if (!confirm("Customer has rejected this quotation. Add to leads for follow-up?")) {
       return;
     }
 
     try {
       setLoading(true);
       
+      const quotation = quotations.find((q) => q.id === quotationId);
+      if (!quotation) {
+        alert("Quotation not found!");
+        return;
+      }
+      
+      // Update quotation status
       const updatedQuotations = quotations.map((q) =>
         q.id === quotationId
           ? {
@@ -495,6 +702,20 @@ function QuotationsContent() {
       
       setQuotations(updatedQuotations);
       safeStorage.setItem("quotations", updatedQuotations);
+      
+      // Add to leads for follow-up
+      const lead = addRejectedQuotationToLeads(quotation);
+      
+      // Show notification to advisor
+      alert(`⚠️ Customer Rejected Quotation\n\nQuotation ${quotation.quotationNumber} has been rejected by the customer.\n\nAdded to Leads for follow-up.\n\nLead ID: ${lead.id}\n\nPlease follow up with the customer to understand their concerns.`);
+      
+      // In production, you would send a notification/email to the advisor here
+      console.log("Notification to advisor:", {
+        advisorId: quotation.serviceAdvisorId,
+        message: `Quotation ${quotation.quotationNumber} rejected by customer. Added to leads for follow-up.`,
+        quotationId: quotation.id,
+        leadId: lead.id,
+      });
       
       alert("Quotation marked as customer rejected.");
     } catch (error) {

@@ -271,3 +271,5 @@ export function generateCheckInSlipNumber(serviceCenterCode: string = "SC001"): 
   return `${serviceCenterCode}-CIS-${year}${month}${day}-${random}`;
 }
 
+
+

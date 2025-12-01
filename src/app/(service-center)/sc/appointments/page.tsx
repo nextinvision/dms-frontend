@@ -22,6 +22,19 @@ interface Appointment {
   serviceCenterName?: string;
   // Customer Information
   customerType?: "B2C" | "B2B";
+  // Service Details (captured by call center or service advisor)
+  customerComplaintIssue?: string;
+  previousServiceHistory?: string;
+  estimatedServiceTime?: string;
+  estimatedCost?: string;
+  odometerReading?: string;
+  // Documentation (stored as simple metadata in call center flow)
+  documentationFiles?: {
+    customerIdProof?: number;
+    vehicleRCCopy?: number;
+    warrantyCardServiceBook?: number;
+    photosVideos?: number;
+  };
   // Operational Details
   estimatedDeliveryDate?: string;
   assignedServiceAdvisor?: string;
@@ -602,6 +615,7 @@ export default function Appointments() {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithVehicles | null>(null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [pickupAddressDifferent, setPickupAddressDifferent] = useState<boolean>(false);
   
   // Service Center States (for call center)
   const [availableServiceCenters] = useState(() => {
@@ -733,8 +747,33 @@ export default function Appointments() {
         serviceType: appointment.serviceType,
         date: appointment.date,
         time: appointment.time,
-        duration: "2",
+        // Strip the " hours" suffix if it exists; default to "2"
+        duration: appointment.duration ? appointment.duration.replace(" hours", "") : "2",
         serviceCenterId: appointment.serviceCenterId,
+        // Customer Information
+        customerType: appointment.customerType,
+        // Service Details
+        customerComplaintIssue: appointment.customerComplaintIssue,
+        previousServiceHistory: appointment.previousServiceHistory,
+        estimatedServiceTime: appointment.estimatedServiceTime,
+        estimatedCost: appointment.estimatedCost,
+        odometerReading: appointment.odometerReading,
+        // Operational Details
+        estimatedDeliveryDate: appointment.estimatedDeliveryDate,
+        assignedServiceAdvisor: appointment.assignedServiceAdvisor,
+        assignedTechnician: appointment.assignedTechnician,
+        pickupDropRequired: appointment.pickupDropRequired,
+        pickupAddress: appointment.pickupAddress,
+        dropAddress: appointment.dropAddress,
+        preferredCommunicationMode: appointment.preferredCommunicationMode,
+        // Billing & Payment
+        paymentMethod: appointment.paymentMethod,
+        gstRequirement: appointment.gstRequirement,
+        businessNameForInvoice: appointment.businessNameForInvoice,
+        // Post-Service Survey
+        feedbackRating: appointment.feedbackRating,
+        nextServiceDueDate: appointment.nextServiceDueDate,
+        amcSubscriptionStatus: appointment.amcSubscriptionStatus,
       });
       setCustomerSearchQuery(appointment.customerName);
       setSelectedCustomer(null);
@@ -1701,40 +1740,84 @@ export default function Appointments() {
                   />
                 )}
 
-                {/* Pickup / Drop Required */}
-                {(isCallCenter || isServiceAdvisor) && (
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={appointmentForm.pickupDropRequired || false}
-                        onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupDropRequired: e.target.checked })}
-                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                      />
-                      <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
-                    </label>
-                  </div>
-                )}
+                        {/* Pickup / Drop Required */}
+                        {(isCallCenter || isServiceAdvisor) && (
+                          <div className="space-y-3">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={appointmentForm.pickupDropRequired || false}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setAppointmentForm({
+                                    ...appointmentForm,
+                                    pickupDropRequired: checked,
+                                    ...(checked
+                                      ? {}
+                                      : {
+                                          pickupAddress: "",
+                                          dropAddress: "",
+                                        }),
+                                  });
+                                  if (!checked) {
+                                    setPickupAddressDifferent(false);
+                                  }
+                                }}
+                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                              />
+                              <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
+                            </label>
 
-                {/* Pickup Address */}
-                {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
-                  <FormInput
-                    label="Pickup Address"
-                    value={appointmentForm.pickupAddress || ""}
-                    onChange={(e) => setAppointmentForm({ ...appointmentForm, pickupAddress: e.target.value })}
-                    placeholder="Enter pickup address"
-                  />
-                )}
+                            {/* If pickup/drop is required, ask only when address is different */}
+                            {appointmentForm.pickupDropRequired && (
+                              <div className="space-y-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={pickupAddressDifferent}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setPickupAddressDifferent(checked);
+                                      if (!checked) {
+                                        setAppointmentForm({
+                                          ...appointmentForm,
+                                          pickupAddress: "",
+                                          dropAddress: "",
+                                        });
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                  />
+                                  <span className="text-sm text-gray-700">
+                                    Pickup / Drop address is different from customer address
+                                  </span>
+                                </label>
 
-                {/* Drop Address */}
-                {(isCallCenter || isServiceAdvisor) && appointmentForm.pickupDropRequired && (
-                  <FormInput
-                    label="Drop Address"
-                    value={appointmentForm.dropAddress || ""}
-                    onChange={(e) => setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })}
-                    placeholder="Enter drop address"
-                  />
-                )}
+                                {pickupAddressDifferent && (
+                                  <>
+                                    <FormInput
+                                      label="Pickup Address"
+                                      value={appointmentForm.pickupAddress || ""}
+                                      onChange={(e) =>
+                                        setAppointmentForm({ ...appointmentForm, pickupAddress: e.target.value })
+                                      }
+                                      placeholder="Enter pickup address"
+                                    />
+
+                                    <FormInput
+                                      label="Drop Address"
+                                      value={appointmentForm.dropAddress || ""}
+                                      onChange={(e) =>
+                                        setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })
+                                      }
+                                      placeholder="Enter drop address"
+                                    />
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                 {/* Preferred Communication Mode */}
                 {(isCallCenter || isServiceAdvisor) && (
