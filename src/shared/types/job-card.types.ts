@@ -4,12 +4,18 @@
 
 import type { ServiceLocation, Priority } from './common.types';
 
-export type JobCardStatus = 
-  | "Created" 
-  | "Assigned" 
-  | "In Progress" 
-  | "Parts Pending" 
-  | "Completed" 
+export type JobCardStatus =
+  | "arrival_pending"
+  | "job_card_pending_vehicle"
+  | "job_card_active"
+  | "check_in_only"
+  | "no_response_lead"
+  | "manager_quote"
+  | "Created"
+  | "Assigned"
+  | "In Progress"
+  | "Parts Pending"
+  | "Completed"
   | "Invoiced";
 
 export interface JobCard {
@@ -38,6 +44,17 @@ export interface JobCard {
   parts: string[];
   location: ServiceLocation;
   quotationId?: string;
+  workflowState?: JobCardStatus;
+  arrivalMode?: "vehicle_present" | "vehicle_absent" | "check_in_only";
+  dualApproval?: {
+    technicianApproved?: boolean;
+    serviceManagerApproved?: boolean;
+    inventoryApproved?: boolean;
+  };
+  partRequestStatus?: "pending" | "service_manager_approved" | "inventory_manager_approved" | "n/a";
+  partRequests?: string[];
+  technicianNotes?: string;
+  workCompletionNotified?: boolean;
   // Insurance details
   hasInsurance?: boolean;
   insurerName?: string;

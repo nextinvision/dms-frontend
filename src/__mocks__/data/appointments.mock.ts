@@ -2,6 +2,14 @@
  * Mock data for Appointments
  */
 
+export type AppointmentStatus = "Confirmed" | "Pending" | "Cancelled";
+export type AppointmentWorkflowState =
+  | "arrival_pending"
+  | "job_card_pending_vehicle"
+  | "job_card_active"
+  | "check_in_only"
+  | "no_response_lead";
+
 export interface Appointment {
   id: number;
   customerName: string;
@@ -11,7 +19,8 @@ export interface Appointment {
   date: string;
   time: string;
   duration: string;
-  status: "Confirmed" | "Pending" | "Cancelled";
+  status: AppointmentStatus;
+  workflowState: AppointmentWorkflowState;
 }
 
 /**
@@ -29,6 +38,7 @@ export const defaultAppointments: Appointment[] = [
     time: "10:00 AM",
     duration: "2 hours",
     status: "Confirmed",
+    workflowState: "job_card_active",
   },
   {
     id: 2,
@@ -40,6 +50,7 @@ export const defaultAppointments: Appointment[] = [
     time: "2:00 PM",
     duration: "3 hours",
     status: "Confirmed",
+    workflowState: "check_in_only",
   },
 ];
 

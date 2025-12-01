@@ -5,7 +5,9 @@ import { Calendar, Clock, User, Car, PlusCircle, X, Edit, Phone, CheckCircle, Al
 import { useCustomerSearch } from "../../../../hooks/api";
 import { useRole } from "@/shared/hooks";
 import { useRouter } from "next/navigation";
-import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
+import CheckInSlip, { CheckInSlipData, generateCheckInSlipNumber } from "@/components/check-in-slip/CheckInSlip";
+import { defaultJobCards } from "@/__mocks__/data/job-cards.mock";
+import type { CustomerWithVehicles, Vehicle, JobCard, ServiceLocation } from "@/shared/types";
 
 // ==================== Types ====================
 interface Appointment {
@@ -163,9 +165,69 @@ interface ServiceIntakeForm {
   paymentMethod: "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "";
   gstRequirement: boolean;
   businessNameForInvoice: string;
+  jobCardId?: string;
+  arrivalMode?: "vehicle_present" | "vehicle_absent" | "";
+  checkInNotes?: string;
+  checkInSlipNumber?: string;
+  checkInDate?: string;
+  checkInTime?: string;
 }
 
 type ToastType = "success" | "error";
+const JOB_CARD_STORAGE_KEY = "jobCards";
+
+const loadJobCards = (): JobCard[] => {
+  if (typeof window === "undefined") return [];
+  const stored = safeStorage.getItem<JobCard[]>(JOB_CARD_STORAGE_KEY, []);
+  return stored.length > 0 ? stored : [...defaultJobCards];
+};
+
+const persistJobCards = (cards: JobCard[]) => {
+  safeStorage.setItem(JOB_CARD_STORAGE_KEY, cards);
+};
+
+const deriveServiceCenterCode = (serviceCenterName?: string | null): string => {
+  if (!serviceCenterName) {
+    return "SC001";
+  }
+  return serviceCenterName.replace(/\s+/g, "").substring(0, 5).toUpperCase();
+};
+
+const generateJobCardNumber = (serviceCenterCode: string, existing: JobCard[]): string => {
+  const now = new Date();
+  const year = now.getFullYear().toString();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+
+  const sequences = existing
+    .map((card) => {
+      const parts = card.jobCardNumber?.split("-");
+      if (parts && parts[0] === serviceCenterCode && parts[1] === year && parts[2] === month && parts[3]) {
+        return Number(parts[3]);
+      }
+      return 0;
+    })
+    .filter((seq) => !isNaN(seq));
+
+  const nextSequence = sequences.length > 0 ? Math.max(...sequences) + 1 : 1;
+  return `${serviceCenterCode}-${year}-${month}-${String(nextSequence).padStart(4, "0")}`;
+};
+
+const formatVehicleLabel = (vehicle: Vehicle): string => {
+  return `${vehicle.vehicleMake} ${vehicle.vehicleModel} (${vehicle.vehicleYear})`;
+};
+
+const findVehicleForAppointment = (
+  customer: CustomerWithVehicles | null,
+  appointmentVehicleLabel: string
+): Vehicle | undefined => {
+  if (!customer) return undefined;
+  return customer.vehicles.find((vehicle) => formatVehicleLabel(vehicle) === appointmentVehicleLabel);
+};
+
+const getCurrentTimeValue = (): string => {
+  const now = new Date();
+  return now.toTimeString().slice(0, 5);
+};
 type AppointmentStatus = "Confirmed" | "Pending" | "Cancelled";
 type CustomerArrivalStatus = "arrived" | "not_arrived" | null;
 
@@ -266,6 +328,12 @@ const INITIAL_SERVICE_INTAKE_FORM: ServiceIntakeForm = {
   paymentMethod: "",
   gstRequirement: false,
   businessNameForInvoice: "",
+  jobCardId: "",
+  arrivalMode: "",
+  checkInNotes: "",
+  checkInSlipNumber: "",
+  checkInDate: "",
+  checkInTime: "",
 };
 
 import { defaultAppointments, serviceTypes, type ServiceType } from "@/__mocks__/data/appointments.mock";
@@ -656,6 +724,10 @@ export default function Appointments() {
   // Service Intake States (for service advisor)
   const [customerArrivalStatus, setCustomerArrivalStatus] = useState<CustomerArrivalStatus>(null);
   const [serviceIntakeForm, setServiceIntakeForm] = useState<ServiceIntakeForm>(INITIAL_SERVICE_INTAKE_FORM);
+  const [arrivalMode, setArrivalMode] = useState<"vehicle_present" | "vehicle_absent" | null>(null);
+  const [currentJobCard, setCurrentJobCard] = useState<JobCard | null>(null);
+  const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
+  const [showCheckInSlipModal, setShowCheckInSlipModal] = useState<boolean>(false);
 
   // Customer Search States
   const [customerSearchQuery, setCustomerSearchQuery] = useState<string>("");
@@ -729,6 +801,10 @@ export default function Appointments() {
       return INITIAL_SERVICE_INTAKE_FORM;
     });
     setCustomerArrivalStatus(null);
+    setArrivalMode(null);
+    setCurrentJobCard(null);
+    setCheckInSlipData(null);
+    setShowCheckInSlipModal(false);
   }, []);
 
   const closeVehicleDetailsModal = useCallback(() => {
@@ -864,6 +940,98 @@ export default function Appointments() {
       }));
     },
     [clearCustomerSearch, isCallCenter]
+  );
+
+  const handleArrivalModeSelect = useCallback(
+    (mode: "vehicle_present" | "vehicle_absent") => {
+      if (!selectedAppointment) return;
+      if (currentJobCard) {
+        setArrivalMode(mode);
+        return;
+      }
+
+      const existingJobCards = loadJobCards();
+      const serviceCenterCode = deriveServiceCenterCode(userInfo?.serviceCenter);
+      const jobCardNumber = generateJobCardNumber(serviceCenterCode, existingJobCards);
+      const vehicleDetails = findVehicleForAppointment(selectedCustomer, selectedAppointment.vehicle);
+
+      const newJobCard: JobCard = {
+        id: `JC-${Date.now()}`,
+        jobCardNumber,
+        serviceCenterId: "sc-001",
+        serviceCenterCode: serviceCenterCode,
+        customerId: selectedAppointment.customerName || "Customer",
+        customerName: selectedAppointment.customerName,
+        vehicle: selectedAppointment.vehicle,
+        registration: vehicleDetails?.registration || "",
+        vehicleMake: vehicleDetails?.vehicleMake,
+        vehicleModel: vehicleDetails?.vehicleModel,
+        serviceType: selectedAppointment.serviceType,
+        description: serviceIntakeForm.customerComplaintIssue || "Service intake initiated",
+        status: "Created",
+        priority: "Normal",
+        assignedEngineer: null,
+        estimatedCost: appointmentForm.estimatedCost ? `₹${appointmentForm.estimatedCost}` : "₹0",
+        estimatedTime: appointmentForm.estimatedServiceTime || "TBD",
+        createdAt: new Date().toISOString(),
+        parts: [],
+        location: mode === "vehicle_absent" ? "Home Service" : "Station",
+      };
+
+      const updatedJobCards = [...existingJobCards, newJobCard];
+      persistJobCards(updatedJobCards);
+      setCurrentJobCard(newJobCard);
+
+      const slipNumber = generateCheckInSlipNumber(serviceCenterCode);
+      const checkInDate = new Date().toISOString().split("T")[0];
+      const checkInTime = getCurrentTimeValue();
+      const serviceCenterDisplayName = userInfo?.serviceCenter || "Service Center";
+      const serviceCenterLocation = nearestServiceCenter?.location || "Service Center Location";
+      const [serviceCenterCity, serviceCenterState] = serviceCenterLocation
+        .split(",")
+        .map((part) => part.trim());
+      const slipData: CheckInSlipData = {
+        slipNumber,
+        customerName: selectedAppointment.customerName,
+        phone: selectedAppointment.phone,
+        email: selectedCustomer?.email,
+        vehicleMake: vehicleDetails?.vehicleMake || selectedAppointment.vehicle,
+        vehicleModel: vehicleDetails?.vehicleModel || selectedAppointment.vehicle,
+        registrationNumber: vehicleDetails?.registration || "",
+        vin: vehicleDetails?.vin,
+        checkInDate,
+        checkInTime,
+        serviceCenterName: serviceCenterDisplayName,
+        serviceCenterAddress: serviceCenterLocation,
+        serviceCenterCity: serviceCenterCity || "City",
+        serviceCenterState: serviceCenterState || "State",
+        serviceCenterPincode: "000000",
+        serviceType: selectedAppointment.serviceType,
+        notes: mode === "vehicle_absent" ? "Vehicle not yet handed over" : "Vehicle present for check-in",
+      };
+
+      setCheckInSlipData(slipData);
+      setServiceIntakeForm((prev) => ({
+        ...prev,
+        jobCardId: newJobCard.id,
+        arrivalMode: mode,
+        checkInSlipNumber: slipNumber,
+        checkInDate,
+        checkInTime,
+      }));
+      setArrivalMode(mode);
+      setCustomerArrivalStatus("arrived");
+    },
+    [
+      currentJobCard,
+      selectedAppointment,
+      selectedCustomer,
+      serviceIntakeForm.customerComplaintIssue,
+      appointmentForm.estimatedCost,
+      appointmentForm.estimatedServiceTime,
+      userInfo,
+      nearestServiceCenter,
+    ]
   );
 
   const handleAssignNearestServiceCenter = useCallback(() => {
@@ -1137,6 +1305,11 @@ export default function Appointments() {
     // Basic validation
     if (!serviceIntakeForm.vehicleBrand || !serviceIntakeForm.registrationNumber || !serviceIntakeForm.serviceType || !serviceIntakeForm.customerComplaintIssue) {
       showToast("Please fill in all required fields.", "error");
+      return;
+    }
+
+    if (!serviceIntakeForm.jobCardId) {
+      showToast("Select an arrival mode to generate the job card before creating a quotation.", "error");
       return;
     }
 
@@ -2093,6 +2266,10 @@ export default function Appointments() {
                     onClick={() => {
                       setCustomerArrivalStatus("not_arrived");
                       setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
+                      setArrivalMode(null);
+                      setCurrentJobCard(null);
+                      setCheckInSlipData(null);
+                      setShowCheckInSlipModal(false);
                     }}
                     className={`flex-1 px-4 py-3 rounded-lg font-medium transition ${
                       customerArrivalStatus === "not_arrived"
@@ -2103,6 +2280,107 @@ export default function Appointments() {
                     <AlertCircle size={18} className="inline mr-2" />
                     Customer Not Arrived
                   </button>
+                </div>
+              </div>
+            )}
+            {isServiceAdvisor && customerArrivalStatus === "arrived" && (
+              <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-5 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">Arrival Mode</p>
+                    <p className="text-xs text-gray-500">Select whether the vehicle is present or pending arrival.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleArrivalModeSelect("vehicle_present")}
+                      className={`px-4 py-2 rounded-lg border font-medium text-sm ${
+                        arrivalMode === "vehicle_present"
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-indigo-500"
+                      }`}
+                    >
+                      Vehicle Present
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleArrivalModeSelect("vehicle_absent")}
+                      className={`px-4 py-2 rounded-lg border font-medium text-sm ${
+                        arrivalMode === "vehicle_absent"
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-indigo-500"
+                      }`}
+                    >
+                      Vehicle Absent
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-gray-500">Job Card</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {currentJobCard ? currentJobCard.jobCardNumber : "Awaiting arrival mode"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Status: {currentJobCard?.status || "Created"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowCheckInSlipModal(true)}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:text-gray-400"
+                      disabled={!checkInSlipData}
+                    >
+                      View / Print Check-in Slip
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-gray-700">Check-in Notes</label>
+                    <textarea
+                      value={serviceIntakeForm.checkInNotes || ""}
+                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, checkInNotes: e.target.value })}
+                      rows={3}
+                      placeholder="Record observations from the arrival (e.g., vehicle condition, missing documentation)."
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none text-sm text-gray-900 transition-all duration-200 resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Vehicle Condition Media</label>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
+                    className="text-sm text-gray-700"
+                  />
+                  {serviceIntakeForm.photosVideos.files.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {serviceIntakeForm.photosVideos.files.map((file, index) => (
+                        <div key={index} className="relative rounded-lg overflow-hidden">
+                          {file.type.startsWith("image/") ? (
+                            <img
+                              src={serviceIntakeForm.photosVideos.urls[index]}
+                              alt={file.name}
+                              className="w-full h-24 object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-24 bg-gray-100 flex items-center justify-center text-xs text-gray-500">
+                              {file.name}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => handleRemoveDocument("photosVideos", index)}
+                            className="absolute top-1 right-1 text-white bg-black/50 rounded-full p-1"
+                            type="button"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -2248,60 +2526,6 @@ export default function Appointments() {
                       </div>
                     </div>
 
-                    {/* Photos/Videos of Vehicle at Drop-off */}
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                      <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Photos/Videos of Vehicle at Drop-off
-                      </label>
-                      <div className="space-y-3">
-                        <label className="flex items-center justify-center w-full h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                          <div className="flex flex-col items-center gap-2">
-                            <ImageIcon className="text-indigo-600" size={24} />
-                            <span className="text-sm text-gray-600 font-medium">Click to upload or drag and drop</span>
-                            <span className="text-xs text-gray-500">JPG, PNG, MP4, MOV (Max 50MB)</span>
-                          </div>
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept=".jpg,.jpeg,.png,.mp4,.mov"
-                            multiple
-                            onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
-                          />
-                        </label>
-                        {serviceIntakeForm.photosVideos.files.length > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            {serviceIntakeForm.photosVideos.files.map((file, index) => (
-                              <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                                {file.type.startsWith("image/") ? (
-                                  <img
-                                    src={serviceIntakeForm.photosVideos.urls[index]}
-                                    alt={file.name}
-                                    className="w-full h-32 object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-full h-32 flex items-center justify-center bg-gray-100">
-                                    <FileText className="text-gray-400" size={32} />
-                                  </div>
-                                )}
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <button
-                                    onClick={() => handleRemoveDocument("photosVideos", index)}
-                                    className="text-white hover:text-red-300 p-2 rounded transition"
-                                    title="Remove file"
-                                  >
-                                    <Trash2 size={20} />
-                                  </button>
-                                </div>
-                                <div className="p-2 bg-white">
-                                  <p className="text-xs font-medium text-gray-800 truncate">{file.name}</p>
-                                  <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 </div>
 
@@ -2796,6 +3020,10 @@ export default function Appointments() {
           )}
         </div>
       </Modal>
+
+      {showCheckInSlipModal && checkInSlipData && (
+        <CheckInSlip data={checkInSlipData} onClose={() => setShowCheckInSlipModal(false)} />
+      )}
 
       {/* Create Complaint Modal (for Call Center) */}
       {isCallCenter && (
