@@ -1,7 +1,7 @@
- "use client";
- import { localStorage as safeStorage } from "@/shared/lib/localStorage";
- import { useState, useEffect, useMemo } from "react";
- import { useRouter } from "next/navigation";
+"use client";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   PlusCircle,
@@ -145,16 +145,16 @@ export default function JobCards() {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
-    
+
     // Get all job cards for this service center and month
-  const currentMonthCards = visibleJobCards.filter((card) => {
+    const currentMonthCards = visibleJobCards.filter((card) => {
       if (!card.jobCardNumber) return false;
       const parts = card.jobCardNumber.split("-");
-      return parts[0] === serviceCenterCode && 
-             parts[1] === String(year) && 
-             parts[2] === month;
+      return parts[0] === serviceCenterCode &&
+        parts[1] === String(year) &&
+        parts[2] === month;
     });
-    
+
     // Get the highest sequence number for this month
     const sequenceNumbers = currentMonthCards
       .map((card) => {
@@ -162,11 +162,11 @@ export default function JobCards() {
         return parts && parts[3] ? parseInt(parts[3], 10) : 0;
       })
       .filter((num) => !isNaN(num));
-    
-    const nextSequence = sequenceNumbers.length > 0 
-      ? Math.max(...sequenceNumbers) + 1 
+
+    const nextSequence = sequenceNumbers.length > 0
+      ? Math.max(...sequenceNumbers) + 1
       : 1;
-    
+
     return `${serviceCenterCode}-${year}-${month}-${String(nextSequence).padStart(4, "0")}`;
   };
 
@@ -189,13 +189,13 @@ export default function JobCards() {
       //   }),
       // });
       // const newJobCard = await response.json();
-      
+
       // Generate job card number
-  const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
-  const serviceCenterCode =
-    SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
-  const jobCardNumber = generateJobCardNumber(serviceCenterCode);
-      
+      const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
+      const serviceCenterCode =
+        SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
+      const jobCardNumber = generateJobCardNumber(serviceCenterCode);
+
       // For now, add to local state
       const newJobCard: JobCard = {
         id: `JC-${Date.now()}`,
@@ -222,12 +222,12 @@ export default function JobCards() {
         serviceCenterName:
           serviceCenterContext.serviceCenterName || "Service Center",
       };
-      
+
       // Also save to localStorage for persistence
       const existingJobCards = safeStorage.getItem<unknown[]>("jobCards", []);
       existingJobCards.push(newJobCard);
       safeStorage.setItem("jobCards", existingJobCards);
-      
+
       setJobCards([newJobCard, ...jobCards]);
       setShowCreateModal(false);
       resetCreateForm();
@@ -253,7 +253,7 @@ export default function JobCards() {
       //     body: JSON.stringify({ engineerId }),
       //   }
       // );
-      
+
       const engineer = engineers.find((e) => e.id === engineerId);
       setJobCards(
         jobCards.map((job) =>
@@ -287,16 +287,16 @@ export default function JobCards() {
       //     body: JSON.stringify({ status }),
       //   }
       // );
-      
+
       setJobCards(
         jobCards.map((job) =>
           job.id === jobId
             ? {
-                ...job,
-                status,
-                startTime: status === "In Progress" ? new Date().toLocaleString() : job.startTime,
-                completedAt: status === "Completed" ? new Date().toLocaleString() : job.completedAt,
-              }
+              ...job,
+              status,
+              startTime: status === "In Progress" ? new Date().toLocaleString() : job.startTime,
+              completedAt: status === "Completed" ? new Date().toLocaleString() : job.completedAt,
+            }
             : job
         )
       );
@@ -365,7 +365,7 @@ export default function JobCards() {
 
   useEffect(() => {
     fetchJobCards();
-    
+
     // Load job cards from localStorage (created from service requests)
     const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
     if (storedJobCards.length > 0) {
@@ -408,7 +408,7 @@ export default function JobCards() {
 
   const filteredJobs = visibleJobCards.filter((job) => {
     // Status filter
-  if (filter === "draft" && !(job.draftIntake && job.status === "Created")) return false;
+    if (filter === "draft" && !(job.draftIntake && job.status === "Created")) return false;
     if (filter === "created" && job.status !== "Created") return false;
     if (filter === "assigned" && job.status !== "Assigned") return false;
     if (filter === "in_progress" && job.status !== "In Progress") return false;
@@ -479,9 +479,9 @@ export default function JobCards() {
 
   return (
     <div className="bg-[#f9f9fb] min-h-screen">
-      <div className="pt-4 pb-6 md:pt-6 md:pb-10 px-4 sm:px-6">
+      <div className={`pt-4 pb-6 md:pt-6 md:pb-10 overflow-x-hidden ${view === "kanban" ? "px-0" : "px-4 sm:px-6"}`}>
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 md:mb-8 gap-4">
+        <div className={`flex flex-col md:flex-row md:items-center md:justify-between mb-6 md:mb-8 gap-4 ${view === "kanban" ? "px-4 sm:px-6" : ""}`}>
           <div className="text-center md:text-left">
             <h1 className="text-2xl sm:text-3xl font-bold text-blue-600 mb-1 md:mb-2">Job Cards</h1>
             <p className="text-gray-500 text-sm md:text-base">Manage and track service job cards</p>
@@ -490,21 +490,19 @@ export default function JobCards() {
             <div className="flex gap-2 bg-white rounded-lg p-1 border border-gray-300 self-center">
               <button
                 onClick={() => setView("kanban")}
-                className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${
-                  view === "kanban"
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
+                className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${view === "kanban"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+                  }`}
               >
                 Kanban
               </button>
               <button
                 onClick={() => setView("list")}
-                className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${
-                  view === "list"
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
+                className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${view === "list"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+                  }`}
               >
                 List
               </button>
@@ -519,22 +517,21 @@ export default function JobCards() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-3">
+        <div className={`flex flex-wrap gap-2 mb-3 ${view === "kanban" ? "px-4 sm:px-6" : ""}`}>
           <button
             type="button"
             onClick={() => setFilter("draft")}
-            className={`rounded-2xl border px-3 py-2 text-xs font-semibold transition ${
-              filter === "draft"
-                ? "border-yellow-400 bg-yellow-400 text-white"
-                : "border-gray-200 bg-white text-gray-600 hover:border-yellow-400"
-            }`}
+            className={`rounded-2xl border px-3 py-2 text-xs font-semibold transition ${filter === "draft"
+              ? "border-yellow-400 bg-yellow-400 text-white"
+              : "border-gray-200 bg-white text-gray-600 hover:border-yellow-400"
+              }`}
           >
             Drafts ({draftCount})
           </button>
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 mb-4 md:mb-6">
+        <div className={`bg-white rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 mb-4 md:mb-6 ${view === "kanban" ? "mx-4 sm:mx-6" : ""}`}>
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
             <div className="flex-1 w-full relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -546,34 +543,33 @@ export default function JobCards() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm md:text-base"
               />
             </div>
-            
+
             {/* Mobile Filter Toggle */}
-            <button 
+            <button
               onClick={() => setShowMobileFilters(!showMobileFilters)}
               className="md:hidden bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition inline-flex items-center gap-2 w-full justify-center"
             >
               <Filter size={16} />
               Filters
             </button>
-            
+
             {/* Desktop Filters */}
             <div className="hidden md:flex flex-wrap gap-2">
               {filterOptions.map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition ${
-                    filter === f
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
+                  className={`px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition ${filter === f
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                 >
                   {filterLabelMap[f]}
                 </button>
               ))}
             </div>
           </div>
-          
+
           {/* Mobile Filters Dropdown */}
           {showMobileFilters && (
             <div className="mt-4 md:hidden grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -584,11 +580,10 @@ export default function JobCards() {
                     setFilter(f);
                     setShowMobileFilters(false);
                   }}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
-                    filter === f
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition ${filter === f
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                 >
                   {filterLabelMap[f]}
                 </button>
@@ -599,82 +594,127 @@ export default function JobCards() {
 
         {/* Kanban View */}
         {view === "kanban" && (
-          <div className="overflow-hidden">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-6">
-              {kanbanColumns.map((column) => {
-                const columnJobs = getJobsByStatus(column.status);
-                return (
-                  <div
-                    key={column.id}
-                    className="bg-white rounded-xl shadow-md p-4"
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-gray-700 text-sm md:text-base">
-                        {column.title}
-                      </h3>
-                      <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium">
-                        {columnJobs.length}
-                      </span>
-                    </div>
-                    <div className="space-y-3 max-h-[400px] md:max-h-[500px] overflow-y-auto">
-                      {columnJobs.map((job) => (
-                        <div
-                          key={job.id}
-                          className="bg-gray-50 rounded-lg p-3 md:p-4 border border-gray-200 hover:shadow-md transition cursor-pointer"
-                          onClick={() => {
-                            setSelectedJob(job);
-                            setShowDetails(true);
-                          }}
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-gray-800 text-sm truncate">
-                                {job.id}
-                              </p>
-                              <p className="text-xs text-gray-600 mt-1 truncate">
-                                {job.customerName}
-                              </p>
-                            </div>
-                            <span
-                              className={`w-2 h-2 rounded-full flex-shrink-0 ml-2 ${getPriorityColor(
-                                job.priority
-                              )}`}
-                              title={job.priority}
-                            ></span>
+          <div className="w-full max-w-full overflow-x-hidden px-4 sm:px-6">
+            <div className="w-full overflow-x-auto pb-6">
+              <div className="inline-flex gap-4 min-w-max">
+                {kanbanColumns.map((column) => {
+                  const columnJobs = getJobsByStatus(column.status);
+                  const columnColorMap: Record<string, { bg: string; border: string; text: string }> = {
+                    created: { bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-700" },
+                    assigned: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
+                    in_progress: { bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700" },
+                    parts_pending: { bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-700" },
+                    completed: { bg: "bg-green-50", border: "border-green-200", text: "text-green-700" },
+                  };
+                  const columnColor = columnColorMap[column.id] || columnColorMap.created;
+
+                  return (
+                    <div
+                      key={column.id}
+                      className={`shrink-0 w-72 sm:w-80 ${columnColor.bg} rounded-lg border-2 ${columnColor.border} shadow-sm`}
+                    >
+                      {/* Column Header */}
+                      <div className={`sticky top-0 ${columnColor.bg} rounded-t-lg border-b-2 ${columnColor.border} px-4 py-3 z-10`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <h3 className={`font-bold ${columnColor.text} text-base`}>
+                              {column.title}
+                            </h3>
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-gray-600 mb-2">
-                            <Car size={12} />
-                            <span className="truncate">{job.vehicle}</span>
-                          </div>
-                          <p className="text-xs text-gray-700 mb-2 line-clamp-2 break-words">
-                            {job.description}
-                          </p>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-gray-600 flex items-center">
-                              <Clock size={10} className="inline mr-1" />
-                              {job.estimatedTime}
-                            </span>
-                            <span className="font-medium text-gray-800">
-                              {job.estimatedCost}
-                            </span>
-                          </div>
-                          {job.assignedEngineer && (
-                            <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2 text-xs text-gray-600">
-                              <User size={10} />
-                              <span className="truncate">{job.assignedEngineer}</span>
-                            </div>
-                          )}
+                          <span className={`${columnColor.text} bg-white/80 px-2.5 py-1 rounded-full text-xs font-bold min-w-[24px] text-center`}>
+                            {columnJobs.length}
+                          </span>
                         </div>
-                      ))}
-                      {columnJobs.length === 0 && (
-                        <div className="text-center py-6 md:py-8 text-gray-400 text-xs md:text-sm">
-                          No jobs
-                        </div>
-                      )}
+                      </div>
+
+                      {/* Column Body - Scrollable */}
+                      <div className="px-3 py-3 space-y-3 max-h-[calc(100vh-280px)] overflow-y-auto">
+                        {columnJobs.map((job) => (
+                          <div
+                            key={job.id}
+                            className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-lg hover:border-blue-300 transition-all duration-200 cursor-pointer group"
+                            onClick={() => {
+                              setSelectedJob(job);
+                              setShowDetails(true);
+                            }}
+                          >
+                            {/* Card Header */}
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-gray-900 text-sm mb-1 truncate group-hover:text-blue-600 transition-colors">
+                                  {job.id}
+                                </p>
+                                <p className="text-xs text-gray-600 truncate">
+                                  {job.customerName}
+                                </p>
+                              </div>
+                              <span
+                                className={`w-3 h-3 rounded-full flex-shrink-0 ml-2 ${getPriorityColor(
+                                  job.priority
+                                )} shadow-sm`}
+                                title={job.priority}
+                              ></span>
+                            </div>
+
+                            {/* Vehicle Info */}
+                            <div className="flex items-center gap-2 text-xs text-gray-600 mb-3 pb-3 border-b border-gray-100">
+                              <Car size={14} className="text-gray-400 flex-shrink-0" />
+                              <span className="truncate font-medium">{job.vehicle}</span>
+                            </div>
+
+                            {/* Description */}
+                            <p className="text-xs text-gray-700 mb-3 line-clamp-2 break-words leading-relaxed">
+                              {job.description}
+                            </p>
+
+                            {/* Service Type */}
+                            <div className="mb-3">
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-medium">
+                                <Wrench size={10} />
+                                {job.serviceType}
+                              </span>
+                            </div>
+
+                            {/* Footer Info */}
+                            <div className="flex items-center justify-between text-xs pt-3 border-t border-gray-100">
+                              <span className="text-gray-600 flex items-center gap-1">
+                                <Clock size={12} className="text-gray-400" />
+                                <span className="font-medium">{job.estimatedTime}</span>
+                              </span>
+                              <span className="font-bold text-gray-900">
+                                {job.estimatedCost}
+                              </span>
+                            </div>
+
+                            {/* Assigned Engineer */}
+                            {job.assignedEngineer && (
+                              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs">
+                                <div className="flex items-center gap-1.5 text-gray-600">
+                                  <User size={12} className="text-gray-400" />
+                                  <span className="font-medium truncate">{job.assignedEngineer}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Empty State */}
+                        {columnJobs.length === 0 && (
+                          <div className="text-center py-12 text-gray-400">
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+                                <FileText size={20} className="text-gray-300" />
+                              </div>
+                              <p className="text-sm font-medium">No jobs</p>
+                              <p className="text-xs">Jobs will appear here</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -1130,7 +1170,7 @@ export default function JobCards() {
                   required
                 />
               </div>
-              
+
               {/* Parts Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1245,11 +1285,10 @@ export default function JobCards() {
                   {engineers.map((engineer) => (
                     <label
                       key={engineer.id}
-                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition ${
-                        selectedEngineer === engineer.id
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-300 hover:bg-gray-50"
-                      }`}
+                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition ${selectedEngineer === engineer.id
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-gray-300 hover:bg-gray-50"
+                        }`}
                     >
                       <input
                         type="radio"
@@ -1263,13 +1302,12 @@ export default function JobCards() {
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-gray-700">{engineer.name}</p>
                           <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              engineer.status === "Available"
-                                ? "bg-green-100 text-green-700"
-                                : engineer.status === "Busy"
+                            className={`px-2 py-1 rounded text-xs font-medium ${engineer.status === "Available"
+                              ? "bg-green-100 text-green-700"
+                              : engineer.status === "Busy"
                                 ? "bg-yellow-100 text-yellow-700"
                                 : "bg-gray-100 text-gray-700"
-                            }`}
+                              }`}
                           >
                             {engineer.status}
                           </span>
