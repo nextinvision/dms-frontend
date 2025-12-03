@@ -42,3 +42,22 @@ export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   call_center: "Call Center",
 };
 
+/**
+ * Roles that can create new customers
+ * SC Manager is explicitly excluded as they should not create customers
+ */
+export const ROLES_CAN_CREATE_CUSTOMER: UserRole[] = [
+  "admin",
+  "super_admin",
+  "call_center",
+  "service_advisor",
+  "sc_staff",
+];
+
+/**
+ * Check if a role can create customers
+ */
+export function canCreateCustomer(role: UserRole): boolean {
+  return ROLES_CAN_CREATE_CUSTOMER.includes(role);
+}
+
