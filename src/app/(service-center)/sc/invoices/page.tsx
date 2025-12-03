@@ -1,6 +1,6 @@
- "use client";
+"use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { Suspense, useState, useEffect, useMemo } from "react";
 import { useRole } from "@/shared/hooks";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -26,7 +26,7 @@ import { filterByServiceCenter, getServiceCenterContext } from "@/shared/lib/ser
 
 type FilterType = "all" | "paid" | "unpaid" | "overdue";
 
-export default function Invoices() {
+function InvoicesContent() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -72,13 +72,17 @@ export default function Invoices() {
 
     const invoice = invoices.find((inv) => inv.id === invoiceIdFromParams);
     if (!invoice) {
-      setHandledInvoiceId(invoiceIdFromParams);
+      requestAnimationFrame(() => {
+        setHandledInvoiceId(invoiceIdFromParams);
+      });
       return;
     }
 
-    setSelectedInvoice(invoice);
-    setShowDetails(true);
-    setHandledInvoiceId(invoiceIdFromParams);
+    requestAnimationFrame(() => {
+      setSelectedInvoice(invoice);
+      setShowDetails(true);
+      setHandledInvoiceId(invoiceIdFromParams);
+    });
 
   }, [invoiceIdFromParams, handledInvoiceId, invoices, router]);
 
@@ -900,7 +904,15 @@ export default function Invoices() {
         </div>
       )}
     </div>
-  </Suspense>
+  );
+}
+
+// Export with Suspense wrapper for useSearchParams
+export default function Invoices() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading invoices...</div>}>
+      <InvoicesContent />
+    </Suspense>
   );
 }
 
