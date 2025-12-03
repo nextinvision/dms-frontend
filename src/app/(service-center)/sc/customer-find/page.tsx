@@ -27,6 +27,7 @@ import {
 import Link from "next/link";
 import { useRole } from "@/shared/hooks";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+import { canCreateCustomer } from "@/shared/constants/roles";
 import {
   useCustomerSearch,
   useCreateCustomer,
@@ -444,6 +445,8 @@ export default function CustomerFind() {
   const canAccessServiceStatus = hasRoleAccess(["call_center", "service_advisor", "sc_manager", "service_engineer"]);
   const canViewCostEstimation = canAccessEstimatedCost || isInventoryManager;
   const canAssignServiceCenter = canAccessOperationalDetails;
+  // Permission to create customers - SC Manager is explicitly excluded
+  const canCreateNewCustomer = canCreateCustomer(userRole);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithVehicles | null>(null);
   const [showCreateCustomer, setShowCreateCustomer] = useState<boolean>(false);
@@ -532,6 +535,14 @@ export default function CustomerFind() {
     message: "",
     type: "success",
   });
+
+  // Toast function - defined early so it can be used in other callbacks
+  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: "", type: "success" });
+    }, 3000);
+  }, []);
 
   // Hooks for data fetching
   const { results: searchResults, loading: searchLoading, search: performSearch, clear: clearSearch } = useCustomerSearch();
@@ -731,6 +742,12 @@ export default function CustomerFind() {
 
   // Handle direct create customer button
   const handleDirectCreateCustomer = useCallback((): void => {
+    // Check permission before allowing customer creation
+    if (!canCreateNewCustomer) {
+      showToast("You do not have permission to create new customers.", "error");
+      return;
+    }
+    
     // Clear search when opening create form
     setSearchQuery("");
     clearSearch();
@@ -741,7 +758,7 @@ export default function CustomerFind() {
     
     setShowCreateForm(true);
     resetCustomerForm();
-  }, [resetCustomerForm, clearSearch]);
+  }, [canCreateNewCustomer, resetCustomerForm, clearSearch, showToast]);
 
   // Handle service type selection (now integrated in form)
   const handleServiceTypeSelect = useCallback((serviceType: ServiceType): void => {
@@ -753,14 +770,6 @@ export default function CustomerFind() {
       workAddress: serviceType === "home-service" ? prev.workAddress : "",
     }));
   }, [setNewCustomerForm]);
-
-  // Toast function
-  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
-    setToast({ show: true, message, type });
-    setTimeout(() => {
-      setToast({ show: false, message: "", type: "success" });
-    }, 3000);
-  }, []);
 
   // Save new customer
   const handleSaveNewCustomer = useCallback(async (): Promise<void> => {
@@ -814,6 +823,13 @@ export default function CustomerFind() {
       return;
     }
 
+    // Check permission before creating customer
+    if (!canCreateNewCustomer) {
+      setValidationError("You do not have permission to create new customers.");
+      showToast("You do not have permission to create new customers.", "error");
+      return;
+    }
+
     setValidationError("");
 
     const customer = await createCustomer({
@@ -834,7 +850,7 @@ export default function CustomerFind() {
     } else if (createError) {
       setValidationError(createError);
     }
-  }, [newCustomerForm, createCustomer, createError, showToast, resetCustomerForm]);
+  }, [newCustomerForm, createCustomer, createError, showToast, resetCustomerForm, canCreateNewCustomer]);
 
   // Get search type label
   const getSearchTypeLabel = (type: CustomerSearchType | null): string => {
@@ -889,9 +905,11 @@ export default function CustomerFind() {
                 Search by phone, email, customer ID, VIN, or vehicle number
               </p>
             </div>
-            <Button onClick={handleDirectCreateCustomer} icon={PlusCircle} className="self-start sm:self-auto">
-              Create New Customer
-            </Button>
+            {canCreateNewCustomer && (
+              <Button onClick={handleDirectCreateCustomer} icon={PlusCircle} className="self-start sm:self-auto">
+                Create New Customer
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1160,21 +1178,25 @@ export default function CustomerFind() {
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">Customer Not Found</h3>
               <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                No customer found with the provided search. Would you like to create a new customer?
+                {canCreateNewCustomer 
+                  ? "No customer found with the provided search. Would you like to create a new customer?"
+                  : "No customer found with the provided search. Please contact a service advisor or call center to create a new customer."}
               </p>
-              <button
-                onClick={handleDirectCreateCustomer}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-indigo-800 transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98] flex items-center gap-2 mx-auto"
-              >
-                <PlusCircle size={18} strokeWidth={2} />
-                Create New Customer
-              </button>
+              {canCreateNewCustomer && (
+                <button
+                  onClick={handleDirectCreateCustomer}
+                  className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-indigo-800 transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98] flex items-center gap-2 mx-auto"
+                >
+                  <PlusCircle size={18} strokeWidth={2} />
+                  Create New Customer
+                </button>
+              )}
             </div>
           </div>
         )}
 
         {/* Create Customer Form Modal */}
-        {showCreateForm && (
+        {showCreateForm && canCreateNewCustomer && (
           <Modal 
             title="Create New Customer" 
             subtitle="Fill in the customer details below"
