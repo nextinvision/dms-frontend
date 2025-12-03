@@ -1,6 +1,6 @@
  "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRole } from "@/shared/hooks";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -230,7 +230,14 @@ export default function Invoices() {
   };
 
   return (
-    <div className="bg-[#f9f9fb] min-h-screen">
+    <Suspense
+      fallback={
+        <div className="bg-[#f9f9fb] min-h-screen flex items-center justify-center">
+          <p className="text-gray-500">Loading invoices...</p>
+        </div>
+      }
+    >
+      <div className="bg-[#f9f9fb] min-h-screen">
       <div className="pt-6 pb-10">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
@@ -893,6 +900,7 @@ export default function Invoices() {
         </div>
       )}
     </div>
+  </Suspense>
   );
 }
 
