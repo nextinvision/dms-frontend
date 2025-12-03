@@ -3,55 +3,20 @@
  */
 
 import type { Vehicle, ServiceHistoryItem } from "@/shared/types";
+import { mockCustomers } from "./customers.mock";
 
 /**
  * Default vehicles for the vehicle search page
  * In production, this would be fetched from an API
  */
-export const defaultVehicles: Vehicle[] = [
-  {
-    id: 1,
-    customerId: 1,
-    customerNumber: "CUST-2025-001",
-    phone: "9876543210",
-    registration: "PB10AB1234",
-    vin: "MH12AB3456CD7890",
-    customerName: "Rajesh Kumar",
-    customerEmail: "rajesh@example.com",
-    customerAddress: "123 Main St, Pune",
-    vehicleMake: "Honda",
-    vehicleModel: "City",
-    vehicleYear: 2020,
-    vehicleColor: "White",
-    lastServiceDate: "2024-12-15",
-    totalServices: 8,
-    totalSpent: "₹45,000",
-    currentStatus: "Active Job Card",
-    activeJobCardId: "JC-2025-001",
-    nextServiceDate: "2025-02-15",
-  },
-  {
-    id: 2,
-    customerId: 2,
-    customerNumber: "CUST-2025-002",
-    phone: "9876543211",
-    registration: "MH01XY5678",
-    vin: "MH12AB3456CD7891",
-    customerName: "Priya Sharma",
-    customerEmail: "priya@example.com",
-    customerAddress: "456 Park Ave, Mumbai",
-    vehicleMake: "Maruti",
-    vehicleModel: "Swift",
-    vehicleYear: 2019,
-    vehicleColor: "Red",
-    lastServiceDate: "2024-11-20",
-    totalServices: 5,
-    totalSpent: "₹28,000",
-    currentStatus: "Available",
-    activeJobCardId: null,
-    nextServiceDate: "2025-01-20",
-  },
-];
+export const defaultVehicles: Vehicle[] = mockCustomers.flatMap((customer) =>
+  customer.vehicles.map((vehicle) => ({
+    ...vehicle,
+    customerName: customer.name,
+    customerEmail: customer.email ?? "",
+    customerAddress: customer.address ?? "",
+  }))
+);
 
 /**
  * Default service history for vehicles

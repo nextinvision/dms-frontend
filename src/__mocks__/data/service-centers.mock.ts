@@ -128,8 +128,6 @@ export const serviceCentersList = [
   "Delhi Central Hub",
   "Mumbai Metroplex",
   "Bangalore Innovation Center",
-  "Pune Elite Care",
-  "Hyderabad Excellence",
 ];
 
 export const serviceCenterUsers = [

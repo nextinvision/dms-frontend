@@ -23,6 +23,7 @@ export interface Part {
 }
 
 import type { JobCard } from "@/shared/types";
+import { mockCustomers } from "./customers.mock";
 
 export const SERVICE_TYPES: readonly string[] = [
   "-SELECT-",
@@ -37,6 +38,8 @@ export const SERVICE_TYPES: readonly string[] = [
   "PDI",
 ];
 
+const [rajesh, priya, amit] = mockCustomers;
+
 /**
  * Default job cards for the job cards page
  * In production, this would be fetched from an API
@@ -44,9 +47,17 @@ export const SERVICE_TYPES: readonly string[] = [
 export const defaultJobCards: JobCard[] = [
   {
     id: "JC-2025-001",
-    customerName: "Rajesh Kumar",
-    vehicle: "Honda City 2020",
-    registration: "PB10AB1234",
+    jobCardNumber: "SC001-202501-0001",
+    serviceCenterId: "sc-001",
+    serviceCenterCode: "SC001",
+    customerId: rajesh.externalId ?? "",
+    customerName: rajesh.name,
+    vehicleId: rajesh.vehicles[0].externalId,
+    vehicle: `${rajesh.vehicles[0].vehicleMake} ${rajesh.vehicles[0].vehicleModel}`,
+    registration: rajesh.vehicles[0].registration,
+    vehicleMake: rajesh.vehicles[0].vehicleMake,
+    vehicleModel: rajesh.vehicles[0].vehicleModel,
+    customerType: "B2C",
     serviceType: "Routine Maintenance",
     description: "Regular service - oil change, filter replacement",
     status: "In Progress",
@@ -58,12 +69,21 @@ export const defaultJobCards: JobCard[] = [
     createdAt: "2025-01-15 09:30",
     parts: ["Engine Oil", "Air Filter"],
     location: "Station",
+    quotationId: "qt-001",
   },
   {
     id: "JC-2025-002",
-    customerName: "Priya Sharma",
-    vehicle: "Maruti Swift 2019",
-    registration: "MH01XY5678",
+    jobCardNumber: "SC001-202501-0002",
+    serviceCenterId: "sc-001",
+    serviceCenterCode: "SC001",
+    customerId: priya.externalId ?? "",
+    customerName: priya.name,
+    vehicleId: priya.vehicles[0].externalId,
+    vehicle: `${priya.vehicles[0].vehicleMake} ${priya.vehicles[0].vehicleModel}`,
+    registration: priya.vehicles[0].registration,
+    vehicleMake: priya.vehicles[0].vehicleMake,
+    vehicleModel: priya.vehicles[0].vehicleModel,
+    customerType: "B2C",
     serviceType: "Repair",
     description: "Brake pads replacement",
     status: "Assigned",
@@ -77,9 +97,17 @@ export const defaultJobCards: JobCard[] = [
   },
   {
     id: "JC-2025-003",
-    customerName: "Amit Patel",
-    vehicle: "Hyundai i20 2021",
-    registration: "DL05CD9012",
+    jobCardNumber: "SC001-202501-0003",
+    serviceCenterId: "sc-001",
+    serviceCenterCode: "SC001",
+    customerId: amit.externalId ?? "",
+    customerName: amit.name,
+    vehicleId: amit.vehicles[0].externalId,
+    vehicle: `${amit.vehicles[0].vehicleMake} ${amit.vehicles[0].vehicleModel}`,
+    registration: amit.vehicles[0].registration,
+    vehicleMake: amit.vehicles[0].vehicleMake,
+    vehicleModel: amit.vehicles[0].vehicleModel,
+    customerType: "B2C",
     serviceType: "Inspection",
     description: "Pre-purchase inspection",
     status: "Created",

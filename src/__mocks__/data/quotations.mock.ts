@@ -2,15 +2,43 @@
  * Mock data for Quotations
  */
 
+import { mockCustomers } from "./customers.mock";
 import type { Quotation, Insurer, NoteTemplate } from "@/shared/types";
+
+const [rajesh, priya] = mockCustomers;
+const rajeshVehicle = rajesh.vehicles[0];
+const priyaVehicle = priya.vehicles[0];
+
+const buildCustomer = (customer: typeof rajesh) => {
+  const [firstName, ...rest] = customer.name.split(" ");
+  return {
+    id: customer.externalId || customer.id.toString(),
+    firstName,
+    lastName: rest.join(" ") || undefined,
+    phone: customer.phone,
+    email: customer.email,
+    address: customer.address,
+    city: customer.cityState?.split(",")[0]?.trim() || undefined,
+    state: customer.cityState?.split(",")[1]?.trim() || undefined,
+    pincode: customer.pincode,
+  };
+};
+
+const buildVehicle = (vehicle: typeof rajeshVehicle) => ({
+  id: vehicle.externalId || vehicle.id.toString(),
+  make: vehicle.vehicleMake,
+  model: vehicle.vehicleModel,
+  registration: vehicle.registration,
+  vin: vehicle.vin,
+});
 
 export const defaultQuotations: Quotation[] = [
   {
     id: "qt-001",
     quotationNumber: "QT-SC001-202501-0001",
     serviceCenterId: "sc-001",
-    customerId: "cust-001",
-    vehicleId: "veh-001",
+    customerId: rajesh.externalId || "cust-001",
+    vehicleId: rajeshVehicle.externalId || "veh-001",
     serviceAdvisorId: "user-001",
     documentType: "Quotation",
     quotationDate: "2025-01-15",
@@ -68,24 +96,8 @@ export const defaultQuotations: Quotation[] = [
         amount: 1500,
       },
     ],
-    customer: {
-      id: "cust-001",
-      firstName: "Rajesh",
-      lastName: "Kumar",
-      phone: "9876543210",
-      email: "rajesh@example.com",
-      address: "123 Main Street",
-      city: "Mumbai",
-      state: "Maharashtra",
-      pincode: "400001",
-    },
-    vehicle: {
-      id: "veh-001",
-      make: "Honda",
-      model: "City",
-      registration: "MH01AB1234",
-      vin: "MAH12345678901234",
-    },
+    customer: buildCustomer(rajesh),
+    vehicle: buildVehicle(rajeshVehicle),
     insurer: {
       id: "ins-001",
       name: "Bajaj Finance",
@@ -95,6 +107,61 @@ export const defaultQuotations: Quotation[] = [
       email: "support@bajajfinance.com",
       isActive: true,
     },
+  },
+  {
+    id: "qt-002",
+    quotationNumber: "QT-SC001-202501-0002",
+    serviceCenterId: "sc-001",
+    customerId: priya.externalId || "cust-002",
+    vehicleId: priyaVehicle.externalId || "veh-003",
+    serviceAdvisorId: "user-001",
+    documentType: "Quotation",
+    quotationDate: "2025-01-20",
+    validUntil: "2025-02-19",
+    hasInsurance: false,
+    subtotal: 4200,
+    discount: 0,
+    discountPercent: 0,
+    preGstAmount: 4200,
+    cgstAmount: 378,
+    sgstAmount: 378,
+    igstAmount: 0,
+    totalAmount: 4956,
+    notes: "Brake pads replacement",
+    batterySerialNumber: "",
+    customNotes: "",
+    noteTemplateId: "",
+    status: "sent_to_customer",
+    passedToManager: false,
+    createdAt: "2025-01-20T09:00:00Z",
+    updatedAt: "2025-01-20T09:00:00Z",
+    items: [
+      {
+        id: "item-004",
+        serialNumber: 1,
+        partName: "Brake Pads - Front",
+        partNumber: "MCU-BP-003",
+        hsnSacCode: "8708",
+        quantity: 1,
+        rate: 3200,
+        gstPercent: 18,
+        amount: 3200,
+      },
+      {
+        id: "item-005",
+        serialNumber: 2,
+        partName: "Labor Charges",
+        partNumber: "",
+        hsnSacCode: "998314",
+        quantity: 1,
+        rate: 1000,
+        gstPercent: 18,
+        amount: 1000,
+      },
+    ],
+    customer: buildCustomer(priya),
+    vehicle: buildVehicle(priyaVehicle),
+    insurer: undefined,
   },
 ];
 

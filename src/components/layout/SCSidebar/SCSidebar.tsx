@@ -79,6 +79,7 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
     { name: "Job Cards", icon: ClipboardList, href: "/sc/advisor-job-cards" },
     { name: "Leads", icon: Users, href: "/sc/leads" },
     { name: "Quotations", icon: FileText, href: "/sc/quotations" },
+    { name: "Invoices", icon: DollarSign, href: "/sc/invoices" },
   ],
   call_center: [
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },

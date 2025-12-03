@@ -24,6 +24,10 @@ export interface Invoice {
   status: PaymentStatus;
   paymentMethod: PaymentMethod;
   items: InvoiceItem[];
+  customerId?: string;
+  vehicleId?: string;
+  serviceCenterId?: string;
+  serviceCenterName?: string;
 }
 
 export interface InvoiceStats {

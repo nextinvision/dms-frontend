@@ -10,6 +10,23 @@ import { ApiError } from "@/lib/api/errors";
 class CustomerRepository {
   private customers: CustomerWithVehicles[];
 
+  private loadUserContext() {
+    const userInfo = safeStorage.getItem<any>("userInfo", null);
+    const userRole = safeStorage.getItem<any>("userRole", null);
+    return {
+      serviceCenterId: userInfo?.serviceCenter ?? null,
+      userRole: userRole ?? null,
+    };
+  }
+
+  private applyServiceCenterFilter(customers: CustomerWithVehicles[]): CustomerWithVehicles[] {
+    const context = this.loadUserContext();
+    if (context.userRole === "call_center" || !context.serviceCenterId) {
+      return customers;
+    }
+    return customers.filter((customer) => String(customer.serviceCenterId) === String(context.serviceCenterId));
+  }
+
   constructor() {
     // Load from localStorage if available, otherwise use mock data
     const stored = safeStorage.getItem<CustomerWithVehicles[]>("mockCustomers", []);
@@ -21,7 +38,7 @@ class CustomerRepository {
   }
 
   async getAll(): Promise<CustomerWithVehicles[]> {
-    return [...this.customers];
+    return this.applyServiceCenterFilter([...this.customers]);
   }
 
   async getById(id: number | string): Promise<CustomerWithVehicles | null> {
@@ -81,7 +98,7 @@ class CustomerRepository {
       });
     }
 
-    return results;
+    return this.applyServiceCenterFilter(results);
   }
 
   async create(data: NewCustomerForm): Promise<CustomerWithVehicles> {
@@ -119,6 +136,8 @@ class CustomerRepository {
       ? data.alternateMobile.replace(/[\s-+]/g, "").replace(/^91/, "")
       : undefined;
 
+    const storedUserInfo = safeStorage.getItem<any>("userInfo", null);
+
     // Create new customer
     const newCustomer: CustomerWithVehicles = {
       id: Math.max(...this.customers.map((c) => Number(c.id)), 0) + 1,
@@ -144,6 +163,9 @@ class CustomerRepository {
       vehicles: [],
     };
 
+    newCustomer.serviceCenterId = String(this.loadUserContext().serviceCenterId || newCustomer.serviceCenterId || 1);
+    newCustomer.lastServiceCenterId = newCustomer.serviceCenterId;
+    newCustomer.lastServiceCenterName = storedUserInfo?.serviceCenter ?? undefined;
     this.customers.push(newCustomer);
     this.saveToStorage();
 
@@ -183,7 +205,7 @@ class CustomerRepository {
       .filter((c): c is CustomerWithVehicles => c !== undefined)
       .slice(0, limit);
 
-    return recentCustomers.map((c) => ({ ...c }));
+    return this.applyServiceCenterFilter(recentCustomers).map((c) => ({ ...c }));
   }
 
   async addToRecent(id: number | string): Promise<void> {

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   Search,
   User,
@@ -41,6 +41,7 @@ import type {
   CustomerType,
   NewVehicleForm,
   UserRole,
+  Invoice,
 } from "@/shared/types";
 import { getMockServiceHistory } from "@/__mocks__/data/customer-service-history.mock";
 import { getMockComplaints } from "@/__mocks__/data/complaints.mock";
@@ -366,6 +367,7 @@ const CustomerInfoCard = ({ customer, title = "Customer Information" }: { custom
           <p className="text-gray-800 font-semibold">{customer.email}</p>
         </div>
       )}
+
       {customer.address && (
         <div>
           <p className="text-indigo-600 font-medium">Address</p>
@@ -455,6 +457,57 @@ export default function CustomerFind() {
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryItem[]>([]);
   const [validationError, setValidationError] = useState<string>("");
   const [detectedSearchType, setDetectedSearchType] = useState<CustomerSearchType | null>(null);
+  const [serviceCenterSearch, setServiceCenterSearch] = useState<string>("");
+  const [showServiceCenterSelector, setShowServiceCenterSelector] = useState<boolean>(false);
+  const filteredServiceCenters = useMemo(() => {
+    const query = serviceCenterSearch.trim().toLowerCase();
+    if (!query) return staticServiceCenters;
+    return staticServiceCenters.filter((center) =>
+      `${center.name} ${center.location}`.toLowerCase().includes(query)
+    );
+  }, [serviceCenterSearch]);
+  const serviceCenterFilterId = userInfo?.serviceCenter ? Number(userInfo.serviceCenter) : null;
+  const shouldFilterByServiceCenter = !isCallCenter && serviceCenterFilterId;
+  const handleOpenServiceInvoice = useCallback(
+    (service: ServiceHistoryItem) => {
+      if (!service.invoice || typeof window === "undefined") return;
+      const invoiceUrl = new URL("/sc/invoices", window.location.origin);
+
+      const vehicleDescription = selectedVehicle
+        ? `${selectedVehicle.vehicleMake} ${selectedVehicle.vehicleModel}${
+            selectedVehicle.registration ? ` (${selectedVehicle.registration})` : ""
+          }`
+        : "Vehicle";
+
+      const customerName = selectedCustomer?.name || "Customer";
+
+      const serviceInvoice: Invoice = {
+        id: service.invoice,
+        jobCardId: service.jobCardId,
+        customerName,
+        vehicle: vehicleDescription,
+        date: service.date,
+        dueDate: service.date,
+        amount: service.total,
+        paidAmount: service.total,
+        balance: "₹0",
+        status: "Paid",
+        paymentMethod: null,
+        items: [
+          { name: "Labor", qty: 1, price: service.labor },
+          { name: "Parts", qty: 1, price: service.partsCost },
+        ],
+      };
+
+      const existingInvoices = safeStorage.getItem<Invoice[]>("serviceHistoryInvoices", []);
+      const filtered = existingInvoices.filter((item) => item.id !== serviceInvoice.id);
+      safeStorage.setItem("serviceHistoryInvoices", [...filtered, serviceInvoice]);
+
+      invoiceUrl.searchParams.set("invoiceId", service.invoice);
+      window.open(invoiceUrl.toString(), "_blank");
+    },
+    [selectedCustomer, selectedVehicle]
+  );
   const getNearestServiceCenter = useCallback(() => {
     const defaultCenter = staticServiceCenters[0]?.name ?? "";
     if (!selectedCustomer) return defaultCenter;
@@ -482,10 +535,25 @@ export default function CustomerFind() {
 
   // Hooks for data fetching
   const { results: searchResults, loading: searchLoading, search: performSearch, clear: clearSearch } = useCustomerSearch();
+  const filteredSearchResults = useMemo(() => {
+    if (!shouldFilterByServiceCenter || searchResults.length === 0) return searchResults;
+    return searchResults.filter(
+      (customer) => Number(customer.serviceCenterId) === Number(serviceCenterFilterId)
+    );
+  }, [searchResults, shouldFilterByServiceCenter, serviceCenterFilterId]);
   const { loading: createLoading, error: createError, createCustomer } = useCreateCustomer();
   
   // Use mock customers directly for recent customers list (show first 10)
-  const recentCustomers = mockCustomers.slice(0, 10);
+  const filteredMockCustomers = useMemo(() => {
+    if (isCallCenter || !serviceCenterFilterId) {
+      return mockCustomers;
+    }
+    return mockCustomers.filter(
+      (customer) => Number(customer.serviceCenterId) === Number(serviceCenterFilterId)
+    );
+  }, [isCallCenter, serviceCenterFilterId]);
+
+  const recentCustomers = filteredMockCustomers.slice(0, 10);
 
   // Form state for creating new customer
   const [newCustomerForm, setNewCustomerForm] = useState<NewCustomerForm>(initialCustomerForm);
@@ -784,7 +852,8 @@ export default function CustomerFind() {
   };
 
   // Show create customer if search returned no results
-  const shouldShowCreateCustomer = showCreateCustomer || (searchQuery.trim().length >= 2 && searchResults.length === 0 && !searchLoading);
+  const shouldShowCreateCustomer =
+    showCreateCustomer || (searchQuery.trim().length >= 2 && filteredSearchResults.length === 0 && !searchLoading);
 
   return (
     <div className="bg-gray-50 min-h-screen pt-20 px-4 sm:px-6 lg:px-8 pb-10">
@@ -883,9 +952,9 @@ export default function CustomerFind() {
           )}
 
           {/* Search Results Dropdown */}
-          {searchResults.length > 0 && searchQuery.trim().length >= 2 && !showCreateForm && (
+          {filteredSearchResults.length > 0 && searchQuery.trim().length >= 2 && !showCreateForm && (
             <div className="mt-3 rounded-lg shadow-lg max-h-64 overflow-y-auto bg-white">
-              {searchResults.map((customer) => (
+              {filteredSearchResults.map((customer) => (
                 <div
                   key={customer.id}
                   onClick={() => handleCustomerSelect(customer)}
@@ -912,6 +981,12 @@ export default function CustomerFind() {
                           <div className="flex items-center gap-1.5">
                             <Mail size={12} strokeWidth={2} />
                             <span className="truncate max-w-[150px]">{customer.email}</span>
+                          </div>
+                        )}
+                        {isCallCenter && customer.serviceCenterName && (
+                          <div className="flex items-center gap-1.5">
+                            <Building2 size={12} strokeWidth={2} className="text-gray-400" />
+                            <span className="truncate max-w-[150px]">{customer.serviceCenterName}</span>
                           </div>
                         )}
                       </div>
@@ -953,6 +1028,11 @@ export default function CustomerFind() {
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer ID</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
+                      {isCallCenter && (
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                          Service Center
+                        </th>
+                      )}
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicles</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Spent</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
@@ -997,6 +1077,13 @@ export default function CustomerFind() {
                             <span className="text-sm text-gray-400">—</span>
                           )}
                         </td>
+                        {isCallCenter && (
+                          <td className="py-4 px-4">
+                            <span className="text-sm text-gray-600">
+                              {customer.serviceCenterName || "—"}
+                            </span>
+                          </td>
+                        )}
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-1.5">
                             <Car size={14} className="text-gray-400" strokeWidth={2} />
@@ -1847,10 +1934,18 @@ export default function CustomerFind() {
                               <p className="text-lg font-bold text-gray-800 mt-1">
                                 Total: {service.total}
                               </p>
-                              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1 justify-end">
-                                <FileText size={12} />
-                                Invoice: {service.invoice}
-                              </p>
+                            <div className="mt-3 md:mt-0 text-right flex justify-end">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={FileText}
+                                onClick={() => handleOpenServiceInvoice(service)}
+                                title={`Open invoice ${service.invoice}`}
+                                className="whitespace-nowrap"
+                              >
+                                View Invoice
+                              </Button>
+                            </div>
                             </div>
                           </div>
                         </div>
@@ -2097,19 +2192,23 @@ export default function CustomerFind() {
                   {canAssignServiceCenter && (
                     <div className="space-y-2">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                        <FormSelect
-                          label="Service Center"
-                          value={appointmentForm.assignedServiceCenter || ""}
-                          onChange={(e) =>
-                            setAppointmentForm({ ...appointmentForm, assignedServiceCenter: e.target.value })
-                          }
-                          placeholder="Select service center"
-                          options={staticServiceCenters.map((center) => ({
-                            value: center.name,
-                            label: `${center.name} • ${center.location}`,
-                          }))}
-                          className="flex-1"
-                        />
+                        <div className="flex-1">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Service Center</label>
+                          <button
+                            type="button"
+                            onClick={() => setShowServiceCenterSelector(true)}
+                            className="w-full text-left px-4 py-3 rounded-lg border border-gray-300 bg-white hover:border-indigo-500 transition"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-800">
+                                {appointmentForm.assignedServiceCenter
+                                  ? `${appointmentForm.assignedServiceCenter}`
+                                  : "Select a service center"}
+                              </span>
+                              <Search size={16} className="text-gray-400" />
+                            </div>
+                          </button>
+                        </div>
                         <Button onClick={handleAssignNearestCenter} variant="secondary" size="sm" className="whitespace-nowrap">
                           Assign Nearest
                         </Button>
@@ -2832,6 +2931,59 @@ export default function CustomerFind() {
                 })()}
             </div>
           </Modal>
+        )}
+
+        {showServiceCenterSelector && (
+          <div className="fixed inset-0 z-[1100] bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">Choose Service Center</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowServiceCenterSelector(false);
+                    setServiceCenterSearch("");
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition"
+                  aria-label="Close service center selector"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="px-6 py-4 space-y-4">
+                <input
+                  type="text"
+                  placeholder="Search service center..."
+                  value={serviceCenterSearch}
+                  onChange={(e) => setServiceCenterSearch(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                />
+                <div className="py-2 space-y-2 max-h-64 overflow-y-auto">
+                  {filteredServiceCenters.map((center) => (
+                    <button
+                      key={center.id}
+                      type="button"
+                      onClick={() => {
+                        setAppointmentForm((prev) => ({
+                          ...prev,
+                          assignedServiceCenter: center.name,
+                        }));
+                        setShowServiceCenterSelector(false);
+                        setServiceCenterSearch("");
+                      }}
+                      className="w-full px-4 py-3 rounded-lg border border-gray-200 text-left hover:bg-indigo-50 transition"
+                    >
+                      <div className="font-semibold text-gray-900">{center.name}</div>
+                      <p className="text-xs text-gray-500">{center.location}</p>
+                    </button>
+                  ))}
+                  {filteredServiceCenters.length === 0 && (
+                    <p className="text-sm text-gray-500 text-center">No service centers match your search.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -34,6 +34,9 @@ export interface Customer {
   lastServiceDate?: string;
   lastServiceCenterId?: number | string; // ID of last service center
   lastServiceCenterName?: string; // Name of last service center where service was done
+  serviceCenterId?: number | string; // Primary service center affiliation
+  serviceCenterName?: string;
+  externalId?: string;
 }
 
 export interface Vehicle {
@@ -58,10 +61,12 @@ export interface Vehicle {
   nextServiceDate?: string;
   lastServiceCenterId?: number | string; // ID of last service center
   lastServiceCenterName?: string; // Name of last service center where service was done
+  externalId?: string;
 }
 
 export interface ServiceHistoryItem {
   id: number | string;
+  jobCardId?: string;
   date: string;
   type: string;
   engineer: string;

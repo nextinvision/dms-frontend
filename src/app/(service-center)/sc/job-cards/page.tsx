@@ -35,6 +35,11 @@ import {
   type Part,
 } from "@/__mocks__/data/job-cards.mock";
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
+import {
+  filterByServiceCenter,
+  getServiceCenterContext,
+  shouldFilterByServiceCenter,
+} from "@/shared/lib/serviceCenter";
 
 type ViewType = "kanban" | "list";
 type FilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
@@ -58,6 +63,11 @@ interface CreateJobCardForm {
 }
 
 const SERVICE_TYPES = SERVICE_TYPE_OPTIONS;
+const SERVICE_CENTER_CODE_MAP: Record<string, string> = {
+  "1": "SC001",
+  "2": "SC002",
+  "3": "SC003",
+};
 
 export default function JobCards() {
   const router = useRouter();
@@ -86,6 +96,12 @@ export default function JobCards() {
     }
     return defaultJobCards;
   });
+  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
+  const visibleJobCards = useMemo(
+    () => filterByServiceCenter(jobCards, serviceCenterContext),
+    [jobCards, serviceCenterContext]
+  );
+  const shouldFilterJobCards = shouldFilterByServiceCenter(serviceCenterContext);
 
   const [engineers] = useState<Engineer[]>(engineersList);
   const [availableParts] = useState<Part[]>(availablePartsList);
@@ -131,7 +147,7 @@ export default function JobCards() {
     const month = String(now.getMonth() + 1).padStart(2, "0");
     
     // Get all job cards for this service center and month
-    const currentMonthCards = jobCards.filter((card) => {
+  const currentMonthCards = visibleJobCards.filter((card) => {
       if (!card.jobCardNumber) return false;
       const parts = card.jobCardNumber.split("-");
       return parts[0] === serviceCenterCode && 
@@ -175,14 +191,16 @@ export default function JobCards() {
       // const newJobCard = await response.json();
       
       // Generate job card number
-      const serviceCenterCode = "SC001"; // In production, get from user context
-      const jobCardNumber = generateJobCardNumber(serviceCenterCode);
+  const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
+  const serviceCenterCode =
+    SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
+  const jobCardNumber = generateJobCardNumber(serviceCenterCode);
       
       // For now, add to local state
       const newJobCard: JobCard = {
         id: `JC-${Date.now()}`,
         jobCardNumber,
-        serviceCenterId: "sc-001",
+        serviceCenterId,
         serviceCenterCode,
         customerId: formData.customerId,
         customerName: formData.customerName,
@@ -201,6 +219,8 @@ export default function JobCards() {
         createdAt: new Date().toISOString(),
         parts: formData.selectedParts,
         location: formData.location,
+        serviceCenterName:
+          serviceCenterContext.serviceCenterName || "Service Center",
       };
       
       // Also save to localStorage for persistence
@@ -386,7 +406,7 @@ export default function JobCards() {
     return colors[priority] || colors.Normal;
   };
 
-  const filteredJobs = jobCards.filter((job) => {
+  const filteredJobs = visibleJobCards.filter((job) => {
     // Status filter
   if (filter === "draft" && !(job.draftIntake && job.status === "Created")) return false;
     if (filter === "created" && job.status !== "Created") return false;
@@ -410,8 +430,8 @@ export default function JobCards() {
   });
 
   const draftCount = useMemo(
-    () => jobCards.filter((card) => card.draftIntake && card.status === "Created").length,
-    [jobCards]
+    () => visibleJobCards.filter((card) => card.draftIntake && card.status === "Created").length,
+    [visibleJobCards]
   );
 
   const filterLabelMap: Record<FilterType, string> = {
@@ -1326,7 +1346,7 @@ export default function JobCards() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   >
                     {getNextStatus(
-                      jobCards.find((j) => j.id === updatingStatusJobId)?.status || "Created"
+                      visibleJobCards.find((j) => j.id === updatingStatusJobId)?.status || "Created"
                     ).map((status) => (
                       <option key={status} value={status}>
                         {status}

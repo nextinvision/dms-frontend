@@ -3,6 +3,7 @@
  */
 
 import type { Invoice } from "@/shared/types";
+import { mockCustomers } from "./customers.mock";
 
 /**
  * Legacy invoice interface for admin dashboard (includes scName)
@@ -134,12 +135,19 @@ export const invoiceData: LegacyInvoice[] = [
  * Default invoices for the invoices page
  * In production, this would be fetched from an API
  */
+const [rajesh, priya, amit] = mockCustomers;
+const rajeshVehicle = rajesh.vehicles[0];
+const priyaVehicle = priya.vehicles[0];
+const amitVehicle = amit.vehicles[0];
+
 export const defaultInvoices: Invoice[] = [
   {
     id: "INV-2025-001",
     jobCardId: "JC-2025-001",
-    customerName: "Rajesh Kumar",
-    vehicle: "Honda City 2020",
+    customerId: rajesh.externalId ?? "cust-001",
+    vehicleId: rajeshVehicle.externalId ?? "veh-001",
+    customerName: rajesh.name,
+    vehicle: `${rajeshVehicle.vehicleMake} ${rajeshVehicle.vehicleModel} (${rajeshVehicle.registration})`,
     date: "2025-01-15",
     dueDate: "2025-01-25",
     amount: "₹4,000",
@@ -147,6 +155,8 @@ export const defaultInvoices: Invoice[] = [
     balance: "₹4,000",
     status: "Unpaid",
     paymentMethod: null,
+    serviceCenterId: "1",
+    serviceCenterName: "Delhi Central Hub",
     items: [
       { name: "Engine Oil", qty: 1, price: "₹2,500" },
       { name: "Labor Charges", qty: 1, price: "₹1,500" },
@@ -155,8 +165,10 @@ export const defaultInvoices: Invoice[] = [
   {
     id: "INV-2025-002",
     jobCardId: "JC-2025-002",
-    customerName: "Priya Sharma",
-    vehicle: "Maruti Swift 2019",
+    customerId: priya.externalId ?? "cust-002",
+    vehicleId: priyaVehicle.externalId ?? "veh-003",
+    customerName: priya.name,
+    vehicle: `${priyaVehicle.vehicleMake} ${priyaVehicle.vehicleModel} (${priyaVehicle.registration})`,
     date: "2025-01-15",
     dueDate: "2025-01-25",
     amount: "₹4,950",
@@ -164,6 +176,8 @@ export const defaultInvoices: Invoice[] = [
     balance: "₹0",
     status: "Paid",
     paymentMethod: "UPI",
+    serviceCenterId: "2",
+    serviceCenterName: "Mumbai Metroplex",
     items: [
       { name: "Brake Pads", qty: 1, price: "₹3,200" },
       { name: "Labor Charges", qty: 1, price: "₹1,750" },
@@ -172,8 +186,10 @@ export const defaultInvoices: Invoice[] = [
   {
     id: "INV-2025-003",
     jobCardId: "JC-2025-003",
-    customerName: "Amit Patel",
-    vehicle: "Hyundai i20 2021",
+    customerId: amit.externalId ?? "cust-003",
+    vehicleId: amitVehicle.externalId ?? "veh-004",
+    customerName: amit.name,
+    vehicle: `${amitVehicle.vehicleMake} ${amitVehicle.vehicleModel} (${amitVehicle.registration})`,
     date: "2025-01-10",
     dueDate: "2025-01-20",
     amount: "₹1,770",
@@ -181,8 +197,52 @@ export const defaultInvoices: Invoice[] = [
     balance: "₹1,770",
     status: "Overdue",
     paymentMethod: null,
+    serviceCenterId: "3",
+    serviceCenterName: "Bangalore Innovation Center",
     items: [
       { name: "Inspection Charges", qty: 1, price: "₹1,500" },
+    ],
+  },
+  {
+    id: "INV-2024-456",
+    jobCardId: "JC-2024-045",
+    customerId: rajesh.externalId ?? "cust-001",
+    vehicleId: rajeshVehicle.externalId ?? "veh-001",
+    customerName: rajesh.name,
+    vehicle: `${rajeshVehicle.vehicleMake} ${rajeshVehicle.vehicleModel} (${rajeshVehicle.registration})`,
+    date: "2024-12-15",
+    dueDate: "2024-12-15",
+    amount: "₹4,000",
+    paidAmount: "₹4,000",
+    balance: "₹0",
+    status: "Paid",
+    paymentMethod: "Cash",
+    serviceCenterId: "1",
+    serviceCenterName: "Delhi Central Hub",
+    items: [
+      { name: "Labor", qty: 1, price: "₹1,500" },
+      { name: "Parts", qty: 1, price: "₹2,500" },
+    ],
+  },
+  {
+    id: "INV-2024-389",
+    jobCardId: "JC-2024-038",
+    customerId: priya.externalId ?? "cust-002",
+    vehicleId: priyaVehicle.externalId ?? "veh-003",
+    customerName: priya.name,
+    vehicle: `${priyaVehicle.vehicleMake} ${priyaVehicle.vehicleModel} (${priyaVehicle.registration})`,
+    date: "2024-11-20",
+    dueDate: "2024-11-20",
+    amount: "₹5,500",
+    paidAmount: "₹5,500",
+    balance: "₹0",
+    status: "Paid",
+    paymentMethod: "Cash",
+    serviceCenterId: "2",
+    serviceCenterName: "Mumbai Metroplex",
+    items: [
+      { name: "Labor", qty: 1, price: "₹2,000" },
+      { name: "Parts", qty: 1, price: "₹3,500" },
     ],
   },
 ];

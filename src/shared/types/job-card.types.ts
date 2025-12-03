@@ -17,6 +17,7 @@ export interface JobCard {
   jobCardNumber: string; // Format: SC001-2025-11-0001
   serviceCenterId: string;
   serviceCenterCode?: string; // e.g., "SC001"
+  serviceCenterName?: string;
   customerId: string;
   customerName: string;
   vehicleId?: string;

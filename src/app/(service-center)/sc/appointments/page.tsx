@@ -1,10 +1,15 @@
 "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { Suspense, useState, useEffect, useRef, useCallback } from "react";
-import { Calendar, Clock, User, Car, PlusCircle, X, Edit, Phone, CheckCircle, AlertCircle, Eye, MapPin, Building2, AlertTriangle, Upload, FileText, Image as ImageIcon, Trash2 } from "lucide-react";
+import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Calendar, Clock, User, Car, PlusCircle, X, Edit, Phone, CheckCircle, AlertCircle, Eye, MapPin, Building2, AlertTriangle, Upload, FileText, Image as ImageIcon, Trash2, Search } from "lucide-react";
 import { useCustomerSearch } from "../../../../hooks/api";
 import { useRole } from "@/shared/hooks";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  filterByServiceCenter,
+  getServiceCenterContext,
+  shouldFilterByServiceCenter,
+} from "@/shared/lib/serviceCenter";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { JobCard } from "@/shared/types/job-card.types";
 
@@ -64,6 +69,7 @@ interface AppointmentForm {
   time: string;
   duration: string;
   serviceCenterId?: number;
+  serviceCenterName?: string;
   // Customer Information
   customerType?: "B2C" | "B2B";
   // Service Details
@@ -183,6 +189,7 @@ const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   time: "",
   duration: "2",
   serviceCenterId: undefined,
+  serviceCenterName: undefined,
   customerType: undefined,
   // Service Details
   customerComplaintIssue: undefined,
@@ -646,6 +653,18 @@ function AppointmentsContent() {
   const nearestServiceCenter = availableServiceCenters.find((center) => center.id === nearestServiceCenterId);
   const selectedServiceCenter = availableServiceCenters.find((center) => center.id === appointmentForm.serviceCenterId);
 
+  const [serviceCenterSearch, setServiceCenterSearch] = useState<string>("");
+  const [showServiceCenterSelector, setShowServiceCenterSelector] = useState<boolean>(false);
+  const filteredServiceCenters = useMemo(() => {
+    if (!serviceCenterSearch.trim()) {
+      return availableServiceCenters;
+    }
+    const query = serviceCenterSearch.trim().toLowerCase();
+    return availableServiceCenters.filter((center) =>
+      `${center.name} ${center.location}`.toLowerCase().includes(query)
+    );
+  }, [availableServiceCenters, serviceCenterSearch]);
+
   // Modal States
   const [showAppointmentModal, setShowAppointmentModal] = useState<boolean>(false);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
@@ -669,6 +688,12 @@ function AppointmentsContent() {
   // Service Intake States (for service advisor)
   const [customerArrivalStatus, setCustomerArrivalStatus] = useState<CustomerArrivalStatus>(null);
   const [serviceIntakeForm, setServiceIntakeForm] = useState<ServiceIntakeForm>(INITIAL_SERVICE_INTAKE_FORM);
+  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
+  const visibleAppointments = useMemo(
+    () => filterByServiceCenter(appointments, serviceCenterContext),
+    [appointments, serviceCenterContext]
+  );
+  const shouldFilterAppointments = shouldFilterByServiceCenter(serviceCenterContext);
 
   // Customer Search States
   const [customerSearchQuery, setCustomerSearchQuery] = useState<string>("");
@@ -880,10 +905,13 @@ function AppointmentsContent() {
 
       // Auto-suggest nearest service center for call center users
       let suggestedServiceCenterId: number | undefined = undefined;
+      let suggestedServiceCenterName: string | undefined = undefined;
       if (isCallCenter && customer.address) {
         const nearestId = findNearestServiceCenter(customer.address);
+        const nearestCenter = availableServiceCenters.find((sc) => sc.id === nearestId);
         if (nearestId) {
           suggestedServiceCenterId = nearestId;
+          suggestedServiceCenterName = nearestCenter?.name;
         }
       }
 
@@ -893,6 +921,7 @@ function AppointmentsContent() {
         phone: customer.phone,
         vehicle: firstVehicle,
         serviceCenterId: suggestedServiceCenterId,
+        serviceCenterName: suggestedServiceCenterName,
       }));
     },
     [clearCustomerSearch, isCallCenter]
@@ -901,8 +930,13 @@ function AppointmentsContent() {
   const handleAssignNearestServiceCenter = useCallback(() => {
     if (!selectedCustomer?.address) return;
     const nearestId = findNearestServiceCenter(selectedCustomer.address);
+    const nearestCenter = availableServiceCenters.find((sc) => sc.id === nearestId);
     if (nearestId) {
-      setAppointmentForm((prev) => ({ ...prev, serviceCenterId: nearestId }));
+      setAppointmentForm((prev) => ({
+        ...prev,
+        serviceCenterId: nearestId,
+        serviceCenterName: nearestCenter?.name,
+      }));
     }
   }, [selectedCustomer]);
 
@@ -1031,10 +1065,15 @@ function AppointmentsContent() {
       return;
     }
 
+    const contextServiceCenterId = serviceCenterContext.serviceCenterId
+      ? Number(serviceCenterContext.serviceCenterId)
+      : undefined;
+    const contextServiceCenterName = serviceCenterContext.serviceCenterName ?? undefined;
+
     // Check maximum appointments per day limit (only for new appointments)
     if (!isEditing) {
       const maxAppointments = getMaxAppointmentsPerDay(serviceCenterName);
-      const appointmentsForDate = countAppointmentsForDate(appointments, appointmentForm.date);
+      const appointmentsForDate = countAppointmentsForDate(visibleAppointments, appointmentForm.date);
       
       if (appointmentsForDate >= maxAppointments) {
         showToast(
@@ -1050,7 +1089,7 @@ function AppointmentsContent() {
       if (selectedAppointment.date !== appointmentForm.date) {
         const maxAppointments = getMaxAppointmentsPerDay(serviceCenterName);
         const appointmentsForDate = countAppointmentsForDate(
-          appointments.filter((apt) => apt.id !== selectedAppointment.id),
+          visibleAppointments.filter((apt) => apt.id !== selectedAppointment.id),
           appointmentForm.date
         );
         
@@ -1066,6 +1105,8 @@ function AppointmentsContent() {
       // Get service center name if service center is selected
       const selectedServiceCenter = appointmentForm.serviceCenterId
         ? availableServiceCenters.find((sc) => sc.id === appointmentForm.serviceCenterId)
+        : contextServiceCenterId
+        ? availableServiceCenters.find((sc) => sc.id === contextServiceCenterId)
         : null;
 
       const updatedAppointments = appointments.map((apt) =>
@@ -1102,8 +1143,8 @@ function AppointmentsContent() {
         ...appointmentForm,
         duration: "2 hours",
         status: appointmentForm.isMajorIssue ? "Sent to Manager" : "Confirmed",
-        serviceCenterId: appointmentForm.serviceCenterId,
-        serviceCenterName: selectedServiceCenter?.name,
+        serviceCenterId: appointmentForm.serviceCenterId ?? contextServiceCenterId,
+        serviceCenterName: selectedServiceCenter?.name ?? contextServiceCenterName,
         // If major issue, mark estimated service time
         estimatedServiceTime: appointmentForm.isMajorIssue ? "Major Issue - Requires Manager Review" : appointmentForm.estimatedServiceTime,
       };
@@ -1529,7 +1570,7 @@ function AppointmentsContent() {
 
         {/* Appointments Grid */}
         <div className="bg-white rounded-2xl shadow-md p-6">
-          {appointments.length === 0 ? (
+          {visibleAppointments.length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="mx-auto text-gray-400 mb-4" size={48} />
               <p className="text-gray-500 text-lg">No appointments scheduled</p>
@@ -1537,7 +1578,7 @@ function AppointmentsContent() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {appointments.map((apt) => (
+              {visibleAppointments.map((apt) => (
                 <div
                   key={apt.id}
                   onClick={() => handleAppointmentClick(apt)}
@@ -1731,22 +1772,23 @@ function AppointmentsContent() {
             {(isCallCenter || (isServiceAdvisor && !appointmentForm.isMajorIssue)) && (
               <div className="space-y-2">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <FormSelect
-                    label="Service Center"
-                    value={appointmentForm.serviceCenterId?.toString() || ""}
-                    onChange={(e) =>
-                      setAppointmentForm({
-                        ...appointmentForm,
-                        serviceCenterId: e.target.value ? Number(e.target.value) : undefined,
-                      })
-                    }
-                    placeholder="Select service center"
-                    className="flex-1"
-                    options={availableServiceCenters.map((center) => ({
-                      value: center.id.toString(),
-                      label: `${center.name} • ${center.location}`,
-                    }))}
-                  />
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Service Center</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowServiceCenterSelector(true)}
+                      className="w-full text-left px-4 py-3 rounded-lg border border-gray-300 bg-white hover:border-indigo-500 transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-800">
+                          {selectedServiceCenter
+                            ? `${selectedServiceCenter.name} • ${selectedServiceCenter.location}`
+                            : "Select a service center"}
+                        </span>
+                        <Search size={14} className="text-gray-400" />
+                      </div>
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={handleAssignNearestServiceCenter}
@@ -2009,8 +2051,8 @@ function AppointmentsContent() {
                       const maxAppointments = getMaxAppointmentsPerDay(serviceCenterName);
                       const currentCount = countAppointmentsForDate(
                         isEditing && selectedAppointment
-                          ? appointments.filter((apt) => apt.id !== selectedAppointment.id)
-                          : appointments,
+                      ? visibleAppointments.filter((apt) => apt.id !== selectedAppointment.id)
+                      : visibleAppointments,
                         appointmentForm.date
                       );
                       const remaining = maxAppointments - currentCount;
@@ -3489,6 +3531,55 @@ function AppointmentsContent() {
           </div>
         </Modal>
       )}
+
+    {showServiceCenterSelector && (
+      <div className="fixed inset-0 z-[1100] bg-black/40 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Choose Service Center</h3>
+            <button
+              type="button"
+              onClick={() => setShowServiceCenterSelector(false)}
+              className="text-gray-400 hover:text-gray-600 transition"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="px-6 py-4 space-y-4">
+            <input
+              type="text"
+              placeholder="Search service center..."
+              value={serviceCenterSearch}
+              onChange={(e) => setServiceCenterSearch(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+            />
+            <div className="py-2 space-y-2 max-h-64 overflow-y-auto">
+              {filteredServiceCenters.map((center) => (
+                <button
+                  key={center.id}
+                  type="button"
+                  onClick={() => {
+                    setAppointmentForm((prev) => ({
+                      ...prev,
+                      serviceCenterId: center.id,
+                      serviceCenterName: center.name,
+                    }));
+                    setShowServiceCenterSelector(false);
+                  }}
+                  className="w-full px-4 py-3 rounded-lg border border-gray-200 text-left hover:bg-indigo-50 transition"
+                >
+                  <div className="font-semibold text-gray-900">{center.name}</div>
+                  <p className="text-xs text-gray-500">{center.location}</p>
+                </button>
+              ))}
+              {filteredServiceCenters.length === 0 && (
+                <p className="text-sm text-gray-500 text-center">No service centers match your search.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
-/**
- * Mock data for Service History
- */
+import { mockCustomers } from "./customers.mock";
+
+const [rajesh, priya, amit] = mockCustomers;
 
 export interface ServiceHistoryItem {
   id: string;
@@ -15,8 +15,13 @@ export interface ServiceHistoryItem {
   jobCardId: string;
 }
 
-export const serviceHistoryData: Record<number, ServiceHistoryItem[]> = {
-  1: [
+type ExtendedServiceHistoryItem = ServiceHistoryItem & {
+  customerExternalId: string;
+  vehicleExternalId?: string;
+};
+
+const perCustomerServiceHistory: Record<string, ExtendedServiceHistoryItem[]> = {
+  "cust-001": [
     {
       id: "SH001",
       serviceDate: "2024-10-15",
@@ -28,6 +33,8 @@ export const serviceHistoryData: Record<number, ServiceHistoryItem[]> = {
       totalAmount: "₹4000",
       invoiceNumber: "INV-2024-045",
       jobCardId: "JC001",
+      customerExternalId: "cust-001",
+      vehicleExternalId: rajesh.vehicles[0].externalId,
     },
     {
       id: "SH002",
@@ -40,6 +47,8 @@ export const serviceHistoryData: Record<number, ServiceHistoryItem[]> = {
       totalAmount: "₹2500",
       invoiceNumber: "INV-2024-032",
       jobCardId: "JC002",
+      customerExternalId: "cust-001",
+      vehicleExternalId: rajesh.vehicles[1].externalId,
     },
     {
       id: "SH003",
@@ -52,9 +61,11 @@ export const serviceHistoryData: Record<number, ServiceHistoryItem[]> = {
       totalAmount: "₹5000",
       invoiceNumber: "INV-2024-018",
       jobCardId: "JC003",
+      customerExternalId: "cust-001",
+      vehicleExternalId: rajesh.vehicles[0].externalId,
     },
   ],
-  2: [
+  "cust-002": [
     {
       id: "SH004",
       serviceDate: "2024-09-20",
@@ -66,9 +77,11 @@ export const serviceHistoryData: Record<number, ServiceHistoryItem[]> = {
       totalAmount: "₹3000",
       invoiceNumber: "INV-2024-038",
       jobCardId: "JC004",
+      customerExternalId: "cust-002",
+      vehicleExternalId: priya.vehicles[0].externalId,
     },
   ],
-  3: [
+  "cust-003": [
     {
       id: "SH005",
       serviceDate: "2024-11-05",
@@ -80,7 +93,17 @@ export const serviceHistoryData: Record<number, ServiceHistoryItem[]> = {
       totalAmount: "₹3500",
       invoiceNumber: "INV-2024-050",
       jobCardId: "JC005",
+      customerExternalId: "cust-003",
+      vehicleExternalId: amit.vehicles[0].externalId,
     },
   ],
 };
+
+export const serviceHistoryData: Record<number, ExtendedServiceHistoryItem[]> = {
+  1: perCustomerServiceHistory["cust-001"],
+  2: perCustomerServiceHistory["cust-002"],
+  3: perCustomerServiceHistory["cust-003"],
+};
+
+export const serviceHistoryByCustomer = perCustomerServiceHistory;
 
