@@ -26,6 +26,7 @@ import {
   Calculator,
   Send,
 } from "lucide-react";
+import { useRole } from "@/shared/hooks";
 import type { JobCard, JobCardStatus, Priority, KanbanColumn, ServiceLocation } from "@/shared/types";
 import {
   availableParts,
@@ -69,6 +70,15 @@ export default function JobCards() {
   const [updatingStatusJobId, setUpdatingStatusJobId] = useState<string | null>(null);
   const [newStatus, setNewStatus] = useState<JobCardStatus>("Assigned");
   const [selectedEngineer, setSelectedEngineer] = useState<string>("");
+  const { userRole } = useRole();
+  const isServiceManager = userRole === "sc_manager";
+  const isInventoryManager = userRole === "sc_staff";
+  const isTechnician = userRole === "service_engineer";
+  const [technicianApproved, setTechnicianApproved] = useState<boolean>(false);
+  const [partsApproved, setPartsApproved] = useState<boolean>(false);
+  const [partRequestInput, setPartRequestInput] = useState<string>("");
+  const [partRequests, setPartRequests] = useState<Record<string, { parts: string[]; status: "pending" | "service_manager_approved" | "inventory_manager_approved"; technicianNotified: boolean }>>({});
+  const [workCompletion, setWorkCompletion] = useState<Record<string, boolean>>({});
 
   // Use mock data from __mocks__ folder
   const [jobCards, setJobCards] = useState<JobCard[]>(() => {
@@ -312,6 +322,12 @@ export default function JobCards() {
 
   const getStatusColor = (status: JobCardStatus): string => {
     const colors: Record<JobCardStatus, string> = {
+      arrival_pending: "bg-gray-100 text-gray-700 border-gray-300",
+      job_card_pending_vehicle: "bg-blue-50 text-blue-700 border-blue-200",
+      job_card_active: "bg-yellow-100 text-yellow-700 border-yellow-300",
+      check_in_only: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      no_response_lead: "bg-red-100 text-red-700 border-red-200",
+      manager_quote: "bg-purple-50 text-purple-700 border-purple-200",
       Created: "bg-gray-100 text-gray-700 border-gray-300",
       Assigned: "bg-blue-100 text-blue-700 border-blue-300",
       "In Progress": "bg-yellow-100 text-yellow-700 border-yellow-300",
@@ -393,6 +409,12 @@ export default function JobCards() {
 
   const getNextStatus = (currentStatus: JobCardStatus): JobCardStatus[] => {
     const workflow: Record<JobCardStatus, JobCardStatus[]> = {
+      arrival_pending: ["job_card_pending_vehicle"],
+      job_card_pending_vehicle: ["job_card_active"],
+      job_card_active: ["check_in_only", "manager_quote"],
+      check_in_only: ["manager_quote"],
+      no_response_lead: [],
+      manager_quote: ["Assigned"],
       Created: ["Assigned"],
       Assigned: ["In Progress"],
       "In Progress": ["Parts Pending", "Completed"],
@@ -517,6 +539,139 @@ export default function JobCards() {
             </div>
           )}
         </div>
+
+        {isServiceManager && (
+          <div className="mb-4 bg-gradient-to-r from-indigo-50 to-white rounded-xl p-4 shadow-sm border border-indigo-100">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-indigo-800">Manager-Driven Quotation</p>
+                <p className="text-xs text-indigo-600 mt-1">
+                  Confirm technician + inventory approvals before creating the manager quote or passing it back to the advisor.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs text-indigo-700">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={technicianApproved}
+                    onChange={(e) => setTechnicianApproved(e.target.checked)}
+                    className="w-4 h-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  Technician cleared
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={partsApproved}
+                    onChange={(e) => setPartsApproved(e.target.checked)}
+                    className="w-4 h-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  Parts approved
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={handleManagerQuoteAction}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
+                  technicianApproved && partsApproved
+                    ? "bg-indigo-600 text-white shadow-md hover:bg-indigo-700"
+                    : "bg-indigo-200 text-indigo-600 cursor-not-allowed"
+                }`}
+                disabled={!(technicianApproved && partsApproved)}
+              >
+                Create Manager Quote
+              </button>
+            </div>
+          </div>
+        )}
+
+        {jobForPanel && (
+          <div className="mb-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-gray-800">Technician–Manager–Inventory Collaboration</h3>
+                <p className="text-xs text-gray-500">
+                  Create part requests, notify the manager, and capture approvals before sending a quotation.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-600">
+                {currentWorkCompletion && (
+                  <span className="px-2 py-1 bg-green-50 text-green-700 rounded-full">Work completion notified</span>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {isTechnician && (
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-700">Part Request (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={partRequestInput}
+                    onChange={(e) => setPartRequestInput(e.target.value)}
+                    placeholder="Brake pads, Engine oil"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePartRequestSubmit}
+                    className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold shadow-sm hover:bg-indigo-700 transition"
+                  >
+                    Submit Part Request
+                  </button>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-700">Current Request Status</p>
+                <p className="text-xs text-gray-500">{activeRequest?.status ?? "No active request"}</p>
+                <p className="text-xs text-gray-500">
+                  Parts: {(activeRequest?.parts || []).join(", ") || "—"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3 text-xs">
+              <button
+                type="button"
+                onClick={handleTechnicianNotifyManager}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:border-indigo-500 hover:text-indigo-700 transition"
+                disabled={!activeRequest}
+              >
+                Notify Manager
+              </button>
+              {isServiceManager && (
+                <button
+                  type="button"
+                  onClick={handleServiceManagerPartApproval}
+                  className="px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:border-indigo-500 hover:text-indigo-700 transition"
+                  disabled={!activeRequest}
+                >
+                  Approve Parts (Manager)
+                </button>
+              )}
+              {isInventoryManager && (
+                <button
+                  type="button"
+                  onClick={handleInventoryManagerPartsApproval}
+                  className="px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:border-indigo-500 hover:text-indigo-700 transition"
+                  disabled={activeRequest?.status !== "service_manager_approved"}
+                >
+                  Approve Parts (Inventory)
+                </button>
+              )}
+              {isTechnician && (
+                <button
+                  type="button"
+                  onClick={handleWorkCompletionNotification}
+                  className="px-3 py-2 rounded-lg border border-green-300 text-green-700 hover:border-green-400 hover:text-green-800 transition"
+                >
+                  Notify Work Completion
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Kanban View */}
         {view === "kanban" && (

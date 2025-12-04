@@ -647,8 +647,8 @@ export default function Leads() {
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+        </div>
+      </div>
         </div>
       )}
     </div>
