@@ -8,6 +8,7 @@ import { availableParts } from "@/__mocks__/data/job-cards.mock";
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+import { createPartsRequestFromJobCard } from "@/shared/utils/jobCardPartsRequest.util";
 
 export type CreateJobCardForm = {
   vehicleId: string;
@@ -163,6 +164,13 @@ export default function JobCardFormModal({
 
       const existingJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
       safeStorage.setItem("jobCards", [newJobCard, ...existingJobCards]);
+      
+      // If parts are selected, create a parts request for inventory manager
+      if (form.selectedParts.length > 0) {
+        const requestedBy = `${serviceCenterContext.serviceCenterName || "Service Center"} - ${serviceCenterContext.userRole || "SC Manager"}`;
+        await createPartsRequestFromJobCard(newJobCard, requestedBy);
+      }
+      
       onCreated(newJobCard);
       resetForm();
       onClose();

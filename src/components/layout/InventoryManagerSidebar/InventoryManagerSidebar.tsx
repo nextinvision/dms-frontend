@@ -2,118 +2,41 @@
 import { useState } from "react";
 import {
   Home,
-  Search,
-  FileText,
-  ClipboardList,
-  Wrench,
-  Package,
+  Boxes,
+  TrendingUp,
+  PlusCircle,
+  Eye,
   ShoppingCart,
-  DollarSign,
-  Calendar,
-  Users,
-  MessageSquare,
-  Settings,
+  ListChecks,
+  CheckCircle,
   LogOut,
-  Truck,
-  BarChart3,
-  UserCircle,
   LucideIcon,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
-import type { UserRole } from "@/shared/types";
 import { useRole } from "@/shared/hooks";
 import { safeStorage } from "@/shared/lib/localStorage";
+import { INVENTORY_MANAGER_MENU_ITEMS } from "@/shared/constants/menu-items";
 
-interface MenuItem {
-  name: string;
-  icon: LucideIcon;
-  href: string;
-}
-
-export interface SCSidebarProps {
+export interface InventoryManagerSidebarProps {
   open: boolean;
   setOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
-  role?: UserRole;
 }
 
-const roleMenus: Record<UserRole, MenuItem[]> = {
-  sc_manager: [
-    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
-    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
-    { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
-    { name: "Advisor Job Cards", icon: ClipboardList, href: "/sc/advisor-job-cards" },
-    { name: "Workshop", icon: Wrench, href: "/sc/workshop" },
-    { name: "Inventory", icon: Package, href: "/sc/inventory" },
-    { name: "OTC Orders", icon: ShoppingCart, href: "/sc/otc-orders" },
-    { name: "Home Service", icon: Truck, href: "/sc/home-service" },
-    { name: "Invoices", icon: DollarSign, href: "/sc/invoices" },
-    { name: "Technicians", icon: Users, href: "/sc/technicians" },
-    { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
-    { name: "Reports", icon: BarChart3, href: "/sc/reports" },
-    { name: "Approvals", icon: FileText, href: "/sc/approvals" },
-    { name: "Settings", icon: Settings, href: "/sc/settings" },
-  ],
-  sc_staff: [
-    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
-    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
-    { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
-    { name: "Workshop", icon: Wrench, href: "/sc/workshop" },
-    { name: "Inventory", icon: Package, href: "/sc/inventory" },
-    { name: "OTC Orders", icon: ShoppingCart, href: "/sc/otc-orders" },
-    { name: "Invoices", icon: DollarSign, href: "/sc/invoices" },
-  ],
-  service_engineer: [
-    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "My Jobs", icon: ClipboardList, href: "/sc/job-cards" },
-    { name: "Home Service", icon: Truck, href: "/sc/home-service" },
-    { name: "Parts Request", icon: Package, href: "/sc/parts-request" },
-  ],
-  service_advisor: [
-    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
-    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
-    { name: "Job Cards", icon: ClipboardList, href: "/sc/advisor-job-cards" },
-    { name: "Leads", icon: Users, href: "/sc/leads" },
-    { name: "Quotations", icon: FileText, href: "/sc/quotations" },
-    { name: "Invoices", icon: DollarSign, href: "/sc/invoices" },
-  ],
-  call_center: [
-    { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
-    { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
-    { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
-  ],
-  admin: [],
-  super_admin: [],
-  inventory_manager: [],
-};
-
-export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
+export function InventoryManagerSidebar({ open, setOpen }: InventoryManagerSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { userInfo, userRole, isLoading } = useRole();
+  const { userInfo } = useRole();
   // Use lazy initializer to check if we're on the client side
   const [isMounted] = useState(() => typeof window !== "undefined");
-
-  // Use role from hook (most reliable) - it reads directly from localStorage
-  // Use consistent role during SSR to avoid hydration mismatch
-  // Default to sc_manager during SSR, then use actual role after mount
-  const effectiveRole = (isMounted && userRole && userRole !== "admin" && userRole !== "super_admin")
-    ? userRole
-    : (roleProp || "sc_manager");
-  // Always use the same menu structure - roleProp should be provided from parent
-  const menu = roleMenus[effectiveRole] || roleMenus.sc_manager;
 
   // Compute user info with consistent defaults for SSR and client
   // Use consistent defaults during SSR to avoid hydration mismatch
   const user = {
-    name: (isMounted && userInfo?.name) ? userInfo.name : "SC Manager",
-    role: (isMounted && userInfo?.role) ? userInfo.role : "SC Manager",
-    initials: (isMounted && userInfo?.initials) ? userInfo.initials : "SC",
+    name: (isMounted && userInfo?.name) ? userInfo.name : "Inventory Manager",
+    role: (isMounted && userInfo?.role) ? userInfo.role : "Inventory Manager",
+    initials: (isMounted && userInfo?.initials) ? userInfo.initials : "IM",
   };
 
   const handleLogout = () => {
@@ -133,7 +56,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
       )}
     >
       <nav className="mt-2 flex flex-col flex-grow overflow-y-auto px-2 py-2">
-        {menu.length > 0 && menu.map((item) => {
+        {INVENTORY_MANAGER_MENU_ITEMS.map((item) => {
           const Icon = item.icon;
           // Check active state - pathname is available on both server and client
           const active = pathname === item.href;

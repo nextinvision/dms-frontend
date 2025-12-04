@@ -83,7 +83,7 @@ export default function InventoryPage() {
     let filtered = inventory;
     
     if (selectedCenter !== "all") {
-      filtered = filtered.filter(item => item.centerId === parseInt(selectedCenter));
+      filtered = filtered.filter(item => item.centerId === selectedCenter);
     }
     
     if (searchTerm) {
@@ -104,7 +104,8 @@ export default function InventoryPage() {
   const lowStock = filteredInventory.filter(item => item.status === "Low Stock").length;
   const totalValue = filteredInventory.reduce((sum, item) => {
     const price = parseFloat(item.price.replace('₹', '').replace(',', '')) || 0;
-    return sum + (price * item.quantity);
+    const quantity = parseFloat(item.quantity) || 0;
+    return sum + (price * quantity);
   }, 0);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -122,8 +123,8 @@ export default function InventoryPage() {
           ? { 
               ...item, 
               ...form, 
-              quantity: parseInt(form.quantity) || 0,
-              centerId: parseInt(form.centerId) || item.centerId,
+              quantity: form.quantity,
+              centerId: form.centerId,
               centerName: selectedCenterName || item.centerName
             }
           : item
@@ -142,11 +143,11 @@ export default function InventoryPage() {
         sku: form.sku,
         partCode: form.partCode || undefined,
         category: form.category,
-        quantity: parseInt(form.quantity) || 0,
+        quantity: form.quantity,
         price: form.price,
         status: form.status,
         centerName: selectedCenterName,
-        centerId: parseInt(form.centerId),
+        centerId: form.centerId,
       };
       const updated = [...inventory, newItem];
       setInventory(updated);

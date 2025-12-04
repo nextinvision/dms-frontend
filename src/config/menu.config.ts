@@ -75,6 +75,7 @@ export const SC_MENU_ITEMS: Record<UserRole, MenuItem[]> = {
   ],
   admin: [],
   super_admin: [],
+  inventory_manager: [],
 };
 
 export const MENU_CONFIG = {

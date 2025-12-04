@@ -210,6 +210,12 @@ export default function LoginPage() {
                 >
                   Call Center
                 </button>
+                <button
+                  onClick={() => quickLogin("inventory_manager")}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-indigo-50 hover:text-indigo-700 rounded-lg transition-colors duration-150 font-medium"
+                >
+                  Inventory Manager
+                </button>
               </div>
             </div>
           )}

@@ -66,6 +66,14 @@ export const mockUsers: MockUser[] = [
     initials: "CC",
     serviceCenter: null, // Call center can assign to any service center
   },
+  {
+    email: "inventory@service.com",
+    password: "inv123",
+    role: "inventory_manager",
+    name: "Inventory Manager",
+    initials: "IM",
+    serviceCenter: null, // Inventory manager manages inventory across all service centers
+  },
 ];
 
 /**
