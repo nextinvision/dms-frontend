@@ -7,6 +7,7 @@ export const ROUTES = {
   LOGIN: "/",
   ADMIN_DASHBOARD: "/dashboard",
   SC_DASHBOARD: "/sc/dashboard",
+  INVENTORY_MANAGER_DASHBOARD: "/inventory-manager/dashboard",
   VEHICLE_SEARCH: "/sc/vehicle-search",
   SERVICE_REQUESTS: "/sc/service-requests",
   JOB_CARDS: "/sc/job-cards",
@@ -16,6 +17,13 @@ export const ROUTES = {
   OTC_ORDERS: "/sc/otc-orders",
   HOME_SERVICE: "/sc/home-service",
   INVOICES: "/sc/invoices",
+  // Inventory Manager routes
+  PARTS_MASTER: "/inventory-manager/parts-master",
+  PARTS_STOCK_UPDATE: "/inventory-manager/parts-stock-update",
+  PARTS_ENTRY: "/inventory-manager/parts-entry",
+  PARTS_VIEW: "/inventory-manager/parts-view",
+  PARTS_ORDER_ENTRY: "/inventory-manager/parts-order-entry",
+  PARTS_ORDER_VIEW: "/inventory-manager/parts-order-view",
 } as const;
 
 /**
@@ -30,6 +38,7 @@ export function getRedirectPath(role: UserRole): string {
     service_engineer: ROUTES.SC_DASHBOARD,
     service_advisor: ROUTES.SC_DASHBOARD,
     call_center: ROUTES.SC_DASHBOARD,
+    inventory_manager: ROUTES.INVENTORY_MANAGER_DASHBOARD,
   };
 
   return rolePaths[role] || ROUTES.ADMIN_DASHBOARD;
@@ -55,6 +64,11 @@ export function hasAccess(role: UserRole, path: string): boolean {
   
   if (scRoles.includes(role)) {
     return path.startsWith("/sc");
+  }
+
+  // Inventory manager can only access inventory manager routes
+  if (role === "inventory_manager") {
+    return path.startsWith("/inventory-manager");
   }
 
   return false;

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, startTransition } from "react";
 import {
   Calendar,
   Clock,
@@ -60,6 +60,20 @@ export const AppointmentModal = ({
   const { userRole, userInfo } = useRole();
   const isCallCenter = userRole === "call_center";
   const isServiceAdvisor = userRole === "service_advisor";
+  
+  // Compute initial form value when modal opens
+  const initialFormValue = useMemo(() => {
+    if (!open) return null;
+    const baseForm = {
+      ...INITIAL_APPOINTMENT_FORM,
+      ...initialForm,
+    };
+    if (fixedVehicle) {
+      baseForm.vehicle = formatVehicleString(fixedVehicle);
+    }
+    return baseForm;
+  }, [open, initialForm, fixedVehicle]);
+
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>({
     ...INITIAL_APPOINTMENT_FORM,
     ...initialForm,
@@ -72,30 +86,26 @@ export const AppointmentModal = ({
   const [pickupAddressDifferent, setPickupAddressDifferent] = useState(false);
   const [validationError, setValidationError] = useState<string>("");
   const customerDropdownRef = useRef<HTMLDivElement>(null);
+  const prevOpenRef = useRef(open);
 
   const customerSearch = useCustomerSearch();
   const customerSearchResults: CustomerWithVehicles[] = customerSearch.results;
   const customerSearchLoading = customerSearch.loading;
 
+  // Reset form when modal opens (using startTransition to batch updates)
   useEffect(() => {
-    if (open) {
-      setAppointmentForm((prev) => ({
-        ...INITIAL_APPOINTMENT_FORM,
-        ...initialForm,
-      }));
-      if (fixedCustomer) {
-        setSelectedCustomer(fixedCustomer);
-        setCustomerSearchQuery(fixedCustomer.name);
-        setShowCustomerDropdown(false);
-      }
-      if (fixedVehicle) {
-        setAppointmentForm((prev) => ({
-          ...prev,
-          vehicle: formatVehicleString(fixedVehicle),
-        }));
-      }
+    if (open && !prevOpenRef.current && initialFormValue) {
+      startTransition(() => {
+        setAppointmentForm(initialFormValue);
+        if (fixedCustomer) {
+          setSelectedCustomer(fixedCustomer);
+          setCustomerSearchQuery(fixedCustomer.name);
+          setShowCustomerDropdown(false);
+        }
+      });
     }
-  }, [open, initialForm, fixedCustomer, fixedVehicle]);
+    prevOpenRef.current = open;
+  }, [open, initialFormValue, fixedCustomer]);
 
   const filteredServiceCenters = useMemo(() => {
     const query = serviceCenterSearch.trim().toLowerCase();

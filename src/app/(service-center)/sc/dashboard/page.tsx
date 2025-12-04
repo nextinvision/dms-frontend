@@ -432,6 +432,11 @@ export default function SCDashboard() {
         alerts: [],
         quickActions: [],
       },
+      inventory_manager: {
+        cards: [],
+        alerts: [],
+        quickActions: [],
+      },
     };
 
     return baseData[userRole] || baseData.sc_manager;

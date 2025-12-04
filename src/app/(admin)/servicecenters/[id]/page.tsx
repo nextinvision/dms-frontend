@@ -2776,6 +2776,7 @@ export default function ServiceCenterDetailPage() {
                     id: inventory.length + 1,
                     partName: inventoryForm.partName,
                     sku: inventoryForm.sku,
+                    selectedQuantity: 0,
                     partCode: inventoryForm.partCode,
                     category: inventoryForm.category,
                     currentQty: parseInt(inventoryForm.quantity),

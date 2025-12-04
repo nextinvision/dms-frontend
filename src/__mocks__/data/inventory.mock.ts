@@ -1,236 +1,342 @@
 /**
- * Mock data for Inventory
+ * Mock data for Inventory Management
  */
 
+import type { Part, InventoryItem } from "@/shared/types/inventory.types";
+import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types";
+
+/**
+ * Mock Inventory Item type for Admin inventory page
+ */
 export interface MockInventoryItem {
   id: number;
   partName: string;
   sku: string;
   partCode?: string;
   category: string;
-  quantity: number;
+  quantity: string;
   price: string;
   status: "In Stock" | "Low Stock";
-  centerId?: number;
+  centerId: string;
   centerName?: string;
 }
 
+/**
+ * Default inventory data for Admin inventory page
+ */
 export const defaultInventoryData: MockInventoryItem[] = [
   {
     id: 1,
-    partName: "Engine Oil 5L",
-    sku: "EO-5L-001",
-    category: "Fluids",
-    quantity: 45,
-    price: "₹450",
+    partName: "Brake Pad Set - Front",
+    sku: "BP-FR-001",
+    partCode: "P001",
+    category: "Brakes",
+    quantity: "45",
+    price: "2500",
     status: "In Stock",
-    centerId: 1,
-    centerName: "Delhi Central Hub",
+    centerId: "1",
+    centerName: "Pune Phase 1",
   },
   {
     id: 2,
-    partName: "Air Filter",
-    sku: "AF-001",
-    category: "Filters",
-    quantity: 12,
-    price: "₹250",
+    partName: "Engine Oil Filter",
+    sku: "EOF-001",
+    partCode: "P002",
+    category: "Engine",
+    quantity: "120",
+    price: "350",
     status: "In Stock",
-    centerId: 1,
-    centerName: "Delhi Central Hub",
+    centerId: "1",
+    centerName: "Pune Phase 1",
   },
   {
     id: 3,
-    partName: "Spark Plugs (Set of 4)",
-    sku: "SP-4-001",
-    category: "Ignition",
-    quantity: 15,
-    price: "₹600",
-    status: "In Stock",
-    centerId: 2,
-    centerName: "Mumbai Metroplex",
-  },
-  {
-    id: 4,
-    partName: "Brake Pads",
-    sku: "BP-001",
-    category: "Brakes",
-    quantity: 8,
-    price: "₹1200",
-    status: "In Stock",
-    centerId: 2,
-    centerName: "Mumbai Metroplex",
-  },
-  {
-    id: 5,
-    partName: "Coolant 5L",
-    sku: "CL-5L-001",
-    category: "Fluids",
-    quantity: 6,
-    price: "₹350",
+    partName: "Air Filter Element",
+    sku: "AFE-001",
+    partCode: "P003",
+    category: "Engine",
+    quantity: "8",
+    price: "450",
     status: "Low Stock",
-    centerId: 3,
-    centerName: "Bangalore Innovation Center",
-  },
-  {
-    id: 6,
-    partName: "Oil Filter",
-    sku: "OF-001",
-    category: "Filters",
-    quantity: 4,
-    price: "₹180",
-    status: "Low Stock",
-    centerId: 3,
-    centerName: "Bangalore Innovation Center",
+    centerId: "1",
+    centerName: "Pune Phase 1",
   },
 ];
 
-import type { InventoryItem } from "@/shared/types";
-
 /**
- * Default inventory items for the service center inventory page
- * In production, this would be fetched from an API
+ * Default service center inventory data
  */
 export const defaultServiceCenterInventory: InventoryItem[] = [
   {
     id: 1,
-    partName: "Engine Oil 5W-30",
-    sku: "EO-001",
-    category: "Lubricants",
+    partName: "Brake Pad Set - Front",
+    sku: "BP-FR-001",
+    partCode: "P001",
+    category: "Brakes",
     currentQty: 45,
     minStock: 20,
-    unitPrice: "₹450",
-    costPrice: "₹350",
-    supplier: "Shell India",
-    location: "Shelf A-1",
+    unitPrice: "₹2,500",
+    costPrice: "₹2,000",
+    supplier: "Auto Parts Co.",
+    location: "Warehouse A",
     status: "In Stock",
   },
   {
     id: 2,
-    partName: "Brake Pads - Front",
-    sku: "BP-002",
-    category: "Brakes",
+    partName: "Engine Oil Filter",
+    sku: "EOF-001",
+    partCode: "P002",
+    category: "Engine",
+    currentQty: 120,
+    minStock: 50,
+    unitPrice: "₹350",
+    costPrice: "₹280",
+    supplier: "Filter Solutions",
+    location: "Warehouse A",
+    status: "In Stock",
+  },
+  {
+    id: 3,
+    partName: "Air Filter Element",
+    sku: "AFE-001",
+    partCode: "P003",
+    category: "Engine",
     currentQty: 8,
     minStock: 15,
-    unitPrice: "₹1,200",
-    costPrice: "₹900",
-    supplier: "Bosch",
-    location: "Shelf B-3",
+    unitPrice: "₹450",
+    costPrice: "₹360",
+    supplier: "Filter Solutions",
+    location: "Warehouse B",
     status: "Low Stock",
   },
   {
-    id: 3,
-    partName: "Air Filter",
-    sku: "AF-003",
-    category: "Filters",
+    id: 4,
+    partName: "Battery 12V 60Ah",
+    sku: "BAT-12V-60",
+    partCode: "P004",
+    category: "Electrical",
     currentQty: 0,
     minStock: 10,
-    unitPrice: "₹350",
-    costPrice: "₹250",
-    supplier: "Mahle",
-    location: "Shelf C-2",
+    unitPrice: "₹8,500",
+    costPrice: "₹7,200",
+    supplier: "Battery Corp",
+    location: "Warehouse A",
     status: "Out of Stock",
   },
-  {
-    id: 4,
-    partName: "AC Gas R134a",
-    sku: "AC-004",
-    category: "AC Parts",
-    currentQty: 12,
-    minStock: 5,
-    unitPrice: "₹800",
-    costPrice: "₹600",
-    supplier: "Denso",
-    location: "Shelf D-1",
-    status: "In Stock",
-  },
-  {
-    id: 5,
-    partName: "Spark Plugs Set",
-    sku: "SP-005",
-    category: "Engine",
-    currentQty: 25,
-    minStock: 10,
-    unitPrice: "₹600",
-    costPrice: "₹450",
-    supplier: "NGK",
-    location: "Shelf E-2",
-    status: "In Stock",
-  },
 ];
 
-export const serviceCenterInventoryData: InventoryItem[] = [
+/**
+ * Mock Parts Master Data
+ */
+export const mockParts: Part[] = [
   {
-    id: 1,
-    partName: "Engine Oil 5L",
-    sku: "EO-5L-001",
-    category: "Fluids",
-    currentQty: 20,
-    minStock: 10,
-    unitPrice: "₹450",
-    costPrice: "₹350",
-    supplier: "Shell India",
-    location: "Shelf A-1",
-    status: "In Stock",
-  },
-  {
-    id: 2,
-    partName: "Air Filter",
-    sku: "AF-001",
-    category: "Filters",
-    currentQty: 12,
-    minStock: 10,
-    unitPrice: "₹250",
-    costPrice: "₹200",
-    supplier: "Mahle",
-    location: "Shelf C-2",
-    status: "In Stock",
-  },
-  {
-    id: 3,
-    partName: "Spark Plugs (Set of 4)",
-    sku: "SP-4-001",
-    category: "Ignition",
-    currentQty: 15,
-    minStock: 10,
-    unitPrice: "₹600",
-    costPrice: "₹450",
-    supplier: "NGK",
-    location: "Shelf E-2",
-    status: "In Stock",
-  },
-  {
-    id: 4,
-    partName: "Brake Pads",
-    sku: "BP-001",
+    id: "part-1",
+    partId: "P001",
+    partName: "Brake Pad Set - Front",
+    partNumber: "BP-FR-001",
     category: "Brakes",
-    currentQty: 8,
-    minStock: 10,
-    unitPrice: "₹1200",
-    costPrice: "₹900",
-    supplier: "Bosch",
-    location: "Shelf B-3",
-    status: "Low Stock",
+    price: 2500,
+    description: "High-quality front brake pad set for all models",
+    stockQuantity: 45,
+    minStockLevel: 20,
+    unit: "set",
+    createdAt: "2024-01-15T10:00:00Z",
+    updatedAt: "2024-01-20T14:30:00Z",
   },
   {
-    id: 5,
-    partName: "Coolant 5L",
-    sku: "CL-5L-001",
-    category: "Fluids",
-    currentQty: 6,
-    minStock: 10,
-    unitPrice: "₹350",
-    costPrice: "₹250",
-    supplier: "Denso",
-    location: "Shelf D-1",
-    status: "Low Stock",
+    id: "part-2",
+    partId: "P002",
+    partName: "Engine Oil Filter",
+    partNumber: "EOF-001",
+    category: "Engine",
+    price: 350,
+    description: "Standard engine oil filter",
+    stockQuantity: 120,
+    minStockLevel: 50,
+    unit: "piece",
+    createdAt: "2024-01-10T09:00:00Z",
+    updatedAt: "2024-01-18T11:20:00Z",
+  },
+  {
+    id: "part-3",
+    partId: "P003",
+    partName: "Air Filter Element",
+    partNumber: "AFE-001",
+    category: "Engine",
+    price: 450,
+    description: "Premium air filter element",
+    stockQuantity: 8,
+    minStockLevel: 15,
+    unit: "piece",
+    createdAt: "2024-01-12T08:00:00Z",
+    updatedAt: "2024-01-19T16:45:00Z",
+  },
+  {
+    id: "part-4",
+    partId: "P004",
+    partName: "Battery 12V 60Ah",
+    partNumber: "BAT-12V-60",
+    category: "Electrical",
+    price: 8500,
+    description: "12V 60Ah maintenance-free battery",
+    stockQuantity: 0,
+    minStockLevel: 10,
+    unit: "piece",
+    createdAt: "2024-01-08T10:00:00Z",
+    updatedAt: "2024-01-17T13:15:00Z",
+  },
+  {
+    id: "part-5",
+    partId: "P005",
+    partName: "Spark Plug Set",
+    partNumber: "SP-SET-001",
+    category: "Engine",
+    price: 1200,
+    description: "Set of 4 spark plugs",
+    stockQuantity: 25,
+    minStockLevel: 20,
+    unit: "set",
+    createdAt: "2024-01-14T11:00:00Z",
+    updatedAt: "2024-01-21T09:30:00Z",
+  },
+  {
+    id: "part-6",
+    partId: "P006",
+    partName: "Windshield Wiper Blade",
+    partNumber: "WWB-001",
+    category: "Body & Exterior",
+    price: 800,
+    description: "Pair of windshield wiper blades",
+    stockQuantity: 15,
+    minStockLevel: 12,
+    unit: "pair",
+    createdAt: "2024-01-11T14:00:00Z",
+    updatedAt: "2024-01-20T10:20:00Z",
+  },
+  {
+    id: "part-7",
+    partId: "P007",
+    partName: "Headlight Bulb H4",
+    partNumber: "HLB-H4-001",
+    category: "Electrical",
+    price: 600,
+    description: "H4 halogen headlight bulb",
+    stockQuantity: 5,
+    minStockLevel: 10,
+    unit: "piece",
+    createdAt: "2024-01-13T09:00:00Z",
+    updatedAt: "2024-01-19T15:00:00Z",
+  },
+  {
+    id: "part-8",
+    partId: "P008",
+    partName: "Clutch Disc",
+    partNumber: "CD-001",
+    category: "Transmission",
+    price: 4500,
+    description: "Heavy-duty clutch disc",
+    stockQuantity: 12,
+    minStockLevel: 8,
+    unit: "piece",
+    createdAt: "2024-01-09T10:00:00Z",
+    updatedAt: "2024-01-18T12:00:00Z",
   },
 ];
 
-export const partsData = [
-  { id: 1, name: "Engine Oil 5L" },
-  { id: 2, name: "Coolant 5L" },
-  { id: 3, name: "Air Filter" },
-  { id: 4, name: "Brake Pads" },
-  { id: 5, name: "Spark Plugs (Set of 4)" },
+/**
+ * Mock Job Card Parts Requests
+ */
+export const mockJobCardPartsRequests: JobCardPartsRequest[] = [
+  {
+    id: "req-1",
+    jobCardId: "JC-2024-01-001",
+    vehicleId: "veh-1",
+    vehicleNumber: "MH12AB1234",
+    customerName: "Rajesh Kumar",
+    requestedBy: "SC Manager - Pune Phase 1",
+    requestedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
+    status: "pending",
+    parts: [
+      {
+        partId: "part-1",
+        partName: "Brake Pad Set - Front",
+        quantity: 2,
+      },
+      {
+        partId: "part-2",
+        partName: "Engine Oil Filter",
+        quantity: 1,
+      },
+    ],
+  },
+  {
+    id: "req-2",
+    jobCardId: "JC-2024-01-002",
+    vehicleId: "veh-2",
+    vehicleNumber: "MH12CD5678",
+    customerName: "Priya Sharma",
+    requestedBy: "SC Manager - Mumbai",
+    requestedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), // 5 hours ago
+    status: "pending",
+    parts: [
+      {
+        partId: "part-4",
+        partName: "Battery 12V 60Ah",
+        quantity: 1,
+      },
+      {
+        partId: "part-5",
+        partName: "Spark Plug Set",
+        quantity: 1,
+      },
+    ],
+  },
+  {
+    id: "req-3",
+    jobCardId: "JC-2024-01-003",
+    vehicleId: "veh-3",
+    vehicleNumber: "MH12EF9012",
+    customerName: "Amit Patel",
+    requestedBy: "SC Manager - Pune Phase 1",
+    requestedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
+    status: "approved",
+    approvedBy: "Inventory Manager",
+    approvedAt: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString(),
+    parts: [
+      {
+        partId: "part-3",
+        partName: "Air Filter Element",
+        quantity: 2,
+      },
+    ],
+  },
 ];
 
+/**
+ * Service Center Inventory Data (for admin service center detail page)
+ */
+export const serviceCenterInventoryData = defaultServiceCenterInventory.map((item) => ({
+  ...item,
+  selectedQuantity: 0,
+}));
+
+/**
+ * Initialize mock data in localStorage
+ */
+export function initializeInventoryMockData() {
+  if (typeof window === "undefined") return;
+
+  const { localStorage: safeStorage } = require("@/shared/lib/localStorage");
+
+  // Initialize parts master if empty
+  const existingParts = safeStorage.getItem<Part[]>("partsMaster", []);
+  if (existingParts.length === 0) {
+    safeStorage.setItem("partsMaster", mockParts);
+  }
+
+  // Initialize job card parts requests if empty
+  const existingRequests = safeStorage.getItem<JobCardPartsRequest[]>("jobCardPartsRequests", []);
+  if (existingRequests.length === 0) {
+    safeStorage.setItem("jobCardPartsRequests", mockJobCardPartsRequests);
+  }
+}

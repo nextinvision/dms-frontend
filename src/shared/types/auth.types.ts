@@ -8,7 +8,8 @@ export type UserRole =
   | "sc_staff" 
   | "service_engineer" 
   | "service_advisor" 
-  | "call_center";
+  | "call_center"
+  | "inventory_manager";
 
 /**
  * User information interface

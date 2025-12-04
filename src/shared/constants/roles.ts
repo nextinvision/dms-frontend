@@ -11,6 +11,7 @@ export const USER_ROLES: UserRole[] = [
   "service_engineer",
   "service_advisor",
   "call_center",
+  "inventory_manager",
 ];
 
 /**
@@ -30,6 +31,11 @@ export const SC_ROLES: UserRole[] = [
 ];
 
 /**
+ * Inventory Manager roles
+ */
+export const INVENTORY_ROLES: UserRole[] = ["inventory_manager"];
+
+/**
  * Role display names
  */
 export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
@@ -40,6 +46,7 @@ export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   service_engineer: "Service Engineer",
   service_advisor: "Service Advisor",
   call_center: "Call Center",
+  inventory_manager: "Inventory Manager",
 };
 
 /**

@@ -1,6 +1,7 @@
 "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import Image from "next/image";
 import { Calendar, Clock, User, Car, PlusCircle, X, Edit, Phone, CheckCircle, AlertCircle, Eye, MapPin, Building2, AlertTriangle, Upload, FileText, Image as ImageIcon, Trash2, Search } from "lucide-react";
 import { useCustomerSearch } from "../../../../hooks/api";
 import { useRole } from "@/shared/hooks";
@@ -739,16 +740,19 @@ function AppointmentsContent() {
     searchCustomer(selectedAppointment.phone, "phone");
   }, [selectedAppointment, searchCustomer]);
 
-  useEffect(() => {
+  // Derive detailCustomer from selectedAppointment and customerSearchResults
+  const detailCustomerDerived = useMemo(() => {
     if (!selectedAppointment) {
-      setDetailCustomer(null);
-      return;
+      return null;
     }
-    const matchedCustomer = customerSearchResults.find(
+    return customerSearchResults.find(
       (customer) => customer.phone === selectedAppointment.phone
-    );
-    setDetailCustomer(matchedCustomer ?? null);
+    ) ?? null;
   }, [customerSearchResults, selectedAppointment]);
+
+  useEffect(() => {
+    setDetailCustomer(detailCustomerDerived);
+  }, [detailCustomerDerived]);
 
   // ==================== Helper Functions ====================
   const showToast = useCallback((message: string, type: ToastType = "success") => {
@@ -756,7 +760,7 @@ function AppointmentsContent() {
     setTimeout(() => {
       setToast({ show: false, message: "", type: "success" });
     }, TOAST_DURATION);
-  }, [clearCustomerSearch]);
+  }, []);
 
   const resetAppointmentForm = useCallback(() => {
     // Clean up object URLs before resetting form
@@ -944,7 +948,7 @@ function AppointmentsContent() {
         serviceCenterName: suggestedServiceCenterName,
       }));
     },
-    [clearCustomerSearch, isCallCenter]
+    [clearCustomerSearch, isCallCenter, availableServiceCenters]
   );
 
   const handleAssignNearestServiceCenter = useCallback(() => {
@@ -958,7 +962,7 @@ function AppointmentsContent() {
         serviceCenterName: nearestCenter?.name,
       }));
     }
-  }, [selectedCustomer]);
+  }, [selectedCustomer, availableServiceCenters]);
 
   // Convert Appointment to Job Card
   const convertAppointmentToJobCard = useCallback((appointment: Appointment): JobCard => {
@@ -1070,7 +1074,7 @@ function AppointmentsContent() {
       setCurrentJobCardId(updated.id);
     }
     showToast("Job card saved as draft.", "success");
-  }, [currentJobCardId, showToast, updateStoredJobCard]);
+  }, [currentJobCardId, showToast, updateStoredJobCard, serviceIntakeForm]);
 
   const handleViewVehicleDetails = useCallback(() => {
     if (!selectedAppointment) return;
@@ -1181,7 +1185,7 @@ function AppointmentsContent() {
     }
 
     closeAppointmentModal();
-  }, [appointmentForm, isEditing, selectedAppointment, appointments, serviceCenterName, availableServiceCenters, isCallCenter, showToast, closeAppointmentModal]);
+  }, [appointmentForm, isEditing, selectedAppointment, appointments, serviceCenterName, availableServiceCenters, isCallCenter, showToast, closeAppointmentModal, visibleAppointments, serviceCenterContext]);
 
   const handleOpenNewAppointment = useCallback(() => {
     // Check permission before allowing appointment creation
@@ -1516,6 +1520,7 @@ function AppointmentsContent() {
     const appointment = appointments.find((apt) => apt.id === appointmentId);
     if (!appointment) return;
 
+    // Batch state updates to avoid cascading renders
     setSelectedAppointment(appointment);
     setServiceIntakeForm((prev) => ({
       ...prev,
@@ -2825,10 +2830,13 @@ function AppointmentsContent() {
                             {serviceIntakeForm.photosVideos.files.map((file, index) => (
                               <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
                                 {file.type.startsWith("image/") ? (
-                                  <img
+                                  <Image
                                     src={serviceIntakeForm.photosVideos.urls[index]}
                                     alt={file.name}
+                                    width={128}
+                                    height={128}
                                     className="w-full h-32 object-cover"
+                                    unoptimized
                                   />
                                 ) : (
                                   <div className="w-full h-32 flex items-center justify-center bg-gray-100">
