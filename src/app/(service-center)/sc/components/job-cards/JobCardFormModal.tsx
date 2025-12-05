@@ -122,7 +122,7 @@ export default function JobCardFormModal({
 
   useEffect(() => {
     if (open) {
-      const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
+      const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
       const serviceCenterCode = SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
       setPreviewJobCardNumber(generateJobCardNumber(serviceCenterCode));
     }
@@ -372,7 +372,7 @@ export default function JobCardFormModal({
 
     try {
       setCreating(true);
-      const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
+      const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
       const serviceCenterCode =
         SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
       const jobCardNumber = generateJobCardNumber(serviceCenterCode);
