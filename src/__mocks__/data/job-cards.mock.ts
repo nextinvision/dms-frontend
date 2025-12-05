@@ -94,6 +94,12 @@ export const defaultJobCards: JobCard[] = [
     createdAt: "2025-01-15 11:15",
     parts: ["Brake Pads", "Brake Fluid"],
     location: "Station",
+    workflowState: "arrival_pending",
+    arrivalMode: "vehicle_absent",
+    dualApproval: { technicianApproved: false, serviceManagerApproved: false, inventoryApproved: false },
+    partRequestStatus: "n/a",
+    technicianNotes: "Awaiting vehicle delivery",
+    workCompletionNotified: false,
   },
   {
     id: "JC-2025-003",
@@ -118,6 +124,12 @@ export const defaultJobCards: JobCard[] = [
     createdAt: "2025-01-15 14:20",
     parts: [],
     location: "Station",
+    workflowState: "check_in_only",
+    arrivalMode: "check_in_only",
+    dualApproval: { technicianApproved: true, serviceManagerApproved: true, inventoryApproved: true },
+    partRequestStatus: "inventory_manager_approved",
+    partRequests: [],
+    workCompletionNotified: true,
   },
 ];
 

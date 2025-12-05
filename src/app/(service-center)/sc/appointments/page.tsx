@@ -3,6 +3,7 @@ import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { Calendar, Clock, User, Car, PlusCircle, X, Edit, Phone, CheckCircle, AlertCircle, Eye, MapPin, Building2, AlertTriangle, Upload, FileText, Image as ImageIcon, Trash2, Search } from "lucide-react";
+import CheckInSlip from "@/components/check-in-slip/CheckInSlip";
 import { useCustomerSearch } from "../../../../hooks/api";
 import { useRole } from "@/shared/hooks";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -21,11 +22,12 @@ import {
   getServiceCenterContext,
   shouldFilterByServiceCenter,
 } from "@/shared/lib/serviceCenter";
+import { defaultJobCards } from "@/__mocks__/data/job-cards.mock";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { JobCard } from "@/shared/types/job-card.types";
 
 // ==================== Types ====================
-interface Appointment {
+interface AppointmentRecord {
   id: number;
   customerName: string;
   vehicle: string;
@@ -35,25 +37,23 @@ interface Appointment {
   time: string;
   duration: string;
   status: string;
-  serviceCenterId?: number;
+  customerExternalId?: string;
+  vehicleExternalId?: string;
+  serviceCenterId?: number | string;
   serviceCenterName?: string;
-  // Customer Information
   customerType?: "B2C" | "B2B";
-  // Service Details (captured by call center or service advisor)
   customerComplaintIssue?: string;
   previousServiceHistory?: string;
   estimatedServiceTime?: string;
   estimatedCost?: string;
   odometerReading?: string;
   isMajorIssue?: boolean;
-  // Documentation (stored as simple metadata in call center flow)
   documentationFiles?: {
     customerIdProof?: number;
     vehicleRCCopy?: number;
     warrantyCardServiceBook?: number;
     photosVideos?: number;
   };
-  // Operational Details
   estimatedDeliveryDate?: string;
   assignedServiceAdvisor?: string;
   assignedTechnician?: string;
@@ -61,11 +61,9 @@ interface Appointment {
   pickupAddress?: string;
   dropAddress?: string;
   preferredCommunicationMode?: "Phone" | "Email" | "SMS" | "WhatsApp";
-  // Billing & Payment
   paymentMethod?: "Cash" | "Card" | "UPI" | "Online" | "Cheque";
   gstRequirement?: boolean;
   businessNameForInvoice?: string;
-  // Post-Service Survey
   feedbackRating?: number;
   nextServiceDueDate?: string;
   amcSubscriptionStatus?: string;
@@ -79,7 +77,7 @@ interface AppointmentForm {
   date: string;
   time: string;
   duration: string;
-  serviceCenterId?: number;
+  serviceCenterId?: number | string;
   serviceCenterName?: string;
   // Customer Information
   customerType?: "B2C" | "B2B";
@@ -95,6 +93,7 @@ interface AppointmentForm {
   vehicleRCCopy?: DocumentationFiles;
   warrantyCardServiceBook?: DocumentationFiles;
   photosVideos?: DocumentationFiles;
+  arrivalMode?: "vehicle_present" | "vehicle_absent";
   // Operational Details
   estimatedDeliveryDate?: string;
   assignedServiceAdvisor?: string;
@@ -184,9 +183,69 @@ interface ServiceIntakeForm {
   paymentMethod: "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "";
   gstRequirement: boolean;
   businessNameForInvoice: string;
+  jobCardId?: string;
+  arrivalMode?: "vehicle_present" | "vehicle_absent" | "";
+  checkInNotes?: string;
+  checkInSlipNumber?: string;
+  checkInDate?: string;
+  checkInTime?: string;
 }
 
 type ToastType = "success" | "error";
+const JOB_CARD_STORAGE_KEY = "jobCards";
+
+const loadJobCards = (): JobCard[] => {
+  if (typeof window === "undefined") return [];
+  const stored = safeStorage.getItem<JobCard[]>(JOB_CARD_STORAGE_KEY, []);
+  return stored.length > 0 ? stored : [...defaultJobCards];
+};
+
+const persistJobCards = (cards: JobCard[]) => {
+  safeStorage.setItem(JOB_CARD_STORAGE_KEY, cards);
+};
+
+const deriveServiceCenterCode = (serviceCenterName?: string | null): string => {
+  if (!serviceCenterName) {
+    return "SC001";
+  }
+  return serviceCenterName.replace(/\s+/g, "").substring(0, 5).toUpperCase();
+};
+
+const generateJobCardNumber = (serviceCenterCode: string, existing: JobCard[]): string => {
+  const now = new Date();
+  const year = now.getFullYear().toString();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+
+  const sequences = existing
+    .map((card) => {
+      const parts = card.jobCardNumber?.split("-");
+      if (parts && parts[0] === serviceCenterCode && parts[1] === year && parts[2] === month && parts[3]) {
+        return Number(parts[3]);
+      }
+      return 0;
+    })
+    .filter((seq) => !isNaN(seq));
+
+  const nextSequence = sequences.length > 0 ? Math.max(...sequences) + 1 : 1;
+  return `${serviceCenterCode}-${year}-${month}-${String(nextSequence).padStart(4, "0")}`;
+};
+
+const formatVehicleLabel = (vehicle: Vehicle): string => {
+  return `${vehicle.vehicleMake} ${vehicle.vehicleModel} (${vehicle.vehicleYear})`;
+};
+
+const findVehicleForAppointment = (
+  customer: CustomerWithVehicles | null,
+  appointmentVehicleLabel: string
+): Vehicle | undefined => {
+  if (!customer) return undefined;
+  return customer.vehicles.find((vehicle) => formatVehicleLabel(vehicle) === appointmentVehicleLabel);
+};
+
+const getCurrentTimeValue = (): string => {
+  const now = new Date();
+  return now.toTimeString().slice(0, 5);
+};
 type AppointmentStatus = "Confirmed" | "Pending" | "Cancelled";
 type CustomerArrivalStatus = "arrived" | "not_arrived" | null;
 
@@ -290,6 +349,12 @@ const INITIAL_SERVICE_INTAKE_FORM: ServiceIntakeForm = {
   paymentMethod: "",
   gstRequirement: false,
   businessNameForInvoice: "",
+  jobCardId: "",
+  arrivalMode: "",
+  checkInNotes: "",
+  checkInSlipNumber: "",
+  checkInDate: "",
+  checkInTime: "",
 };
 
 import { defaultAppointments } from "@/__mocks__/data/appointments.mock";
@@ -341,7 +406,7 @@ const validateAppointmentForm = (form: AppointmentForm, isCallCenter: boolean = 
   return null;
 };
 
-const getNextAppointmentId = (appointments: Appointment[]): number => {
+const getNextAppointmentId = (appointments: AppointmentRecord[]): number => {
   return appointments.length > 0 ? Math.max(...appointments.map((a) => a.id)) + 1 : 1;
 };
 
@@ -376,7 +441,7 @@ const getMaxAppointmentsPerDay = (serviceCenterName: string | null | undefined):
 /**
  * Count appointments for a specific date
  */
-const countAppointmentsForDate = (appointments: Appointment[], date: string): number => {
+const countAppointmentsForDate = (appointments: AppointmentRecord[], date: string): number => {
   return appointments.filter((apt) => apt.date === date).length;
 };
 
@@ -646,22 +711,34 @@ function AppointmentsContent() {
   const canEditPostServiceSection = canEditPostService(userRole);
 
   // State Management
-  const [appointments, setAppointments] = useState<Appointment[]>(() => {
+  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
+  const shouldFilterAppointments = shouldFilterByServiceCenter(serviceCenterContext);
+
+  const initializeAppointments = () => {
     if (typeof window !== "undefined") {
-      const storedAppointments = safeStorage.getItem<Appointment[]>("appointments", []);
-      return storedAppointments.length > 0 ? storedAppointments : defaultAppointments;
+      const storedAppointments = safeStorage.getItem<AppointmentRecord[]>("appointments", []);
+      const baseAppointments = storedAppointments.length > 0 ? storedAppointments : (defaultAppointments as AppointmentRecord[]);
+      return shouldFilterAppointments
+        ? filterByServiceCenter(baseAppointments, serviceCenterContext)
+        : baseAppointments;
     }
-    return defaultAppointments;
-  });
+    return defaultAppointments as AppointmentRecord[];
+  };
+
+  const [appointments, setAppointments] = useState<AppointmentRecord[]>(initializeAppointments);
 
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>(INITIAL_APPOINTMENT_FORM);
-  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRecord | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithVehicles | null>(null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [pickupAddressDifferent, setPickupAddressDifferent] = useState<boolean>(false);
   const [detailCustomer, setDetailCustomer] = useState<CustomerWithVehicles | null>(null);
   const [currentJobCardId, setCurrentJobCardId] = useState<string | null>(null);
+  const [currentJobCard, setCurrentJobCard] = useState<JobCard | null>(null);
+  const [arrivalMode, setArrivalMode] = useState<AppointmentForm["arrivalMode"] | null>(null);
+  const [checkInSlipData, setCheckInSlipData] = useState<any>(null);
+  const [showCheckInSlipModal, setShowCheckInSlipModal] = useState<boolean>(false);
   
   // Service Center States (for call center)
   const [availableServiceCenters] = useState(() => {
@@ -709,12 +786,12 @@ function AppointmentsContent() {
   // Service Intake States (for service advisor)
   const [customerArrivalStatus, setCustomerArrivalStatus] = useState<CustomerArrivalStatus>(null);
   const [serviceIntakeForm, setServiceIntakeForm] = useState<ServiceIntakeForm>(INITIAL_SERVICE_INTAKE_FORM);
-  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
-  const visibleAppointments = useMemo(
-    () => filterByServiceCenter(appointments, serviceCenterContext),
-    [appointments, serviceCenterContext]
-  );
-  const shouldFilterAppointments = shouldFilterByServiceCenter(serviceCenterContext);
+  const visibleAppointments = useMemo(() => {
+    if (shouldFilterAppointments) {
+      return filterByServiceCenter(appointments, serviceCenterContext);
+    }
+    return appointments;
+  }, [appointments, serviceCenterContext, shouldFilterAppointments]);
 
   // Customer Search States
   const [customerSearchQuery, setCustomerSearchQuery] = useState<string>("");
@@ -818,7 +895,7 @@ function AppointmentsContent() {
   }, [clearCustomerSearch]);
 
   // ==================== Event Handlers ====================
-  const handleAppointmentClick = useCallback((appointment: Appointment) => {
+  const handleAppointmentClick = useCallback((appointment: AppointmentRecord) => {
     setSelectedAppointment(appointment);
     setDetailCustomer(null);
     setShowDetailModal(true);
@@ -829,9 +906,15 @@ function AppointmentsContent() {
   }, []);
 
   const handleEditAppointment = useCallback(
-    (appointment: Appointment) => {
+    (appointment: AppointmentRecord) => {
       setSelectedAppointment(appointment);
       setIsEditing(true);
+      const resolvedServiceCenterId =
+        typeof appointment.serviceCenterId === "number"
+          ? appointment.serviceCenterId
+          : appointment.serviceCenterId
+          ? Number(appointment.serviceCenterId)
+          : undefined;
       setAppointmentForm({
         customerName: appointment.customerName,
         vehicle: appointment.vehicle,
@@ -841,7 +924,7 @@ function AppointmentsContent() {
         time: appointment.time,
         // Strip the " hours" suffix if it exists; default to "2"
         duration: appointment.duration ? appointment.duration.replace(" hours", "") : "2",
-        serviceCenterId: appointment.serviceCenterId,
+        serviceCenterId: resolvedServiceCenterId,
         // Customer Information
         customerType: appointment.customerType,
         // Service Details
@@ -965,7 +1048,7 @@ function AppointmentsContent() {
   }, [selectedCustomer, availableServiceCenters]);
 
   // Convert Appointment to Job Card
-  const convertAppointmentToJobCard = useCallback((appointment: Appointment): JobCard => {
+  const convertAppointmentToJobCard = useCallback((appointment: AppointmentRecord): JobCard => {
     const serviceCenterCode = "SC001"; // In production, get from user context or serviceCenterName
     const now = new Date();
     const year = now.getFullYear();
@@ -1082,6 +1165,30 @@ function AppointmentsContent() {
     setShowVehicleDetails(true);
   }, [selectedAppointment, searchCustomer]);
 
+  useEffect(() => {
+    if (!currentJobCardId) {
+      setCurrentJobCard(null);
+      return;
+    }
+    const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+    const jobCard = storedJobCards.find((card) => card.id === currentJobCardId) ?? null;
+    setCurrentJobCard(jobCard);
+  }, [currentJobCardId]);
+
+  const handleArrivalModeSelect = useCallback((mode: AppointmentForm["arrivalMode"] | null) => {
+    setArrivalMode(mode);
+  }, []);
+
+  useEffect(() => {
+    if (!currentJobCardId) {
+      setCurrentJobCard(null);
+      return;
+    }
+    const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+    const jobCard = storedJobCards.find((card) => card.id === currentJobCardId) ?? null;
+    setCurrentJobCard(jobCard);
+  }, [currentJobCardId]);
+
   const handleSubmitAppointment = useCallback(() => {
     const validationError = validateAppointmentForm(appointmentForm, isCallCenter);
     if (validationError) {
@@ -1162,7 +1269,7 @@ function AppointmentsContent() {
         ? availableServiceCenters.find((sc) => sc.id === appointmentForm.serviceCenterId)
         : null;
 
-      const newAppointment: Appointment = {
+      const newAppointment: AppointmentRecord = {
         id: getNextAppointmentId(appointments),
         ...appointmentForm,
         duration: "2 hours",
@@ -1400,12 +1507,34 @@ function AppointmentsContent() {
       return;
     }
 
+    if (!serviceIntakeForm.jobCardId) {
+      showToast("Select an arrival mode to generate the job card before creating a quotation.", "error");
+      return;
+    }
+
     // Save service intake data to localStorage for quotation page to use
+    const customerIdForQuotation =
+      selectedCustomer?.id?.toString() ||
+      detailCustomer?.id?.toString() ||
+      selectedAppointment.customerExternalId ||
+      undefined;
+    const serviceCenterIdForQuotation =
+      selectedAppointment.serviceCenterId?.toString() ||
+      serviceCenterContext.serviceCenterId ||
+      undefined;
+    const serviceCenterNameForQuotation =
+      selectedAppointment.serviceCenterName ||
+      serviceCenterContext.serviceCenterName ||
+      undefined;
+
     const serviceIntakeData = {
       appointmentId: selectedAppointment.id,
       customerName: selectedAppointment.customerName,
       phone: selectedAppointment.phone,
       vehicle: selectedAppointment.vehicle,
+      customerId: customerIdForQuotation,
+      serviceCenterId: serviceCenterIdForQuotation,
+      serviceCenterName: serviceCenterNameForQuotation,
       serviceIntakeForm: {
         ...serviceIntakeForm,
         // Convert File objects to URLs for storage (in real app, these would be uploaded first)
@@ -1455,7 +1584,7 @@ function AppointmentsContent() {
   }, [selectedAppointment, serviceIntakeForm, appointments, router, closeDetailModal, showToast, currentJobCardId, updateStoredJobCard]);
 
   const updateLeadForAppointment = useCallback(
-    (appointment: Appointment) => {
+    (appointment: AppointmentRecord) => {
       const storedLeads = safeStorage.getItem<any>("leads", []);
       if (!storedLeads.length) return;
       const updatedLeads = storedLeads.map((lead: any) => {
@@ -2628,6 +2757,10 @@ function AppointmentsContent() {
                     onClick={() => {
                       setCustomerArrivalStatus("not_arrived");
                       setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
+                      setArrivalMode(null);
+                      setCurrentJobCard(null);
+                      setCheckInSlipData(null);
+                      setShowCheckInSlipModal(false);
                     }}
                     className={`flex-1 px-4 py-3 rounded-lg font-medium transition ${
                       customerArrivalStatus === "not_arrived"
@@ -2638,6 +2771,107 @@ function AppointmentsContent() {
                     <AlertCircle size={18} className="inline mr-2" />
                     Customer Not Arrived
                   </button>
+                </div>
+              </div>
+            )}
+            {isServiceAdvisor && customerArrivalStatus === "arrived" && (
+              <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-5 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">Arrival Mode</p>
+                    <p className="text-xs text-gray-500">Select whether the vehicle is present or pending arrival.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleArrivalModeSelect("vehicle_present")}
+                      className={`px-4 py-2 rounded-lg border font-medium text-sm ${
+                        arrivalMode === "vehicle_present"
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-indigo-500"
+                      }`}
+                    >
+                      Vehicle Present
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleArrivalModeSelect("vehicle_absent")}
+                      className={`px-4 py-2 rounded-lg border font-medium text-sm ${
+                        arrivalMode === "vehicle_absent"
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-indigo-500"
+                      }`}
+                    >
+                      Vehicle Absent
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-gray-500">Job Card</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {currentJobCard ? currentJobCard.jobCardNumber : "Awaiting arrival mode"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Status: {currentJobCard?.status || "Created"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowCheckInSlipModal(true)}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:text-gray-400"
+                      disabled={!checkInSlipData}
+                    >
+                      View / Print Check-in Slip
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-gray-700">Check-in Notes</label>
+                    <textarea
+                      value={serviceIntakeForm.checkInNotes || ""}
+                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, checkInNotes: e.target.value })}
+                      rows={3}
+                      placeholder="Record observations from the arrival (e.g., vehicle condition, missing documentation)."
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none text-sm text-gray-900 transition-all duration-200 resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Vehicle Condition Media</label>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
+                    className="text-sm text-gray-700"
+                  />
+                  {serviceIntakeForm.photosVideos.files.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {serviceIntakeForm.photosVideos.files.map((file, index) => (
+                        <div key={index} className="relative rounded-lg overflow-hidden">
+                          {file.type.startsWith("image/") ? (
+                            <img
+                              src={serviceIntakeForm.photosVideos.urls[index]}
+                              alt={file.name}
+                              className="w-full h-24 object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-24 bg-gray-100 flex items-center justify-center text-xs text-gray-500">
+                              {file.name}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => handleRemoveDocument("photosVideos", index)}
+                            className="absolute top-1 right-1 text-white bg-black/50 rounded-full p-1"
+                            type="button"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -3389,6 +3623,10 @@ function AppointmentsContent() {
           )}
         </div>
       </Modal>
+
+      {showCheckInSlipModal && checkInSlipData && (
+        <CheckInSlip data={checkInSlipData} onClose={() => setShowCheckInSlipModal(false)} />
+      )}
 
       {/* Create Complaint Modal (for Call Center) */}
       {isCallCenter && (

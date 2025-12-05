@@ -11,6 +11,7 @@ export interface MockUser {
   name: string;
   initials: string;
   serviceCenter: string | null;
+  serviceCenterId?: string | null;
 }
 
 /**
@@ -22,7 +23,7 @@ export const mockUsers: MockUser[] = [
     email: "admin@service.com",
     password: "admin123",
     role: "admin",
-    name: "Rajesh Kumar Singh",
+    name: "Sairaj",
     initials: "RKS",
     serviceCenter: null,
   },
@@ -32,7 +33,8 @@ export const mockUsers: MockUser[] = [
     role: "sc_manager",
     name: "SC Manager",
     initials: "SCM",
-    serviceCenter: "Pune Phase 1",
+    serviceCenter: "Delhi Central Hub",
+    serviceCenterId: "sc-001",
   },
   {
     email: "scstaff@service.com",
@@ -40,7 +42,8 @@ export const mockUsers: MockUser[] = [
     role: "sc_staff",
     name: "SC Staff",
     initials: "SCS",
-    serviceCenter: "Pune Phase 1",
+    serviceCenter: "Delhi Central Hub",
+    serviceCenterId: "sc-001",
   },
   {
     email: "engineer@service.com",
@@ -48,15 +51,17 @@ export const mockUsers: MockUser[] = [
     role: "service_engineer",
     name: "Service Engineer",
     initials: "SE",
-    serviceCenter: "Pune Phase 1",
+    serviceCenter: "Delhi Central Hub",
+    serviceCenterId: "sc-001",
   },
   {
     email: "advisor@service.com",
     password: "adv123",
     role: "service_advisor",
-    name: "Service Advisor",
+    name: "Service Advisor from Delhi Central Hub",
     initials: "SA",
-    serviceCenter: "Pune Phase 1",
+    serviceCenter: "Delhi Central Hub",
+    serviceCenterId: "sc-001",
   },
   {
     email: "callcenter@service.com",
