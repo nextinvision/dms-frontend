@@ -116,6 +116,13 @@ export default function JobCards() {
       setJobCards(serviceEngineerJobCards);
     }
   }, [isTechnician]);
+
+  // Force list view for service engineers
+  useEffect(() => {
+    if (isTechnician) {
+      setView("list");
+    }
+  }, [isTechnician]);
   
   // Ensure service engineers always see mock data
   const visibleJobCards = useMemo(() => {
@@ -632,33 +639,37 @@ export default function JobCards() {
             <p className="text-gray-500 text-sm md:text-base">Manage and track service job cards</p>
           </div>
           <div className="flex flex-col xs:flex-row gap-3 justify-center md:justify-start">
-            <div className="flex gap-2 bg-white rounded-lg p-1 border border-gray-300 self-center">
+            {!isTechnician && (
+              <div className="flex gap-2 bg-white rounded-lg p-1 border border-gray-300 self-center">
+                <button
+                  onClick={() => setView("kanban")}
+                  className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${view === "kanban"
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                >
+                  Kanban
+                </button>
+                <button
+                  onClick={() => setView("list")}
+                  className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${view === "list"
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                >
+                  List
+                </button>
+              </div>
+            )}
+            {!isTechnician && (
               <button
-                onClick={() => setView("kanban")}
-                className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${view === "kanban"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-700 hover:bg-gray-100"
-                  }`}
+                onClick={() => setShowCreateModal(true)}
+                className="bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg font-medium hover:opacity-90 transition shadow-md inline-flex items-center gap-2 justify-center text-sm sm:text-base"
               >
-                Kanban
+                <Plus size={18} />
+                <span>Create Job Card</span>
               </button>
-              <button
-                onClick={() => setView("list")}
-                className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${view === "list"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-700 hover:bg-gray-100"
-                  }`}
-              >
-                List
-              </button>
-            </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg font-medium hover:opacity-90 transition shadow-md inline-flex items-center gap-2 justify-center text-sm sm:text-base"
-            >
-              <Plus size={18} />
-              <span>Create Job Card</span>
-            </button>
+            )}
           </div>
         </div>
 
@@ -833,7 +844,7 @@ export default function JobCards() {
                             value={job.id}
                             disabled={hasPendingRequest}
                           >
-                            {job.jobCardNumber || job.id} - {job.customerName} - {job.vehicle} ({job.status})
+                            {job.jobCardNumber || job.id} - {job.customerName} - {job.vehicle}
                             {hasRequest && (
                               request.inventoryManagerAssigned 
                                 ? " ✓ Parts Assigned" 
@@ -859,7 +870,6 @@ export default function JobCards() {
                               <p><span className="font-medium text-gray-700">Job Card:</span> <span className="text-gray-900">{selectedJobCard.jobCardNumber || selectedJobCard.id}</span></p>
                               <p><span className="font-medium text-gray-700">Customer:</span> <span className="text-gray-900">{selectedJobCard.customerName}</span></p>
                               <p><span className="font-medium text-gray-700">Vehicle:</span> <span className="text-gray-900">{selectedJobCard.vehicle} ({selectedJobCard.registration})</span></p>
-                              <p><span className="font-medium text-gray-700">Status:</span> <span className="text-gray-900">{selectedJobCard.status}</span></p>
                             </div>
                           ) : null;
                         })()}
