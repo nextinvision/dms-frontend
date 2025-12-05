@@ -25,6 +25,9 @@ import {
 import { defaultJobCards } from "@/__mocks__/data/job-cards.mock";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { JobCard } from "@/shared/types/job-card.types";
+import { populateJobCardPart1, createEmptyJobCardPart1, generateSrNoForPart2Items, createEmptyJobCardPart2A } from "@/shared/utils/jobCardData.util";
+import { customerService } from "@/services/customers/customer.service";
+import type { JobCardPart2Item } from "@/shared/types/job-card.types";
 
 // ==================== Types ====================
 interface AppointmentRecord {
@@ -362,6 +365,15 @@ import { defaultServiceCenters } from "@/__mocks__/data/service-centers.mock";
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 
 const SERVICE_TYPES = SERVICE_TYPE_OPTIONS;
+
+const SERVICE_CENTER_CODE_MAP: Record<string, string> = {
+  "1": "SC001",
+  "2": "SC002",
+  "3": "SC003",
+  "sc-001": "SC001",
+  "sc-002": "SC002",
+  "sc-003": "SC003",
+};
 
 const STATUS_CONFIG: Record<AppointmentStatus, { bg: string; text: string }> = {
   Confirmed: { bg: "bg-green-100", text: "text-green-800" },
@@ -727,6 +739,35 @@ function AppointmentsContent() {
 
   const [appointments, setAppointments] = useState<AppointmentRecord[]>(initializeAppointments);
 
+  // Reload appointments from localStorage when component mounts or when serviceCenterContext changes
+  useEffect(() => {
+    const loadAppointments = () => {
+      if (typeof window !== "undefined") {
+        const storedAppointments = safeStorage.getItem<AppointmentRecord[]>("appointments", []);
+        const baseAppointments = storedAppointments.length > 0 ? storedAppointments : (defaultAppointments as AppointmentRecord[]);
+        const filteredAppointments = shouldFilterAppointments
+          ? filterByServiceCenter(baseAppointments, serviceCenterContext)
+          : baseAppointments;
+        setAppointments(filteredAppointments);
+      }
+    };
+
+    // Load appointments on mount
+    loadAppointments();
+
+    // Listen for storage events (when appointments are updated from another tab/window)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "appointments") {
+        loadAppointments();
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, [serviceCenterContext, shouldFilterAppointments]);
+
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>(INITIAL_APPOINTMENT_FORM);
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRecord | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -1048,8 +1089,9 @@ function AppointmentsContent() {
   }, [selectedCustomer, availableServiceCenters]);
 
   // Convert Appointment to Job Card
-  const convertAppointmentToJobCard = useCallback((appointment: AppointmentRecord): JobCard => {
-    const serviceCenterCode = "SC001"; // In production, get from user context or serviceCenterName
+  const convertAppointmentToJobCard = useCallback(async (appointment: AppointmentRecord): Promise<JobCard> => {
+    const serviceCenterId = serviceCenterContext.serviceCenterId?.toString() || appointment.serviceCenterId?.toString() || "sc-001";
+    const serviceCenterCode = SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -1075,17 +1117,67 @@ function AppointmentsContent() {
     const vehicleMake = vehicleParts ? vehicleParts[1] : appointment.vehicle.split(" ")[0] || "";
     const vehicleModel = vehicleParts ? vehicleParts[2] : appointment.vehicle.split(" ").slice(1, -1).join(" ") || "";
     
-    // Create job card from appointment
+    // Try to fetch customer and vehicle data to populate PART 1
+    let customerData: CustomerWithVehicles | null = null;
+    let vehicleData: Vehicle | null = null;
+    
+    // Try to find customer by phone or external ID
+    if (appointment.customerExternalId) {
+      try {
+        customerData = await customerService.getById(appointment.customerExternalId);
+        // Find matching vehicle
+        if (customerData.vehicles) {
+          vehicleData = customerData.vehicles.find((v) => {
+            const vehicleString = formatVehicleString(v);
+            return vehicleString === appointment.vehicle || 
+                   v.vehicleMake === vehicleMake || 
+                   v.registration === appointment.vehicle;
+          }) || customerData.vehicles[0] || null;
+        }
+      } catch (err) {
+        console.warn("Could not fetch customer data for job card:", err);
+      }
+    }
+    
+    // Populate PART 1 from customer/vehicle data or use appointment data
+    const part1 = customerData && vehicleData
+      ? populateJobCardPart1(
+          customerData,
+          vehicleData,
+          jobCardNumber,
+          {
+            customerFeedback: appointment.customerComplaintIssue || "",
+            estimatedDeliveryDate: appointment.estimatedDeliveryDate || "",
+            warrantyStatus: "", // Will be filled from service intake form
+          }
+        )
+      : createEmptyJobCardPart1(jobCardNumber);
+    
+    // If customer/vehicle data not found, populate from appointment
+    if (!customerData) {
+      part1.fullName = appointment.customerName;
+      part1.mobilePrimary = appointment.phone;
+      part1.customerType = appointment.customerType || "";
+      part1.customerFeedback = appointment.customerComplaintIssue || "";
+      part1.estimatedDeliveryDate = appointment.estimatedDeliveryDate || "";
+    }
+    if (!vehicleData) {
+      part1.vehicleBrand = vehicleMake;
+      part1.vehicleModel = vehicleModel;
+      part1.registrationNumber = ""; // Will be filled from service intake form
+    }
+    
+    // Create job card from appointment with structured PART 1
     const newJobCard: JobCard = {
       id: `JC-${Date.now()}`,
       jobCardNumber,
-      serviceCenterId: appointment.serviceCenterId?.toString() || "sc-001",
+      serviceCenterId: appointment.serviceCenterId?.toString() || serviceCenterContext.serviceCenterId?.toString() || "sc-001",
       serviceCenterCode,
-      customerId: `customer-${appointment.id}`, // Temporary ID, in production use actual customer ID
+      customerId: customerData?.id?.toString() || appointment.customerExternalId?.toString() || `customer-${appointment.id}`,
       customerName: appointment.customerName,
-      vehicleId: undefined, // Will be set when vehicle is found
+      vehicleId: vehicleData?.id?.toString(),
       vehicle: appointment.vehicle,
-      registration: "", // Will be populated from vehicle search if available
+      registration: vehicleData?.registration || "",
       vehicleMake,
       vehicleModel,
       customerType: appointment.customerType,
@@ -1103,6 +1195,11 @@ function AppointmentsContent() {
       sourceAppointmentId: appointment.id,
       isTemporary: true,
       customerArrivalTimestamp: new Date().toISOString(),
+      // Structured PART 1 data
+      part1,
+      // PART 2 will be populated from service intake form
+      part2: [],
+      // PART 2A and PART 3 will be populated later if needed
     };
     
     // Save job card
@@ -1111,7 +1208,7 @@ function AppointmentsContent() {
     setCurrentJobCardId(newJobCard.id);
     
     return newJobCard;
-  }, []);
+  }, [serviceCenterContext]);
 
   const updateStoredJobCard = useCallback(
     (jobId: string, updater: (card: JobCard) => JobCard) => {
@@ -1123,11 +1220,28 @@ function AppointmentsContent() {
     []
   );
 
-  const handleSaveDraft = useCallback(() => {
+  const handleSaveDraft = useCallback(async () => {
     if (!currentJobCardId) {
       showToast("Please arrive a customer before saving a draft.", "error");
       return;
     }
+    
+    // Try to fetch customer data for PART 1
+    let customerData: CustomerWithVehicles | null = null;
+    let vehicleData: Vehicle | null = null;
+    
+    if (selectedCustomer) {
+      customerData = selectedCustomer;
+      vehicleData = selectedCustomer.vehicles?.find((v) => 
+        formatVehicleString(v) === selectedAppointment?.vehicle
+      ) || selectedCustomer.vehicles?.[0] || null;
+    } else if (detailCustomer) {
+      customerData = detailCustomer;
+      vehicleData = detailCustomer.vehicles?.find((v) => 
+        formatVehicleString(v) === selectedAppointment?.vehicle
+      ) || detailCustomer.vehicles?.[0] || null;
+    }
+    
     const intakeSnapshot = {
       ...serviceIntakeForm,
       customerIdProof: {
@@ -1148,16 +1262,62 @@ function AppointmentsContent() {
       },
     };
 
+    // Get current job card to preserve jobCardNumber
+    const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+    const currentJobCard = storedJobCards.find((card) => card.id === currentJobCardId);
+    const jobCardNumber = currentJobCard?.jobCardNumber || "";
+
+    // Populate PART 1 from service intake form
+    const part1 = customerData && vehicleData
+      ? populateJobCardPart1(
+          customerData,
+          vehicleData,
+          jobCardNumber,
+          {
+            customerFeedback: serviceIntakeForm.customerComplaintIssue || "",
+            technicianObservation: serviceIntakeForm.checkInNotes || "",
+            insuranceStartDate: serviceIntakeForm.insuranceStartDate || "",
+            insuranceEndDate: serviceIntakeForm.insuranceEndDate || "",
+            insuranceCompanyName: serviceIntakeForm.insuranceCompanyName || "",
+            variantBatteryCapacity: serviceIntakeForm.variantBatteryCapacity || "",
+            warrantyStatus: serviceIntakeForm.warrantyStatus || "",
+            estimatedDeliveryDate: serviceIntakeForm.estimatedDeliveryDate || "",
+            batterySerialNumber: "", // Will be filled if applicable
+            mcuSerialNumber: "", // Will be filled if applicable
+            vcuSerialNumber: "", // Will be filled if applicable
+            otherPartSerialNumber: "", // Will be filled if applicable
+          }
+        )
+      : createEmptyJobCardPart1(jobCardNumber);
+
+    // Override with service intake form data
+    if (serviceIntakeForm.vehicleBrand) part1.vehicleBrand = serviceIntakeForm.vehicleBrand;
+    if (serviceIntakeForm.vehicleModel) part1.vehicleModel = serviceIntakeForm.vehicleModel;
+    if (serviceIntakeForm.registrationNumber) part1.registrationNumber = serviceIntakeForm.registrationNumber;
+    if (serviceIntakeForm.vinChassisNumber) part1.vinChassisNumber = serviceIntakeForm.vinChassisNumber;
+    if (serviceIntakeForm.variantBatteryCapacity) part1.variantBatteryCapacity = serviceIntakeForm.variantBatteryCapacity;
+    if (serviceIntakeForm.warrantyStatus) part1.warrantyStatus = serviceIntakeForm.warrantyStatus;
+    if (serviceIntakeForm.estimatedDeliveryDate) part1.estimatedDeliveryDate = serviceIntakeForm.estimatedDeliveryDate;
+    if (serviceIntakeForm.customerComplaintIssue) part1.customerFeedback = serviceIntakeForm.customerComplaintIssue;
+    if (serviceIntakeForm.checkInNotes) part1.technicianObservation = serviceIntakeForm.checkInNotes;
+    if (serviceIntakeForm.insuranceStartDate) part1.insuranceStartDate = serviceIntakeForm.insuranceStartDate;
+    if (serviceIntakeForm.insuranceEndDate) part1.insuranceEndDate = serviceIntakeForm.insuranceEndDate;
+    if (serviceIntakeForm.insuranceCompanyName) part1.insuranceCompanyName = serviceIntakeForm.insuranceCompanyName;
+
     const updated = updateStoredJobCard(currentJobCardId, (card) => ({
       ...card,
       status: "Created",
       draftIntake: intakeSnapshot,
+      // Update PART 1 with service intake form data
+      part1,
+      // PART 2 will be populated when parts are added
+      part2: card.part2 || [],
     }));
     if (updated) {
       setCurrentJobCardId(updated.id);
     }
     showToast("Job card saved as draft.", "success");
-  }, [currentJobCardId, showToast, updateStoredJobCard, serviceIntakeForm]);
+  }, [currentJobCardId, showToast, updateStoredJobCard, serviceIntakeForm, selectedCustomer, detailCustomer, selectedAppointment]);
 
   const handleViewVehicleDetails = useCallback(() => {
     if (!selectedAppointment) return;
@@ -1498,7 +1658,7 @@ function AppointmentsContent() {
   }, [selectedAppointment, serviceIntakeForm, appointments, closeDetailModal, showToast]);
 
   // Service Intake Handlers - Convert to Estimation/Quotation
-  const handleConvertToQuotation = useCallback(() => {
+  const handleConvertToQuotation = useCallback(async () => {
     if (!selectedAppointment) return;
 
     // Basic validation
@@ -1507,9 +1667,97 @@ function AppointmentsContent() {
       return;
     }
 
-    if (!serviceIntakeForm.jobCardId) {
+    if (!currentJobCardId) {
       showToast("Select an arrival mode to generate the job card before creating a quotation.", "error");
       return;
+    }
+
+    // Try to fetch customer data for PART 1
+    let customerData: CustomerWithVehicles | null = null;
+    let vehicleData: Vehicle | null = null;
+    
+    if (selectedCustomer) {
+      customerData = selectedCustomer;
+      vehicleData = selectedCustomer.vehicles?.find((v) => 
+        formatVehicleString(v) === selectedAppointment.vehicle
+      ) || selectedCustomer.vehicles?.[0] || null;
+    } else if (detailCustomer) {
+      customerData = detailCustomer;
+      vehicleData = detailCustomer.vehicles?.find((v) => 
+        formatVehicleString(v) === selectedAppointment.vehicle
+      ) || detailCustomer.vehicles?.[0] || null;
+    }
+
+    // Get current job card to preserve jobCardNumber
+    const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+    const currentJobCard = storedJobCards.find((card) => card.id === currentJobCardId);
+    const jobCardNumber = currentJobCard?.jobCardNumber || "";
+
+    // Populate PART 1 from service intake form
+    const part1 = customerData && vehicleData
+      ? populateJobCardPart1(
+          customerData,
+          vehicleData,
+          jobCardNumber,
+          {
+            customerFeedback: serviceIntakeForm.customerComplaintIssue || "",
+            technicianObservation: serviceIntakeForm.checkInNotes || "",
+            insuranceStartDate: serviceIntakeForm.insuranceStartDate || "",
+            insuranceEndDate: serviceIntakeForm.insuranceEndDate || "",
+            insuranceCompanyName: serviceIntakeForm.insuranceCompanyName || "",
+            variantBatteryCapacity: serviceIntakeForm.variantBatteryCapacity || "",
+            warrantyStatus: serviceIntakeForm.warrantyStatus || "",
+            estimatedDeliveryDate: serviceIntakeForm.estimatedDeliveryDate || "",
+          }
+        )
+      : createEmptyJobCardPart1(jobCardNumber);
+
+    // Override with service intake form data
+    if (serviceIntakeForm.vehicleBrand) part1.vehicleBrand = serviceIntakeForm.vehicleBrand;
+    if (serviceIntakeForm.vehicleModel) part1.vehicleModel = serviceIntakeForm.vehicleModel;
+    if (serviceIntakeForm.registrationNumber) part1.registrationNumber = serviceIntakeForm.registrationNumber;
+    if (serviceIntakeForm.vinChassisNumber) part1.vinChassisNumber = serviceIntakeForm.vinChassisNumber;
+    if (serviceIntakeForm.variantBatteryCapacity) part1.variantBatteryCapacity = serviceIntakeForm.variantBatteryCapacity;
+    if (serviceIntakeForm.warrantyStatus) part1.warrantyStatus = serviceIntakeForm.warrantyStatus;
+    if (serviceIntakeForm.estimatedDeliveryDate) part1.estimatedDeliveryDate = serviceIntakeForm.estimatedDeliveryDate;
+    if (serviceIntakeForm.customerComplaintIssue) part1.customerFeedback = serviceIntakeForm.customerComplaintIssue;
+    if (serviceIntakeForm.checkInNotes) part1.technicianObservation = serviceIntakeForm.checkInNotes;
+    if (serviceIntakeForm.insuranceStartDate) part1.insuranceStartDate = serviceIntakeForm.insuranceStartDate;
+    if (serviceIntakeForm.insuranceEndDate) part1.insuranceEndDate = serviceIntakeForm.insuranceEndDate;
+    if (serviceIntakeForm.insuranceCompanyName) part1.insuranceCompanyName = serviceIntakeForm.insuranceCompanyName;
+
+    // Populate PART 2A if warranty/insurance evidence exists
+    const part2A = (serviceIntakeForm.photosVideos.urls.length > 0 || 
+                     serviceIntakeForm.warrantyCardServiceBook.urls.length > 0)
+      ? {
+          videoEvidence: serviceIntakeForm.photosVideos.urls.some(url => url.includes('video') || url.includes('mp4')) ? "Yes" : "No" as "Yes" | "No" | "",
+          vinImage: serviceIntakeForm.photosVideos.urls.some(url => url.includes('vin')) ? "Yes" : "No" as "Yes" | "No" | "",
+          odoImage: serviceIntakeForm.photosVideos.urls.some(url => url.includes('odo')) ? "Yes" : "No" as "Yes" | "No" | "",
+          damageImages: serviceIntakeForm.photosVideos.urls.length > 0 ? "Yes" : "No" as "Yes" | "No" | "",
+          issueDescription: serviceIntakeForm.customerComplaintIssue || "",
+          numberOfObservations: String(serviceIntakeForm.photosVideos.urls.length),
+          symptom: serviceIntakeForm.previousServiceHistory || "",
+          defectPart: serviceIntakeForm.customerComplaintIssue || "",
+        }
+      : undefined;
+
+    // Update job card with structured PART 1 and PART 2A before converting to quotation
+    if (currentJobCardId) {
+      updateStoredJobCard(currentJobCardId, (card) => ({
+        ...card,
+        status: "In Progress",
+        // Update PART 1 with service intake form data
+        part1,
+        // PART 2 will be populated when parts are added in quotation
+        part2: card.part2 || [],
+        // PART 2A if warranty/insurance evidence exists
+        part2A,
+        // Update legacy fields for backward compatibility
+        vehicleMake: serviceIntakeForm.vehicleBrand,
+        vehicleModel: serviceIntakeForm.vehicleModel,
+        registration: serviceIntakeForm.registrationNumber,
+        description: serviceIntakeForm.customerComplaintIssue || card.description,
+      }));
     }
 
     // Save service intake data to localStorage for quotation page to use
@@ -1535,6 +1783,7 @@ function AppointmentsContent() {
       customerId: customerIdForQuotation,
       serviceCenterId: serviceCenterIdForQuotation,
       serviceCenterName: serviceCenterNameForQuotation,
+      jobCardId: currentJobCardId,
       serviceIntakeForm: {
         ...serviceIntakeForm,
         // Convert File objects to URLs for storage (in real app, these would be uploaded first)
@@ -1569,19 +1818,12 @@ function AppointmentsContent() {
     setAppointments(updatedAppointments);
     safeStorage.setItem("appointments", updatedAppointments);
 
-    if (currentJobCardId) {
-      updateStoredJobCard(currentJobCardId, (card) => ({
-        ...card,
-        status: "In Progress",
-      }));
-    }
-
     // Navigate to quotations page
     router.push("/sc/quotations?fromAppointment=true");
     
     // Close the appointment detail modal
     closeDetailModal();
-  }, [selectedAppointment, serviceIntakeForm, appointments, router, closeDetailModal, showToast, currentJobCardId, updateStoredJobCard]);
+  }, [selectedAppointment, serviceIntakeForm, appointments, router, closeDetailModal, showToast, currentJobCardId, updateStoredJobCard, selectedCustomer, detailCustomer, serviceCenterContext]);
 
   const updateLeadForAppointment = useCallback(
     (appointment: AppointmentRecord) => {
@@ -2709,40 +2951,52 @@ function AppointmentsContent() {
                       if (!selectedAppointment) return;
                       
                       // Automatically create job card when customer arrives
-                      try {
-                        const jobCard = convertAppointmentToJobCard(selectedAppointment);
-                        
-                        // Update appointment status
-                        const updatedAppointments = appointments.map((apt) =>
-                          apt.id === selectedAppointment.id
-                            ? { ...apt, status: "In Progress" }
-                            : apt
-                        );
-                        setAppointments(updatedAppointments);
-                        safeStorage.setItem("appointments", updatedAppointments);
+                      (async () => {
+                        try {
+                          const jobCard = await convertAppointmentToJobCard(selectedAppointment);
+                          
+                          // Update appointment status
+                          const updatedAppointments = appointments.map((apt) =>
+                            apt.id === selectedAppointment.id
+                              ? { ...apt, status: "In Progress" }
+                              : apt
+                          );
+                          setAppointments(updatedAppointments);
+                          safeStorage.setItem("appointments", updatedAppointments);
 
-                        // Show success message
-                        showToast(
-                          `Job Card Created: ${jobCard.jobCardNumber}. Customer arrival recorded.`,
-                          "success"
-                        );
-                        
-                        // Pre-fill form with appointment data
-                        setServiceIntakeForm({
-                          ...INITIAL_SERVICE_INTAKE_FORM,
-                          serviceType: selectedAppointment.serviceType,
-                          vehicleBrand: selectedAppointment.vehicle.split(" ")[0] || "",
-                          vehicleModel: selectedAppointment.vehicle.split(" ").slice(1, -1).join(" ") || "",
-                        });
+                          // Show success message
+                          showToast(
+                            `Job Card Created: ${jobCard.jobCardNumber}. Customer arrival recorded.`,
+                            "success"
+                          );
+                          
+                          // Pre-fill form with appointment and job card PART 1 data
+                          setServiceIntakeForm({
+                            ...INITIAL_SERVICE_INTAKE_FORM,
+                            serviceType: selectedAppointment.serviceType || jobCard.part1?.vehicleBrand || "",
+                            vehicleBrand: jobCard.part1?.vehicleBrand || selectedAppointment.vehicle.split(" ")[0] || "",
+                            vehicleModel: jobCard.part1?.vehicleModel || selectedAppointment.vehicle.split(" ").slice(1, -1).join(" ") || "",
+                            registrationNumber: jobCard.part1?.registrationNumber || "",
+                            vinChassisNumber: jobCard.part1?.vinChassisNumber || "",
+                            variantBatteryCapacity: jobCard.part1?.variantBatteryCapacity || "",
+                            warrantyStatus: jobCard.part1?.warrantyStatus || "",
+                            estimatedDeliveryDate: jobCard.part1?.estimatedDeliveryDate || selectedAppointment.estimatedDeliveryDate || "",
+                            insuranceStartDate: jobCard.part1?.insuranceStartDate || "",
+                            insuranceEndDate: jobCard.part1?.insuranceEndDate || "",
+                            insuranceCompanyName: jobCard.part1?.insuranceCompanyName || "",
+                            customerComplaintIssue: jobCard.part1?.customerFeedback || selectedAppointment.customerComplaintIssue || "",
+                            jobCardId: jobCard.id,
+                          });
 
-                        // Set arrival status
-                        setCustomerArrivalStatus("arrived");
-                        // Ensure detail modal stays open so advisor can fill intake
-                        setShowDetailModal(true);
-                      } catch (error) {
-                        console.error("Error creating job card:", error);
-                        showToast("Failed to create job card. Please try again.", "error");
-                      }
+                          // Set arrival status
+                          setCustomerArrivalStatus("arrived");
+                          // Ensure detail modal stays open so advisor can fill intake
+                          setShowDetailModal(true);
+                        } catch (error) {
+                          console.error("Error creating job card:", error);
+                          showToast("Failed to create job card. Please try again.", "error");
+                        }
+                      })();
                     }}
                     className={`flex-1 px-4 py-3 rounded-lg font-medium transition ${
                       customerArrivalStatus === "arrived"
