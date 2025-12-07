@@ -1,4 +1,4 @@
-"use client";
+    "use client";
 import { useState, useEffect, useMemo } from "react";
 import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList } from "lucide-react";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -100,7 +100,290 @@ export default function Approvals() {
   useEffect(() => {
     const loadData = () => {
       // Load quotations
-      const storedQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
+      let storedQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
+      
+      // Check if we have any pending quotations for manager approval
+      const hasPendingQuotations = storedQuotations.some(q => q.status === "sent_to_manager");
+      
+        // Initialize mock quotations if none exist (for testing)
+      if (!hasPendingQuotations) {
+        // Get service center info
+        let serviceCenterId: string;
+        let serviceCenterCode: string;
+        let serviceCenterName: string;
+        let serviceCenterAddress: string;
+        let serviceCenterCity: string;
+        let serviceCenterState: string;
+        let serviceCenterPincode: string;
+        
+        if (serviceCenterContext.serviceCenterId) {
+          const contextId = String(serviceCenterContext.serviceCenterId);
+          if (contextId === "1" || contextId === "sc-001") {
+            serviceCenterId = "sc-001";
+            serviceCenterCode = "SC001";
+            serviceCenterName = serviceCenterContext.serviceCenterName || "Delhi Central Hub";
+            serviceCenterAddress = "123 Connaught Place, Block A";
+            serviceCenterCity = "New Delhi";
+            serviceCenterState = "Delhi";
+            serviceCenterPincode = "110001";
+          } else if (contextId === "2" || contextId === "sc-002") {
+            serviceCenterId = "sc-002";
+            serviceCenterCode = "SC002";
+            serviceCenterName = serviceCenterContext.serviceCenterName || "Mumbai Metroplex";
+            serviceCenterAddress = "456 Bandra West, Linking Road";
+            serviceCenterCity = "Mumbai";
+            serviceCenterState = "Maharashtra";
+            serviceCenterPincode = "400050";
+          } else if (contextId === "3" || contextId === "sc-003") {
+            serviceCenterId = "sc-003";
+            serviceCenterCode = "SC003";
+            serviceCenterName = serviceCenterContext.serviceCenterName || "Bangalore Innovation Center";
+            serviceCenterAddress = "789 Koramangala, 5th Block";
+            serviceCenterCity = "Bangalore";
+            serviceCenterState = "Karnataka";
+            serviceCenterPincode = "560095";
+          } else {
+            serviceCenterId = "sc-001";
+            serviceCenterCode = "SC001";
+            serviceCenterName = "Delhi Central Hub";
+            serviceCenterAddress = "123 Connaught Place, Block A";
+            serviceCenterCity = "New Delhi";
+            serviceCenterState = "Delhi";
+            serviceCenterPincode = "110001";
+          }
+        } else {
+          serviceCenterId = "sc-001";
+          serviceCenterCode = "SC001";
+          serviceCenterName = "Delhi Central Hub";
+          serviceCenterAddress = "123 Connaught Place, Block A";
+          serviceCenterCity = "New Delhi";
+          serviceCenterState = "Delhi";
+          serviceCenterPincode = "110001";
+        }
+        
+        const mockQuotations: Quotation[] = [
+          {
+            id: "QT-MOCK-001",
+            quotationNumber: `QT-${serviceCenterCode}-202501-0001`,
+            serviceCenterId: serviceCenterId,
+            customerId: "cust-mock-003",
+            vehicleId: "veh-mock-003",
+            serviceAdvisorId: "user-001",
+            documentType: "Quotation",
+            quotationDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+            validUntil: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+            hasInsurance: true,
+            insurerId: "ins-001",
+            subtotal: 12000,
+            discount: 1200,
+            discountPercent: 10,
+            preGstAmount: 10800,
+            cgstAmount: 972,
+            sgstAmount: 972,
+            igstAmount: 0,
+            totalAmount: 12744,
+            notes: "Complete battery diagnostics and service. Battery warranty check required.",
+            batterySerialNumber: "BAT-2024-001",
+            customNotes: "Customer reported range reduction. Battery health check mandatory.",
+            noteTemplateId: "",
+            status: "sent_to_manager",
+            passedToManager: true,
+            passedToManagerAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            managerId: undefined,
+            sentToManager: true,
+            sentToManagerAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            items: [
+              {
+                id: "item-mock-001",
+                serialNumber: 1,
+                partName: "Battery Diagnostic Service",
+                partNumber: "BAT-DIAG-001",
+                hsnSacCode: "998314",
+                quantity: 1,
+                rate: 5000,
+                gstPercent: 18,
+                amount: 5000,
+              },
+              {
+                id: "item-mock-002",
+                serialNumber: 2,
+                partName: "Battery Cell Replacement (if needed)",
+                partNumber: "BAT-CELL-001",
+                hsnSacCode: "8507",
+                quantity: 1,
+                rate: 5000,
+                gstPercent: 18,
+                amount: 5000,
+              },
+              {
+                id: "item-mock-003",
+                serialNumber: 3,
+                partName: "Labor Charges",
+                partNumber: "",
+                hsnSacCode: "998314",
+                quantity: 1,
+                rate: 2000,
+                gstPercent: 18,
+                amount: 2000,
+              },
+            ],
+            customer: {
+              id: "cust-mock-003",
+              firstName: "Vikram",
+              lastName: "Singh",
+              phone: "9876543214",
+              email: "vikram.singh@example.com",
+              address: "456 MG Road, Bangalore, Karnataka 560001",
+              city: "Bangalore",
+              state: "Karnataka",
+              pincode: "560001",
+            },
+            vehicle: {
+              id: "veh-mock-003",
+              make: "MG",
+              model: "ZS EV",
+              registration: "KA-05-EF-3456",
+              vin: "MG1234567890123456",
+            },
+            insurer: {
+              id: "ins-001",
+              name: "HDFC Ergo",
+              address: "Mumbai, Maharashtra",
+              gstNumber: "27AAACH1234R1Z5",
+              phone: "1800-202-2020",
+              email: "support@hdfcergo.com",
+              isActive: true,
+            },
+            serviceCenter: {
+              id: serviceCenterId,
+              name: serviceCenterName,
+              code: serviceCenterCode,
+              address: serviceCenterAddress,
+              city: serviceCenterCity,
+              state: serviceCenterState,
+              pincode: serviceCenterPincode,
+            },
+          },
+          {
+            id: "QT-MOCK-002",
+            quotationNumber: `QT-${serviceCenterCode}-202501-0002`,
+            serviceCenterId: serviceCenterId,
+            customerId: "cust-mock-004",
+            vehicleId: "veh-mock-004",
+            serviceAdvisorId: "user-001",
+            documentType: "Quotation",
+            quotationDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+            validUntil: new Date(Date.now() + 29 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+            hasInsurance: false,
+            subtotal: 8500,
+            discount: 0,
+            discountPercent: 0,
+            preGstAmount: 8500,
+            cgstAmount: 765,
+            sgstAmount: 765,
+            igstAmount: 0,
+            totalAmount: 10030,
+            notes: "Complete AC system service including compressor check, refrigerant refill, and filter replacement.",
+            batterySerialNumber: "",
+            customNotes: "AC not working properly, customer wants comprehensive service",
+            noteTemplateId: "",
+            status: "sent_to_manager",
+            passedToManager: true,
+            passedToManagerAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+            managerId: undefined,
+            sentToManager: true,
+            sentToManagerAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+            items: [
+              {
+                id: "item-mock-004",
+                serialNumber: 1,
+                partName: "AC Compressor Service",
+                partNumber: "AC-COMP-001",
+                hsnSacCode: "8708",
+                quantity: 1,
+                rate: 4000,
+                gstPercent: 18,
+                amount: 4000,
+              },
+              {
+                id: "item-mock-005",
+                serialNumber: 2,
+                partName: "AC Refrigerant R134a",
+                partNumber: "AC-REF-001",
+                hsnSacCode: "2903",
+                quantity: 1,
+                rate: 2000,
+                gstPercent: 18,
+                amount: 2000,
+              },
+              {
+                id: "item-mock-006",
+                serialNumber: 3,
+                partName: "AC Filter Replacement",
+                partNumber: "AC-FIL-001",
+                hsnSacCode: "8708",
+                quantity: 1,
+                rate: 1500,
+                gstPercent: 18,
+                amount: 1500,
+              },
+              {
+                id: "item-mock-007",
+                serialNumber: 4,
+                partName: "Labor Charges",
+                partNumber: "",
+                hsnSacCode: "998314",
+                quantity: 1,
+                rate: 1000,
+                gstPercent: 18,
+                amount: 1000,
+              },
+            ],
+            customer: {
+              id: "cust-mock-004",
+              firstName: "Anjali",
+              lastName: "Mehta",
+              phone: "9876543215",
+              email: "anjali.mehta@example.com",
+              address: "789 Park Street, Mumbai, Maharashtra 400001",
+              city: "Mumbai",
+              state: "Maharashtra",
+              pincode: "400001",
+            },
+            vehicle: {
+              id: "veh-mock-004",
+              make: "Hyundai",
+              model: "Kona Electric",
+              registration: "MH-01-GH-7890",
+              vin: "HYU9876543210987",
+            },
+            serviceCenter: {
+              id: serviceCenterId,
+              name: serviceCenterName,
+              code: serviceCenterCode,
+              address: serviceCenterAddress,
+              city: serviceCenterCity,
+              state: serviceCenterState,
+              pincode: serviceCenterPincode,
+            },
+          },
+        ];
+        
+        // Add mock quotations if they don't exist
+        const existingQuotationIds = new Set(storedQuotations.map(q => q.id));
+        const newQuotations = mockQuotations.filter(q => !existingQuotationIds.has(q.id));
+        if (newQuotations.length > 0) {
+          storedQuotations = [...storedQuotations, ...newQuotations];
+          safeStorage.setItem("quotations", storedQuotations);
+        }
+      }
+      
+      // Reload from localStorage
+      storedQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
       let pendingApprovals = storedQuotations.filter(
         (q) => q.status === "sent_to_manager"
       );
@@ -113,7 +396,167 @@ export default function Approvals() {
       setQuotations(pendingApprovals);
       
       // Load service intake requests
-      const storedRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
+      let storedRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
+      
+      // Check if we have any pending service intake requests
+      const hasPendingRequests = storedRequests.some(r => r.status === "pending");
+      
+      // Initialize mock service intake requests if none exist (for testing)
+      if (!hasPendingRequests) {
+        // Get service center info
+        let serviceCenterId: string;
+        let serviceCenterName: string;
+        
+        if (serviceCenterContext.serviceCenterId) {
+          const contextId = String(serviceCenterContext.serviceCenterId);
+          if (contextId === "1" || contextId === "sc-001") {
+            serviceCenterId = "sc-001";
+            serviceCenterName = serviceCenterContext.serviceCenterName || "Delhi Central Hub";
+          } else if (contextId === "2" || contextId === "sc-002") {
+            serviceCenterId = "sc-002";
+            serviceCenterName = serviceCenterContext.serviceCenterName || "Mumbai Metroplex";
+          } else if (contextId === "3" || contextId === "sc-003") {
+            serviceCenterId = "sc-003";
+            serviceCenterName = serviceCenterContext.serviceCenterName || "Bangalore Innovation Center";
+          } else {
+            serviceCenterId = "sc-001";
+            serviceCenterName = "Delhi Central Hub";
+          }
+        } else {
+          serviceCenterId = "sc-001";
+          serviceCenterName = "Delhi Central Hub";
+        }
+        
+        const mockServiceIntakeRequests: ServiceIntakeRequest[] = [
+          {
+            id: "SIR-001",
+            appointmentId: 1001,
+            appointment: {
+              id: 1001,
+              customerName: "Amit Patel",
+              vehicle: "Mahindra XUV400",
+              phone: "9876543212",
+              serviceType: "Battery Service",
+              date: new Date().toISOString().split("T")[0],
+              time: "10:00 AM",
+              status: "confirmed",
+            },
+            serviceIntakeForm: {
+              customerIdProof: { files: [], urls: [] },
+              vehicleRCCopy: { files: [], urls: [] },
+              warrantyCardServiceBook: { files: [], urls: [] },
+              photosVideos: { files: [], urls: [] },
+              vehicleBrand: "Mahindra",
+              vehicleModel: "XUV400",
+              registrationNumber: "DL-01-AB-5678",
+              vinChassisNumber: "MAH1234567890123",
+              variantBatteryCapacity: "39.4 kWh",
+              motorNumber: "MOT-001-2024",
+              chargerSerialNumber: "CHG-001-2024",
+              dateOfPurchase: "2023-06-15",
+              warrantyStatus: "Active",
+              insuranceStartDate: "2023-06-20",
+              insuranceEndDate: "2024-06-19",
+              insuranceCompanyName: "HDFC Ergo",
+              serviceType: "Battery Service",
+              customerComplaintIssue: "Battery not holding charge properly, range reduced significantly",
+              previousServiceHistory: "Last service done 3 months ago, routine maintenance",
+              estimatedServiceTime: "4 hours",
+              estimatedCost: "₹8,500",
+              odometerReading: "15,000 km",
+              estimatedDeliveryDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split("T")[0],
+              assignedServiceAdvisor: "Ravi Kumar",
+              assignedTechnician: "",
+              pickupDropRequired: true,
+              pickupAddress: "123 Sector 5, Noida, UP 201301",
+              dropAddress: "123 Sector 5, Noida, UP 201301",
+              preferredCommunicationMode: "WhatsApp",
+              paymentMethod: "UPI",
+              gstRequirement: false,
+              businessNameForInvoice: "",
+              arrivalMode: "vehicle_present",
+              checkInNotes: "Vehicle checked in, battery diagnostics required",
+              checkInSlipNumber: "CHK-001",
+              checkInDate: new Date().toISOString().split("T")[0],
+              checkInTime: "09:45 AM",
+            },
+            status: "pending",
+            submittedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+            submittedBy: "Service Advisor",
+            serviceCenterId: serviceCenterId,
+            serviceCenterName: serviceCenterName,
+          },
+          {
+            id: "SIR-002",
+            appointmentId: 1002,
+            appointment: {
+              id: 1002,
+              customerName: "Sneha Reddy",
+              vehicle: "Tata Tigor EV",
+              phone: "9876543213",
+              serviceType: "AC Service",
+              date: new Date().toISOString().split("T")[0],
+              time: "11:30 AM",
+              status: "confirmed",
+            },
+            serviceIntakeForm: {
+              customerIdProof: { files: [], urls: [] },
+              vehicleRCCopy: { files: [], urls: [] },
+              warrantyCardServiceBook: { files: [], urls: [] },
+              photosVideos: { files: [], urls: [] },
+              vehicleBrand: "Tata",
+              vehicleModel: "Tigor EV",
+              registrationNumber: "KA-03-CD-9012",
+              vinChassisNumber: "TATA9876543210987",
+              variantBatteryCapacity: "26 kWh",
+              motorNumber: "MOT-002-2023",
+              chargerSerialNumber: "CHG-002-2023",
+              dateOfPurchase: "2022-11-10",
+              warrantyStatus: "Active",
+              insuranceStartDate: "2022-11-15",
+              insuranceEndDate: "2023-11-14",
+              insuranceCompanyName: "ICICI Lombard",
+              serviceType: "AC Service",
+              customerComplaintIssue: "AC not cooling properly, air flow is weak",
+              previousServiceHistory: "First service after purchase, no previous issues",
+              estimatedServiceTime: "2 hours",
+              estimatedCost: "₹3,200",
+              odometerReading: "8,500 km",
+              estimatedDeliveryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+              assignedServiceAdvisor: "Priya Sharma",
+              assignedTechnician: "",
+              pickupDropRequired: false,
+              pickupAddress: "",
+              dropAddress: "",
+              preferredCommunicationMode: "Phone",
+              paymentMethod: "Card",
+              gstRequirement: false,
+              businessNameForInvoice: "",
+              arrivalMode: "vehicle_present",
+              checkInNotes: "AC compressor needs inspection",
+              checkInSlipNumber: "CHK-002",
+              checkInDate: new Date().toISOString().split("T")[0],
+              checkInTime: "11:20 AM",
+            },
+            status: "pending",
+            submittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            submittedBy: "Service Advisor",
+            serviceCenterId: serviceCenterId,
+            serviceCenterName: serviceCenterName,
+          },
+        ];
+        
+        // Add mock requests if they don't exist
+        const existingRequestIds = new Set(storedRequests.map(r => r.id));
+        const newRequests = mockServiceIntakeRequests.filter(r => !existingRequestIds.has(r.id));
+        if (newRequests.length > 0) {
+          storedRequests = [...storedRequests, ...newRequests];
+          safeStorage.setItem("serviceIntakeRequests", storedRequests);
+        }
+      }
+      
+      // Reload from localStorage
+      storedRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
       let pendingRequests = storedRequests.filter(
         (r) => r.status === "pending"
       );
