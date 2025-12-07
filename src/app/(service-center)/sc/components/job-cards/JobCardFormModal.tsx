@@ -1,18 +1,24 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { PlusCircle, Loader2, X, Plus, Trash2, Edit2, Search, UserPlus, Car } from "lucide-react";
+import { PlusCircle, Loader2, X, Plus, Trash2, Edit2, Search, UserPlus, Car, Upload, Image as ImageIcon, Video, FileText, CheckCircle, FileCheck, Receipt } from "lucide-react";
 
 import type { JobCard, Priority, ServiceLocation } from "@/shared/types";
 import { availableParts } from "@/__mocks__/data/job-cards.mock";
-import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { createPartsRequestFromJobCard } from "@/shared/utils/jobCardPartsRequest.util";
-import { populateJobCardPart1, createEmptyJobCardPart1, generateSrNoForPart2Items } from "@/shared/utils/jobCardData.util";
+import { populateJobCardPart1, createEmptyJobCardPart1, generateSrNoForPart2Items, createEmptyJobCardPart2A } from "@/shared/utils/jobCardData.util";
 import { customerService } from "@/services/customers/customer.service";
-import type { JobCardPart2Item } from "@/shared/types/job-card.types";
+import type { JobCardPart2Item, JobCardPart2A } from "@/shared/types/job-card.types";
 import type { CustomerWithVehicles } from "@/shared/types";
+import type { Quotation } from "@/shared/types/quotation.types";
+import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/components/check-in-slip/CheckInSlip";
+
+interface DocumentationFiles {
+  files: File[];
+  urls: string[];
+}
 
 export type CreateJobCardForm = {
   // Basic fields
@@ -22,13 +28,7 @@ export type CreateJobCardForm = {
   vehicleRegistration: string;
   vehicleMake: string;
   vehicleModel: string;
-  serviceType: string;
   description: string;
-  location: ServiceLocation;
-  homeAddress?: string;
-  estimatedCost: string;
-  estimatedTime: string;
-  priority: Priority;
   selectedParts: string[];
   
   // PART 2 items
@@ -53,6 +53,21 @@ export type CreateJobCardForm = {
   mcuSerialNumber: string;
   vcuSerialNumber: string;
   otherPartSerialNumber: string;
+  
+  // PART 2A fields (Warranty/Insurance Case Details)
+  videoEvidence: DocumentationFiles;
+  vinImage: DocumentationFiles;
+  odoImage: DocumentationFiles;
+  damageImages: DocumentationFiles;
+  issueDescription: string;
+  numberOfObservations: string;
+  symptom: string;
+  defectPart: string;
+};
+
+const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
+  files: [],
+  urls: [],
 };
 
 export const INITIAL_JOB_CARD_FORM: CreateJobCardForm = {
@@ -62,13 +77,7 @@ export const INITIAL_JOB_CARD_FORM: CreateJobCardForm = {
   vehicleRegistration: "",
   vehicleMake: "",
   vehicleModel: "",
-  serviceType: "",
   description: "",
-  location: "Station",
-  homeAddress: "",
-  estimatedCost: "",
-  estimatedTime: "",
-  priority: "Normal",
   selectedParts: [],
   part2Items: [],
   // PART 1 fields
@@ -90,6 +99,15 @@ export const INITIAL_JOB_CARD_FORM: CreateJobCardForm = {
   mcuSerialNumber: "",
   vcuSerialNumber: "",
   otherPartSerialNumber: "",
+  // PART 2A fields
+  videoEvidence: { ...INITIAL_DOCUMENTATION_FILES },
+  vinImage: { ...INITIAL_DOCUMENTATION_FILES },
+  odoImage: { ...INITIAL_DOCUMENTATION_FILES },
+  damageImages: { ...INITIAL_DOCUMENTATION_FILES },
+  issueDescription: "",
+  numberOfObservations: "",
+  symptom: "",
+  defectPart: "",
 };
 
 const SERVICE_CENTER_CODE_MAP: Record<string, string> = {
@@ -121,19 +139,34 @@ export default function JobCardFormModal({
   const [previewJobCardNumber, setPreviewJobCardNumber] = useState<string>("");
   const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
   
-  // Search functionality
+  // Search functionality - Only show customers with approved quotations
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [searchResults, setSearchResults] = useState<CustomerWithVehicles[]>([]);
+  const [searchResults, setSearchResults] = useState<Array<{
+    customer: CustomerWithVehicles;
+    quotation: Quotation;
+    vehicle?: any;
+  }>>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [searching, setSearching] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithVehicles | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<any | null>(null);
+  const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
+  const [hasApprovedQuotations, setHasApprovedQuotations] = useState<boolean>(true);
+  const [showCheckInSlip, setShowCheckInSlip] = useState<boolean>(false);
+  const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
 
   useEffect(() => {
     if (open) {
       const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
       const serviceCenterCode = SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
       setPreviewJobCardNumber(generateJobCardNumber(serviceCenterCode));
+      
+      // Check if there are any approved quotations
+      const allQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
+      const approvedQuotations = allQuotations.filter(
+        (q) => q.status === "customer_approved" && q.customerApproved === true
+      );
+      setHasApprovedQuotations(approvedQuotations.length > 0);
     }
   }, [open, serviceCenterContext.serviceCenterId]);
 
@@ -145,6 +178,7 @@ export default function JobCardFormModal({
       setShowSearchResults(false);
       setSelectedCustomer(null);
       setSelectedVehicle(null);
+      setSelectedQuotation(null);
       return;
     }
     setForm({
@@ -153,7 +187,7 @@ export default function JobCardFormModal({
     });
   }, [initialValues, open]);
 
-  // Search customers by name or VIN
+  // Search customers with approved quotations only
   useEffect(() => {
     if (!searchQuery.trim() || !open) {
       setSearchResults([]);
@@ -164,23 +198,169 @@ export default function JobCardFormModal({
     const searchTimeout = setTimeout(async () => {
       try {
         setSearching(true);
-        // Try searching by name first
-        let results = await customerService.search(searchQuery, "name");
         
-        // If no results, try searching by VIN
-        if (results.length === 0) {
-          results = await customerService.search(searchQuery, "vin");
+        // Step 1: Get all approved quotations
+        const allQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
+        const approvedQuotations = allQuotations.filter(
+          (q) => q.status === "customer_approved" && q.customerApproved === true
+        );
+        
+        if (approvedQuotations.length === 0) {
+          setSearchResults([]);
+          setShowSearchResults(true);
+          setSearching(false);
+          return;
         }
         
-        // Also try vehicle number
-        if (results.length === 0) {
-          results = await customerService.search(searchQuery, "vehicleNumber");
+        // Step 2: Get unique customer IDs from approved quotations
+        const approvedCustomerIds = new Set(approvedQuotations.map(q => q.customerId));
+        
+        // Step 3: First check if search query matches quotation number directly
+        const query = searchQuery.toLowerCase();
+        const quotationMatches = approvedQuotations.filter(q => 
+          q.quotationNumber?.toLowerCase().includes(query)
+        );
+        
+        let matchedResults: Array<{customer: CustomerWithVehicles; quotation: Quotation; vehicle?: any}> = [];
+        
+        if (quotationMatches.length > 0) {
+          // If quotation number matches, try to get customers for those quotations
+          for (const quotation of quotationMatches) {
+            if (!quotation.customerId) {
+              console.warn(`Quotation ${quotation.id} has no customerId`);
+              continue;
+            }
+            
+            try {
+              // Try to get customer from repository/service
+              let customer: CustomerWithVehicles | null = null;
+              try {
+                customer = await customerService.getById(quotation.customerId);
+              } catch (err) {
+                // If customer not found, create a minimal customer object from quotation data
+                if (quotation.customer) {
+                  customer = {
+                    id: quotation.customer.id || quotation.customerId,
+                    customerNumber: `CUST-${quotation.customerId}`,
+                    name: `${quotation.customer.firstName} ${quotation.customer.lastName || ""}`.trim(),
+                    phone: quotation.customer.phone,
+                    email: quotation.customer.email,
+                    address: quotation.customer.address,
+                    cityState: quotation.customer.city && quotation.customer.state 
+                      ? `${quotation.customer.city}, ${quotation.customer.state}`
+                      : undefined,
+                    pincode: quotation.customer.pincode,
+                    createdAt: new Date().toISOString(),
+                    vehicles: quotation.vehicle ? [{
+                      id: quotation.vehicle.id || quotation.vehicleId || "",
+                      customerId: quotation.customerId,
+                      registration: quotation.vehicle.registration,
+                      vin: quotation.vehicle.vin,
+                      vehicleMake: quotation.vehicle.make,
+                      vehicleModel: quotation.vehicle.model,
+                      phone: quotation.customer.phone,
+                      customerName: `${quotation.customer.firstName} ${quotation.customer.lastName || ""}`.trim(),
+                      customerEmail: quotation.customer.email || "",
+                      customerAddress: quotation.customer.address || "",
+                      vehicleYear: 0,
+                      vehicleColor: "",
+                      lastServiceDate: "",
+                      totalServices: 0,
+                      totalSpent: "0",
+                      currentStatus: "Available" as const,
+                      activeJobCardId: null,
+                    }] : [],
+                  } as CustomerWithVehicles;
+                } else {
+                  console.warn(`Quotation ${quotation.id} has no customer data and customer ${quotation.customerId} not found`);
+                  continue;
+                }
+              }
+              
+              if (!customer) {
+                continue;
+              }
+              
+              const vehicle = customer.vehicles?.find(
+                v => (quotation.vehicleId && v.id.toString() === quotation.vehicleId) || 
+                     (quotation.vehicle?.vin && v.vin === quotation.vehicle.vin) ||
+                     (quotation.vehicle?.registration && v.registration === quotation.vehicle.registration)
+              ) || customer.vehicles?.[0] || null;
+              
+              matchedResults.push({ customer, quotation, vehicle });
+            } catch (err) {
+              console.warn(`Error processing quotation ${quotation.id}:`, err);
+              // Continue with other quotations even if one fails
+            }
+          }
+        } else {
+          // Step 4: Search customers and filter by approved quotation customers
+          let customerResults: CustomerWithVehicles[] = [];
+          
+          // Try searching by name first
+          let results = await customerService.search(searchQuery, "name");
+          customerResults = results.filter(c => approvedCustomerIds.has(c.id.toString()));
+          
+          // If no results, try searching by VIN
+          if (customerResults.length === 0) {
+            results = await customerService.search(searchQuery, "vin");
+            customerResults = results.filter(c => approvedCustomerIds.has(c.id.toString()));
+          }
+          
+          // Also try vehicle number
+          if (customerResults.length === 0) {
+            results = await customerService.search(searchQuery, "vehicleNumber");
+            customerResults = results.filter(c => approvedCustomerIds.has(c.id.toString()));
+          }
+          
+          // Step 5: Match customers with their approved quotations
+          matchedResults = customerResults
+            .map(customer => {
+              // Find approved quotations for this customer
+              const customerQuotations = approvedQuotations.filter(
+                q => q.customerId && q.customerId === customer.id.toString()
+              );
+              
+              // For each quotation, create a result entry
+              return customerQuotations.map(quotation => {
+                // Find the vehicle from quotation or customer's vehicles
+                const vehicle = customer.vehicles?.find(
+                  v => (quotation.vehicleId && v.id.toString() === quotation.vehicleId) || 
+                       (quotation.vehicle?.vin && v.vin === quotation.vehicle.vin) ||
+                       (quotation.vehicle?.registration && v.registration === quotation.vehicle.registration)
+                ) || customer.vehicles?.[0] || null;
+                
+                return {
+                  customer,
+                  quotation,
+                  vehicle,
+                };
+              });
+            })
+            .flat()
+            .filter(result => {
+              // Additional filtering by search query
+              const customerName = `${result.customer?.name || ""}`.toLowerCase();
+              const vehicleInfo = result.vehicle 
+                ? `${result.vehicle.vehicleMake || ""} ${result.vehicle.vehicleModel || ""} ${result.vehicle.registration || ""}`.toLowerCase()
+                : "";
+              const quotationNumber = result.quotation?.quotationNumber?.toLowerCase() || "";
+              
+              return customerName.includes(query) || 
+                     vehicleInfo.includes(query) || 
+                     quotationNumber.includes(query);
+            });
         }
         
-        setSearchResults(results);
-        setShowSearchResults(results.length > 0);
+        // Filter out any invalid results
+        const validResults = matchedResults.filter(
+          result => result.customer && result.quotation
+        );
+        
+        setSearchResults(validResults);
+        setShowSearchResults(validResults.length > 0);
       } catch (error) {
-        console.error("Error searching customers:", error);
+        console.error("Error searching customers with approved quotations:", error);
         setSearchResults([]);
         setShowSearchResults(false);
       } finally {
@@ -191,32 +371,79 @@ export default function JobCardFormModal({
     return () => clearTimeout(searchTimeout);
   }, [searchQuery, open]);
 
-  // Handle customer/vehicle selection
-  const handleSelectCustomer = (customer: CustomerWithVehicles, vehicle?: any) => {
+  // Handle customer/vehicle/quotation selection
+  const handleSelectCustomer = (
+    customer: CustomerWithVehicles, 
+    quotation: Quotation,
+    vehicle?: any
+  ) => {
+    if (!customer || !quotation) {
+      console.error("Invalid customer or quotation provided");
+      return;
+    }
+    
     setSelectedCustomer(customer);
     setSelectedVehicle(vehicle || (customer.vehicles && customer.vehicles.length > 0 ? customer.vehicles[0] : null));
+    setSelectedQuotation(quotation);
     
-    // Pre-fill form with customer and vehicle data
-    const vehicleToUse = vehicle || (customer.vehicles && customer.vehicles.length > 0 ? customer.vehicles[0] : null);
+    // Pre-fill form with data from approved quotation and customer/vehicle
+    const vehicleToUse = vehicle || 
+      customer.vehicles?.find(v => quotation.vehicleId && v.id.toString() === quotation.vehicleId) ||
+      (customer.vehicles && customer.vehicles.length > 0 ? customer.vehicles[0] : null);
+    
+    // Get customer details from quotation or customer record
+    const customerName = quotation.customer 
+      ? `${quotation.customer.firstName || ""} ${quotation.customer.lastName || ""}`.trim()
+      : customer.name || "";
+    
+    const customerAddress = quotation.customer?.address || customer.address || "";
+    const customerPhone = quotation.customer?.phone || customer.phone || "";
+    
+    // Get vehicle details from quotation or vehicle record
+    const vehicleMake = quotation.vehicle?.make || vehicleToUse?.vehicleMake || "";
+    const vehicleModel = quotation.vehicle?.model || vehicleToUse?.vehicleModel || "";
+    const vehicleRegistration = quotation.vehicle?.registration || vehicleToUse?.registration || "";
+    const vehicleVin = quotation.vehicle?.vin || vehicleToUse?.vin || "";
+    
+    // Pre-populate Part 2 items from quotation items
+    const part2ItemsFromQuotation: JobCardPart2Item[] = (quotation.items && Array.isArray(quotation.items))
+      ? quotation.items.map((item, index) => ({
+          srNo: index + 1,
+          partWarrantyTag: "",
+          partName: item?.partName || "",
+          partCode: item?.partNumber || "",
+          qty: item?.quantity || 0,
+          amount: item?.amount || 0,
+          technician: "",
+          labourCode: "Auto Select With Part",
+          itemType: "part" as const,
+        }))
+      : [];
     
     setForm((prev) => ({
       ...prev,
       customerId: customer.id.toString(),
-      customerName: customer.name,
-      fullName: customer.name,
-      mobilePrimary: customer.phone,
+      customerName: customerName,
+      fullName: customerName,
+      mobilePrimary: customerPhone,
       customerType: customer.customerType || "",
-      customerAddress: customer.address || "",
-      vehicleId: vehicleToUse?.id?.toString() || "",
-      vehicleRegistration: vehicleToUse?.registration || "",
-      vehicleMake: vehicleToUse?.vehicleMake || "",
-      vehicleModel: vehicleToUse?.vehicleModel || "",
-      vehicleBrand: vehicleToUse?.vehicleMake || "",
-      vinChassisNumber: vehicleToUse?.vin || "",
-      registrationNumber: vehicleToUse?.registration || "",
+      customerAddress: customerAddress,
+      vehicleId: vehicleToUse?.id?.toString() || quotation.vehicleId || "",
+      vehicleRegistration: vehicleRegistration,
+      vehicleMake: vehicleMake,
+      vehicleModel: vehicleModel,
+      vehicleBrand: vehicleMake,
+      vinChassisNumber: vehicleVin,
       variantBatteryCapacity: vehicleToUse?.variant || "",
-      // Additional vehicle details if available
-      ...(vehicleToUse?.warrantyStatus && { warrantyStatus: vehicleToUse.warrantyStatus }),
+      warrantyStatus: vehicleToUse?.warrantyStatus || "",
+      // Pre-fill description from quotation notes
+      description: quotation.notes || quotation.customNotes || prev.description,
+      customerFeedback: quotation.customNotes || quotation.notes || "",
+      // Pre-populate Part 2 items from quotation
+      part2Items: part2ItemsFromQuotation.length > 0 ? part2ItemsFromQuotation : prev.part2Items,
+      // Insurance details from quotation
+      insuranceCompanyName: quotation.insurer?.name || "",
+      batterySerialNumber: quotation.batterySerialNumber || "",
     }));
     
     setSearchQuery("");
@@ -453,6 +680,59 @@ export default function JobCardFormModal({
     }));
   };
 
+  // Generate check-in slip data from form
+  const handleGenerateCheckInSlip = () => {
+    if (!selectedCustomer || !selectedVehicle) {
+      onError?.("Please select a customer and vehicle first.");
+      return;
+    }
+
+    try {
+      const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
+      const serviceCenterCode = SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
+      const slipNumber = generateCheckInSlipNumber(serviceCenterCode);
+      
+      const now = new Date();
+      const checkInDate = now.toISOString().split("T")[0];
+      const checkInTime = now.toTimeString().slice(0, 5);
+
+      // Get service center details - use defaults if not available
+      const serviceCenterName = serviceCenterContext.serviceCenterName || "Service Center";
+      
+      // For address, we'll use empty strings or defaults since service center context doesn't have address fields
+      const serviceCenterAddress = "";
+      const serviceCenterCity = "";
+      const serviceCenterState = "";
+      const serviceCenterPincode = "";
+
+      const slipData: CheckInSlipData = {
+        slipNumber,
+        customerName: form.customerName || selectedCustomer.name || "",
+        phone: form.mobilePrimary || selectedCustomer.phone || "",
+        email: selectedCustomer.email,
+        vehicleMake: form.vehicleMake || selectedVehicle.vehicleMake || "",
+        vehicleModel: form.vehicleModel || selectedVehicle.vehicleModel || "",
+        registrationNumber: form.vehicleRegistration || selectedVehicle.registration || "",
+        vin: form.vinChassisNumber || selectedVehicle.vin || "",
+        checkInDate,
+        checkInTime,
+        serviceCenterName,
+        serviceCenterAddress,
+        serviceCenterCity,
+        serviceCenterState,
+        serviceCenterPincode,
+        serviceType: selectedQuotation?.items?.[0]?.partName || form.description || "General Service",
+        notes: form.description || "",
+      };
+
+      setCheckInSlipData(slipData);
+      setShowCheckInSlip(true);
+    } catch (error) {
+      console.error("Error generating check-in slip:", error);
+      onError?.("Failed to generate check-in slip. Please try again.");
+    }
+  };
+
   const generateJobCardNumber = (serviceCenterCode: string = "SC001") => {
     const storedCards = safeStorage.getItem<JobCard[]>("jobCards", []);
     const now = new Date();
@@ -479,8 +759,16 @@ export default function JobCardFormModal({
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!form.customerName || !form.serviceType || !form.description) {
+    
+    // Validate required fields
+    if (!form.customerName || !form.description) {
       onError?.("Please fill in all required fields.");
+      return;
+    }
+    
+    // Validate that a customer with approved quotation is selected
+    if (!selectedCustomer || !selectedQuotation) {
+      onError?.("Please select a customer with an approved quotation.");
       return;
     }
 
@@ -503,7 +791,23 @@ export default function JobCardFormModal({
           }
         } catch (err) {
           console.warn("Could not fetch customer data:", err);
-          // Continue with basic data
+          // Use selected customer if available
+          if (selectedCustomer) {
+            customerData = selectedCustomer;
+            if (selectedVehicle) {
+              vehicleData = selectedVehicle;
+            } else if (selectedCustomer.vehicles && selectedCustomer.vehicles.length > 0) {
+              vehicleData = selectedCustomer.vehicles[0];
+            }
+          }
+        }
+      } else if (selectedCustomer) {
+        // Use selected customer if form.customerId is not set
+        customerData = selectedCustomer;
+        if (selectedVehicle) {
+          vehicleData = selectedVehicle;
+        } else if (selectedCustomer.vehicles && selectedCustomer.vehicles.length > 0) {
+          vehicleData = selectedCustomer.vehicles[0];
         }
       }
 
@@ -557,6 +861,23 @@ export default function JobCardFormModal({
         ? generateSrNoForPart2Items(form.part2Items)
         : [];
 
+      // Create PART 2A from form data - ensure safe access to DocumentationFiles
+      const videoEvidence = form.videoEvidence || INITIAL_DOCUMENTATION_FILES;
+      const vinImage = form.vinImage || INITIAL_DOCUMENTATION_FILES;
+      const odoImage = form.odoImage || INITIAL_DOCUMENTATION_FILES;
+      const damageImages = form.damageImages || INITIAL_DOCUMENTATION_FILES;
+      
+      const part2A: JobCardPart2A = {
+        videoEvidence: (videoEvidence.files?.length > 0 || videoEvidence.urls?.length > 0) ? "Yes" : "No",
+        vinImage: (vinImage.files?.length > 0 || vinImage.urls?.length > 0) ? "Yes" : "No",
+        odoImage: (odoImage.files?.length > 0 || odoImage.urls?.length > 0) ? "Yes" : "No",
+        damageImages: (damageImages.files?.length > 0 || damageImages.urls?.length > 0) ? "Yes" : "No",
+        issueDescription: form.issueDescription || "",
+        numberOfObservations: form.numberOfObservations || "",
+        symptom: form.symptom || "",
+        defectPart: form.defectPart || "",
+      };
+
       const newJobCard: JobCard = {
         id: `JC-${Date.now()}`,
         jobCardNumber,
@@ -570,23 +891,25 @@ export default function JobCardFormModal({
         vehicleMake: form.vehicleMake,
         vehicleModel: form.vehicleModel,
         customerType: customerData?.customerType || "B2C",
-        serviceType: form.serviceType,
+        serviceType: selectedQuotation?.items?.[0]?.partName || "General Service",
         description: form.description,
         status: "Created",
-        priority: form.priority,
+        priority: "Normal",
         assignedEngineer: null,
-        estimatedCost: form.estimatedCost
-          ? `₹${parseFloat(form.estimatedCost).toLocaleString("en-IN")}`
+        estimatedCost: selectedQuotation?.totalAmount 
+          ? `₹${selectedQuotation.totalAmount.toLocaleString("en-IN")}`
           : "₹0",
-        estimatedTime: form.estimatedTime,
+        estimatedTime: "",
         createdAt: new Date().toISOString(),
         parts: form.selectedParts, // Legacy field for backward compatibility
-        location: form.location,
+        location: "Station",
+        quotationId: selectedQuotation?.id, // Link to approved quotation
         serviceCenterName:
           serviceCenterContext.serviceCenterName || "Service Center",
         // NEW STRUCTURED DATA
         part1,
         part2,
+        part2A,
       };
 
       const existingJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
@@ -616,8 +939,10 @@ export default function JobCardFormModal({
       <div className="bg-white rounded-2xl shadow-xl max-w-6xl w-full max-h-[95vh] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-6 border-b pb-4">
           <div>
-          <h2 className="text-2xl font-bold text-gray-800">Create Job Card</h2>
-            <p className="text-sm text-gray-500 mt-1">Fill in customer and vehicle information</p>
+          <h2 className="text-2xl font-bold text-gray-800">Create Job Card from Approved Quotation</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Search for customers with approved quotations. All details will be pre-filled from the quotation.
+            </p>
           </div>
           <button
             type="button"
@@ -631,12 +956,34 @@ export default function JobCardFormModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* SEARCH CUSTOMER/VEHICLE */}
-          <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 search-container">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Search Customer by Name or VIN Number
-            </label>
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {/* SEARCH CUSTOMER/VEHICLE - Only Approved Quotations */}
+          <div className="bg-green-50 rounded-xl p-4 border border-green-200 search-container">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="text-green-600" size={18} />
+              <label className="block text-sm font-semibold text-gray-700">
+                Search Customer with Approved Quotation
+              </label>
+            </div>
+            <p className="text-xs text-gray-600 mb-3">
+              Only customers who have approved quotations are available for job card creation.
+              Search by customer name, vehicle registration, or quotation number.
+            </p>
+            {!hasApprovedQuotations && (
+              <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <FileCheck className="text-amber-600 mt-0.5" size={16} />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-amber-800 mb-1">
+                      No Approved Quotations Available
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      There are no approved quotations in the system. Job cards can only be created from quotations that have been approved by customers.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
                 <Search size={18} />
@@ -651,94 +998,175 @@ export default function JobCardFormModal({
                 onFocus={() => {
                   if (searchResults.length > 0) setShowSearchResults(true);
                 }}
-                placeholder="Enter customer name or VIN number..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                placeholder="Search by customer name, vehicle registration, or quotation number..."
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none"
               />
               {searching && (
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <Loader2 size={18} className="animate-spin text-blue-600" />
+                  <Loader2 size={18} className="animate-spin text-green-600" />
                 </div>
               )}
               
-              {/* Search Results Dropdown */}
+              {/* Search Results Dropdown - Only Approved Quotations */}
               {showSearchResults && searchResults.length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                  {searchResults.map((customer) => (
-                    <div key={customer.id} className="border-b border-gray-100 last:border-b-0">
-                      <div
-                        className="p-3 hover:bg-blue-50 cursor-pointer"
-                        onClick={() => handleSelectCustomer(customer)}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <UserPlus size={16} className="text-blue-600" />
-                          <span className="font-semibold text-gray-800">{customer.name}</span>
-                        </div>
-                        <div className="text-xs text-gray-600 ml-6">
-                          <div>Phone: {customer.phone}</div>
-                          {customer.vehicles && customer.vehicles.length > 0 && (
-                            <div className="mt-1">
-                              <div className="font-medium text-gray-700 mb-1">Vehicles:</div>
-                              {customer.vehicles.map((vehicle) => (
-                                <div
-                                  key={vehicle.id}
-                                  className="flex items-center gap-2 p-2 hover:bg-blue-100 rounded cursor-pointer"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectCustomer(customer, vehicle);
-                                  }}
-                                >
-                                  <Car size={14} className="text-gray-500" />
-                                  <span className="text-xs">
-                                    {vehicle.vehicleMake} {vehicle.vehicleModel} - {vehicle.registration} (VIN: {vehicle.vin})
+                  {searchResults
+                    .filter(result => result.customer && result.quotation)
+                    .map((result, index) => {
+                      const customer = result.customer!;
+                      const quotation = result.quotation!;
+                      const vehicle = result.vehicle;
+                      const uniqueKey = `${customer.id}-${quotation.id}-${vehicle?.id || 'no-vehicle'}`;
+                      
+                      const customerName = quotation.customer 
+                        ? `${quotation.customer.firstName || ""} ${quotation.customer.lastName || ""}`.trim()
+                        : customer.name || "";
+                      const customerPhone = quotation.customer?.phone || customer.phone || "";
+                      
+                      return (
+                        <div key={uniqueKey} className="border-b border-gray-100 last:border-b-0">
+                          <div
+                            className="p-3 hover:bg-green-50 cursor-pointer transition"
+                            onClick={() => handleSelectCustomer(customer, quotation, vehicle)}
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <UserPlus size={16} className="text-green-600" />
+                                <span className="font-semibold text-gray-800">
+                                  {customerName || "Unknown Customer"}
+                                </span>
+                                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium flex items-center gap-1">
+                                  <CheckCircle size={12} />
+                                  Approved
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                <FileCheck size={14} className="inline mr-1" />
+                                {quotation.quotationNumber || "N/A"}
+                              </div>
+                            </div>
+                            
+                            <div className="text-xs text-gray-600 ml-6 space-y-1">
+                              {customerPhone && (
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">Phone:</span>
+                                  <span>{customerPhone}</span>
+                                </div>
+                              )}
+                              
+                              {quotation.vehicle && (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Car size={14} className="text-gray-400" />
+                                  <span>
+                                    <span className="font-medium">
+                                      {quotation.vehicle.make || ""} {quotation.vehicle.model || ""}
+                                    </span>
+                                    {quotation.vehicle.registration && (
+                                      <>
+                                        {" - "}
+                                        <span className="text-gray-500">{quotation.vehicle.registration}</span>
+                                      </>
+                                    )}
                                   </span>
                                 </div>
-                              ))}
+                              )}
+                              
+                              {quotation.items && quotation.items.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                  <div className="font-medium text-gray-700 mb-1">
+                                    Quotation Items ({quotation.items.length}):
+                                  </div>
+                                  <div className="text-gray-600 space-y-0.5">
+                                    {quotation.items.slice(0, 3).map((item, idx) => (
+                                      <div key={idx} className="text-xs">
+                                        • {item.partName || "Unknown Part"} (Qty: {item.quantity || 0}) - ₹{(item.amount || 0).toLocaleString("en-IN")}
+                                      </div>
+                                    ))}
+                                    {quotation.items.length > 3 && (
+                                      <div className="text-xs text-gray-500">+ {quotation.items.length - 3} more items</div>
+                                    )}
+                                  </div>
+                                  <div className="mt-1 text-xs font-semibold text-green-700">
+                                    Total: ₹{(quotation.totalAmount || 0).toLocaleString("en-IN")}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
                 </div>
               )}
               
-              {/* No Results - Create New Option */}
+              {/* No Results - Only Approved Quotations Available */}
               {showSearchResults && searchQuery.trim() && !searching && searchResults.length === 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4">
                   <div className="text-center">
-                    <p className="text-sm text-gray-600 mb-3">No customer or vehicle found</p>
-                    <button
-                      type="button"
-                      onClick={handleCreateNew}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
-                    >
-                      <UserPlus size={16} />
-                      Create New Customer/Vehicle
-                    </button>
+                    <FileCheck className="mx-auto text-gray-400 mb-2" size={24} />
+                    <p className="text-sm font-medium text-gray-700 mb-1">No approved quotations found</p>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Only customers with approved quotations can create job cards.
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Search by customer name, vehicle registration, or quotation number.
+                    </p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      Make sure the quotation has been approved by the customer first.
+                    </p>
                   </div>
                 </div>
               )}
+              
             </div>
             
-            {/* Selected Customer/Vehicle Info */}
-            {selectedCustomer && (
-              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-green-800">
-                      Selected: {selectedCustomer.name}
-                    </p>
+            {/* Selected Customer/Vehicle/Quotation Info */}
+            {selectedCustomer && selectedQuotation && (
+              <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle className="text-green-600" size={18} />
+                      <p className="text-sm font-semibold text-green-800">
+                        Selected: {selectedCustomer.name}
+                      </p>
+                      <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                        Approved Quotation
+                      </span>
+                    </div>
+                    
                     {selectedVehicle && (
-                      <p className="text-xs text-green-700 mt-1">
+                      <p className="text-xs text-green-700 mb-1">
+                        <Car size={12} className="inline mr-1" />
                         Vehicle: {selectedVehicle.vehicleMake} {selectedVehicle.vehicleModel} - {selectedVehicle.registration}
                       </p>
                     )}
+                    
+                    <div className="mt-2 pt-2 border-t border-green-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <FileCheck size={14} className="text-green-600" />
+                        <span className="text-xs font-medium text-green-800">
+                          Quotation: {selectedQuotation.quotationNumber}
+                        </span>
+                      </div>
+                      {selectedQuotation.items && selectedQuotation.items.length > 0 && (
+                        <p className="text-xs text-green-700">
+                          {selectedQuotation.items.length} item(s) • Total: ₹{selectedQuotation.totalAmount.toLocaleString("en-IN")}
+                        </p>
+                      )}
+                      {selectedQuotation.customerApprovedAt && (
+                        <p className="text-xs text-green-600 mt-1">
+                          Approved on: {new Date(selectedQuotation.customerApprovedAt).toLocaleDateString("en-IN")}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedCustomer(null);
                       setSelectedVehicle(null);
+                      setSelectedQuotation(null);
                       setForm((prev) => ({
                         ...prev,
                         customerId: "",
@@ -746,9 +1174,10 @@ export default function JobCardFormModal({
                         fullName: "",
                         vehicleId: "",
                         vehicleRegistration: "",
+                        part2Items: [],
                       }));
                     }}
-                    className="text-green-600 hover:text-green-800"
+                    className="text-green-600 hover:text-green-800 ml-2"
                   >
                     <X size={18} />
                   </button>
@@ -759,14 +1188,13 @@ export default function JobCardFormModal({
 
           {/* PART 1: CUSTOMER & VEHICLE INFORMATION */}
           <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span>
-              Customer & Vehicle Information
-            </h3>
-            
-            {/* TOP RIGHT: Job Card Number (will be auto-generated) */}
-            <div className="mb-4 flex justify-end">
-              <div className="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-semibold text-sm">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <span className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span>
+                Customer & Vehicle Information
+              </h3>
+              {/* Job Card Number (will be auto-generated) */}
+              <div className="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-semibold text-sm border border-blue-200">
                 Job Card: {previewJobCardNumber || "Generating..."}
               </div>
             </div>
@@ -1055,8 +1483,8 @@ export default function JobCardFormModal({
 
           {/* PART 2: PARTS & WORK ITEMS LIST */}
           <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span>
+            <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
+              <span className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span>
               Parts & Work Items List
             </h3>
 
@@ -1314,123 +1742,265 @@ export default function JobCardFormModal({
             </div>
           </div>
 
-          {/* Service Details */}
-          <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Service Type <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={form.serviceType}
-                onChange={(e) => setForm({ ...form, serviceType: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                required
-              >
-                <option value="">Select Service Type</option>
-                {SERVICE_TYPE_OPTIONS.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Service Location <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={form.location}
-                onChange={(e) =>
-                  setForm({ ...form, location: e.target.value as ServiceLocation })
-                }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                required
-              >
-                <option value="Station">Station</option>
-                <option value="Home Service">Home Service</option>
-              </select>
-            </div>
-            {form.location === "Home Service" && (
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Home Address
-                </label>
-                <textarea
-                  value={form.homeAddress}
-                  onChange={(e) => setForm({ ...form, homeAddress: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  rows={2}
-                  placeholder="Enter pick-up or service address"
-                />
+          {/* PART 2A - Warranty/Insurance Case Details with Video/Photos Upload */}
+          <div className="bg-amber-50 rounded-xl p-6 border border-amber-200">
+            <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
+              <span className="bg-amber-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">2A</span>
+              Warranty/Insurance Case Details
+            </h3>
+            
+            {/* Video/Photos Upload Section - Grid Layout */}
+            <div className="mb-6">
+              <h4 className="text-sm font-semibold text-gray-700 mb-4">Evidence Upload</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Video Evidence */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Video Evidence
+                  </label>
+                  <label className="block cursor-pointer">
+                    <input
+                      type="file"
+                      accept="video/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setForm({
+                          ...form,
+                          videoEvidence: {
+                            files: [...form.videoEvidence.files, ...files],
+                            urls: form.videoEvidence.urls,
+                          },
+                        });
+                      }}
+                    />
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-amber-500 transition bg-white">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-amber-100 p-2 rounded-lg">
+                          <Video className="text-amber-600" size={20} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-700">Upload Video</p>
+                          <p className="text-xs text-gray-500">MP4, AVI, MOV</p>
+                        </div>
+                        {form.videoEvidence.files.length > 0 && (
+                          <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium">
+                            {form.videoEvidence.files.length} file(s)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* VIN Image */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    VIN Image
+                  </label>
+                  <label className="block cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setForm({
+                          ...form,
+                          vinImage: {
+                            files: [...form.vinImage.files, ...files],
+                            urls: form.vinImage.urls,
+                          },
+                        });
+                      }}
+                    />
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-amber-500 transition bg-white">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-amber-100 p-2 rounded-lg">
+                          <ImageIcon className="text-amber-600" size={20} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-700">Upload VIN Image</p>
+                          <p className="text-xs text-gray-500">JPG, PNG, HEIC</p>
+                        </div>
+                        {form.vinImage.files.length > 0 && (
+                          <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium">
+                            {form.vinImage.files.length} file(s)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* ODO Meter Image */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    ODO Meter Image
+                  </label>
+                  <label className="block cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setForm({
+                          ...form,
+                          odoImage: {
+                            files: [...form.odoImage.files, ...files],
+                            urls: form.odoImage.urls,
+                          },
+                        });
+                      }}
+                    />
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-amber-500 transition bg-white">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-amber-100 p-2 rounded-lg">
+                          <ImageIcon className="text-amber-600" size={20} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-700">Upload ODO Image</p>
+                          <p className="text-xs text-gray-500">JPG, PNG, HEIC</p>
+                        </div>
+                        {form.odoImage.files.length > 0 && (
+                          <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium">
+                            {form.odoImage.files.length} file(s)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Damage Images */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Images of Damaged Parts
+                  </label>
+                  <label className="block cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setForm({
+                          ...form,
+                          damageImages: {
+                            files: [...form.damageImages.files, ...files],
+                            urls: form.damageImages.urls,
+                          },
+                        });
+                      }}
+                    />
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-amber-500 transition bg-white">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-amber-100 p-2 rounded-lg">
+                          <ImageIcon className="text-amber-600" size={20} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-700">Upload Damage Images</p>
+                          <p className="text-xs text-gray-500">JPG, PNG, HEIC</p>
+                        </div>
+                        {form.damageImages.files.length > 0 && (
+                          <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium">
+                            {form.damageImages.files.length} file(s)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                </div>
               </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Estimated Cost (₹)
-              </label>
-              <input
-                type="text"
-                value={form.estimatedCost}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    estimatedCost: e.target.value.replace(/[^0-9]/g, ""),
-                  })
-                }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                placeholder="3500"
-              />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Estimated Time
-              </label>
-              <input
-                type="text"
-                value={form.estimatedTime}
-                onChange={(e) => setForm({ ...form, estimatedTime: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                placeholder="2 hours"
-              />
+
+            {/* Text Fields Section */}
+            <div className="bg-white rounded-lg p-4 border border-amber-200">
+              <h4 className="text-sm font-semibold text-gray-700 mb-4">Case Details</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Issue Description
+                  </label>
+                  <textarea
+                    value={form.issueDescription}
+                    onChange={(e) => setForm({ ...form, issueDescription: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    rows={3}
+                    placeholder="Describe the issue in detail"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Number of Observations
+                  </label>
+                  <input
+                    type="text"
+                    value={form.numberOfObservations}
+                    onChange={(e) => setForm({ ...form, numberOfObservations: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    placeholder="e.g., 3"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Defect Part
+                  </label>
+                  <input
+                    type="text"
+                    value={form.defectPart}
+                    onChange={(e) => setForm({ ...form, defectPart: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    placeholder="e.g., Battery, Motor, Charger"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Symptom
+                  </label>
+                  <textarea
+                    value={form.symptom}
+                    onChange={(e) => setForm({ ...form, symptom: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    rows={3}
+                    placeholder="Describe the symptoms observed"
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Priority
-              </label>
-              <select
-                value={form.priority}
-                onChange={(e) =>
-                  setForm({ ...form, priority: e.target.value as Priority })
-                }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-              >
-                <option value="Low">Low</option>
-                <option value="Normal">Normal</option>
-                <option value="High">High</option>
-                <option value="Critical">Critical</option>
-              </select>
-            </div>
-          </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 mt-6">
             <button
               type="button"
               onClick={() => {
                 resetForm();
                 onClose();
               }}
-              className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition"
+              className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-200 transition"
               disabled={creating}
             >
               Cancel
             </button>
             <button
+              type="button"
+              onClick={handleGenerateCheckInSlip}
+              disabled={creating || !selectedCustomer || !selectedVehicle}
+              className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-2.5 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 inline-flex items-center gap-2 shadow-md"
+            >
+              <Receipt size={16} />
+              Generate Check-in Slip
+            </button>
+            <button
               type="submit"
               disabled={creating}
-              className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-2 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 inline-flex items-center gap-2"
+              className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-2.5 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 inline-flex items-center gap-2 shadow-md"
             >
               {creating ? (
                 <>
@@ -1447,6 +2017,17 @@ export default function JobCardFormModal({
           </div>
         </form>
       </div>
+
+      {/* Check-in Slip Modal */}
+      {showCheckInSlip && checkInSlipData && (
+        <CheckInSlip
+          data={checkInSlipData}
+          onClose={() => {
+            setShowCheckInSlip(false);
+            setCheckInSlipData(null);
+          }}
+        />
+      )}
     </div>
   );
 }
