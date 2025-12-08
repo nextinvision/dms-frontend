@@ -11,6 +11,8 @@ export interface Complaint {
   status: "Open" | "Resolved" | "Closed";
   date: string;
   severity: "Low" | "Medium" | "High" | "Critical";
+  serviceCenterId?: string;
+  serviceCenterName?: string;
 }
 
 /**
@@ -27,6 +29,8 @@ export const defaultComplaints: Complaint[] = [
     status: "Open",
     date: "2025-01-15",
     severity: "Medium",
+    serviceCenterId: "1",
+    serviceCenterName: "Delhi Central Hub",
   },
   {
     id: "COMP-002",
@@ -37,6 +41,8 @@ export const defaultComplaints: Complaint[] = [
     status: "Resolved",
     date: "2024-12-20",
     severity: "High",
+    serviceCenterId: "1",
+    serviceCenterName: "Delhi Central Hub",
   },
   {
     id: "COMP-003",
@@ -47,6 +53,8 @@ export const defaultComplaints: Complaint[] = [
     status: "Open",
     date: "2025-01-18",
     severity: "High",
+    serviceCenterId: "2",
+    serviceCenterName: "Mumbai Metroplex",
   },
   {
     id: "COMP-004",
@@ -57,6 +65,32 @@ export const defaultComplaints: Complaint[] = [
     status: "Closed",
     date: "2024-12-10",
     severity: "Low",
+    serviceCenterId: "2",
+    serviceCenterName: "Mumbai Metroplex",
+  },
+  {
+    id: "COMP-005",
+    customerName: "Vikram Singh",
+    phone: "9876543214",
+    vehicle: "Tata Nexon",
+    complaint: "Technician arrived late for home service appointment.",
+    status: "Open",
+    date: "2025-01-20",
+    severity: "Medium",
+    serviceCenterId: "3",
+    serviceCenterName: "Bangalore Innovation Center",
+  },
+  {
+    id: "COMP-006",
+    customerName: "Anjali Mehta",
+    phone: "9876543215",
+    vehicle: "Mahindra XUV",
+    complaint: "Vehicle was returned with scratches that were not present before service.",
+    status: "Open",
+    date: "2025-01-22",
+    severity: "Critical",
+    serviceCenterId: "3",
+    serviceCenterName: "Bangalore Innovation Center",
   },
 ];
 
