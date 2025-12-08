@@ -1378,7 +1378,25 @@ export default function CustomerFind() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <InfoCard icon={Phone} label="Phone" value={selectedCustomer.phone} />
                 {selectedCustomer.email && <InfoCard icon={Mail} label="Email" value={selectedCustomer.email} />}
-                {selectedCustomer.address && <InfoCard icon={MapPin} label="Address" value={<span className="line-clamp-1">{selectedCustomer.address}</span>} />}
+                {(selectedCustomer.address || selectedCustomer.cityState || selectedCustomer.pincode) && (
+                  <InfoCard 
+                    icon={MapPin} 
+                    label="Full Address" 
+                    value={
+                      <div className="space-y-1 text-left">
+                        {selectedCustomer.address && (
+                          <span className="block text-gray-900 font-medium">{selectedCustomer.address}</span>
+                        )}
+                        {selectedCustomer.cityState && (
+                          <span className="block text-gray-700 text-sm">{selectedCustomer.cityState}</span>
+                        )}
+                        {selectedCustomer.pincode && (
+                          <span className="block text-gray-600 text-sm">Pincode: {selectedCustomer.pincode}</span>
+                        )}
+                      </div>
+                    } 
+                  />
+                )}
                 <InfoCard icon={Calendar} label="Member Since" value={new Date(selectedCustomer.createdAt).toLocaleDateString()} />
                 {selectedCustomer.lastServiceCenterName && (
                   <InfoCard 
@@ -2074,30 +2092,36 @@ export default function CustomerFind() {
                           readOnly
                         />
                       </div>
-                      {selectedCustomer.address && (
-                        <FormInput
-                          label="Address"
-                          value={selectedCustomer.address}
-                          onChange={() => {}}
-                          readOnly
-                        />
+                      {(selectedCustomer.address || selectedCustomer.cityState || selectedCustomer.pincode) && (
+                        <div className="space-y-4">
+                          {selectedCustomer.address && (
+                            <FormInput
+                              label="Full Address"
+                              value={selectedCustomer.address}
+                              onChange={() => {}}
+                              readOnly
+                            />
+                          )}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {selectedCustomer.cityState && (
+                              <FormInput
+                                label="City / State"
+                                value={selectedCustomer.cityState || ""}
+                                onChange={() => {}}
+                                readOnly
+                              />
+                            )}
+                            {selectedCustomer.pincode && (
+                              <FormInput
+                                label="Pincode"
+                                value={selectedCustomer.pincode || ""}
+                                onChange={() => {}}
+                                readOnly
+                              />
+                            )}
+                          </div>
+                        </div>
                       )}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {selectedCustomer.cityState && (
-                          <FormInput
-                            label="City / State"
-                            value={selectedCustomer.cityState || ""}
-                            onChange={() => {}}
-                            readOnly
-                          />
-                        )}
-                        <FormInput
-                          label="Pincode"
-                          value={selectedCustomer.pincode || ""}
-                          onChange={() => {}}
-                          readOnly
-                        />
-                      </div>
                       <div className="flex flex-wrap gap-3 text-sm text-gray-600">
                         {selectedCustomer.customerType && (
                           <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700">
