@@ -1939,6 +1939,15 @@ export default function CustomerFind() {
                         totalSpent: "₹0",
                         currentStatus: "Available",
                         activeJobCardId: null,
+                        // Additional vehicle details
+                        variant: newVehicleForm.variant || undefined,
+                        motorNumber: newVehicleForm.motorNumber || undefined,
+                        chargerSerialNumber: newVehicleForm.chargerSerialNumber || undefined,
+                        purchaseDate: newVehicleForm.purchaseDate || undefined,
+                        warrantyStatus: newVehicleForm.warrantyStatus || undefined,
+                        insuranceStartDate: hasInsurance ? (newVehicleForm.insuranceStartDate || undefined) : undefined,
+                        insuranceEndDate: hasInsurance ? (newVehicleForm.insuranceEndDate || undefined) : undefined,
+                        insuranceCompanyName: hasInsurance ? (newVehicleForm.insuranceCompanyName || undefined) : undefined,
                       };
 
                       // Add vehicle to customer's vehicles array
@@ -2015,7 +2024,7 @@ export default function CustomerFind() {
                     </div>
                     <div>
                       <p className="text-indigo-600 font-medium">Color</p>
-                      <p className="text-gray-800 font-semibold">{selectedVehicle.vehicleColor}</p>
+                      <p className="text-gray-800 font-semibold">{selectedVehicle.vehicleColor || "N/A"}</p>
                     </div>
                     <div>
                       <p className="text-indigo-600 font-medium">Make</p>
@@ -2029,6 +2038,46 @@ export default function CustomerFind() {
                       <p className="text-indigo-600 font-medium">Year</p>
                       <p className="text-gray-800 font-semibold">{selectedVehicle.vehicleYear}</p>
                     </div>
+                    {selectedVehicle.variant && (
+                      <div>
+                        <p className="text-indigo-600 font-medium">Variant / Battery Capacity</p>
+                        <p className="text-gray-800 font-semibold">{selectedVehicle.variant}</p>
+                      </div>
+                    )}
+                    {selectedVehicle.motorNumber && (
+                      <div>
+                        <p className="text-indigo-600 font-medium">Motor Number</p>
+                        <p className="text-gray-800 font-semibold">{selectedVehicle.motorNumber}</p>
+                      </div>
+                    )}
+                    {selectedVehicle.chargerSerialNumber && (
+                      <div>
+                        <p className="text-indigo-600 font-medium">Charger Serial Number</p>
+                        <p className="text-gray-800 font-semibold">{selectedVehicle.chargerSerialNumber}</p>
+                      </div>
+                    )}
+                    {selectedVehicle.purchaseDate && (
+                      <div>
+                        <p className="text-indigo-600 font-medium">Date of Purchase</p>
+                        <p className="text-gray-800 font-semibold">
+                          {new Date(selectedVehicle.purchaseDate).toLocaleDateString()}
+                        </p>
+                      </div>
+                    )}
+                    {selectedVehicle.warrantyStatus && (
+                      <div>
+                        <p className="text-indigo-600 font-medium">Warranty Status</p>
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                          selectedVehicle.warrantyStatus === "Active"
+                            ? "bg-green-100 text-green-700"
+                            : selectedVehicle.warrantyStatus === "Expired"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}>
+                          {selectedVehicle.warrantyStatus}
+                        </span>
+                      </div>
+                    )}
                     <div>
                       <p className="text-indigo-600 font-medium">Total Services</p>
                       <p className="text-gray-800 font-semibold">{selectedVehicle.totalServices}</p>
@@ -2057,6 +2106,40 @@ export default function CustomerFind() {
                       </div>
                     )}
                   </div>
+
+                  {/* Insurance Information Section */}
+                  {(selectedVehicle.insuranceStartDate || selectedVehicle.insuranceEndDate || selectedVehicle.insuranceCompanyName) && (
+                    <div className="mt-6 pt-6 border-t border-indigo-200">
+                      <h4 className="text-md font-semibold text-indigo-900 mb-4 flex items-center gap-2">
+                        <FileText className="text-indigo-600" size={18} />
+                        Insurance Information
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                        {selectedVehicle.insuranceStartDate && (
+                          <div>
+                            <p className="text-indigo-600 font-medium">Insurance Start Date</p>
+                            <p className="text-gray-800 font-semibold">
+                              {new Date(selectedVehicle.insuranceStartDate).toLocaleDateString()}
+                            </p>
+                          </div>
+                        )}
+                        {selectedVehicle.insuranceEndDate && (
+                          <div>
+                            <p className="text-indigo-600 font-medium">Insurance End Date</p>
+                            <p className="text-gray-800 font-semibold">
+                              {new Date(selectedVehicle.insuranceEndDate).toLocaleDateString()}
+                            </p>
+                          </div>
+                        )}
+                        {selectedVehicle.insuranceCompanyName && (
+                          <div>
+                            <p className="text-indigo-600 font-medium">Insurance Company</p>
+                            <p className="text-gray-800 font-semibold">{selectedVehicle.insuranceCompanyName}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Service History */}
