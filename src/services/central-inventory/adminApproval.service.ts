@@ -266,12 +266,12 @@ class AdminApprovalService {
       throw new Error("Issue request not found");
     }
 
-    if (!issue.adminApproved || issue.status !== "admin_approved") {
-      throw new Error("Issue must be approved by admin before parts can be issued");
-    }
-
     if (issue.status === "issued") {
       throw new Error("Parts have already been issued for this request");
+    }
+
+    if (!issue.adminApproved || issue.status !== "admin_approved") {
+      throw new Error("Issue must be approved by admin before parts can be issued");
     }
 
     // Now actually issue the parts (decrease stock)

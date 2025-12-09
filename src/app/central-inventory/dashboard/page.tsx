@@ -119,6 +119,9 @@ export default function CentralInventoryDashboard() {
   const getIssueStatusBadge = (status: PartsIssue["status"]) => {
     const variants: Record<PartsIssue["status"], { color: string; label: string }> = {
       pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
+      pending_admin_approval: { color: "bg-orange-100 text-orange-800", label: "Pending Admin Approval" },
+      admin_approved: { color: "bg-green-100 text-green-800", label: "Admin Approved" },
+      admin_rejected: { color: "bg-red-100 text-red-800", label: "Admin Rejected" },
       issued: { color: "bg-blue-100 text-blue-800", label: "Issued" },
       received: { color: "bg-green-100 text-green-800", label: "Received" },
       cancelled: { color: "bg-red-100 text-red-800", label: "Cancelled" },

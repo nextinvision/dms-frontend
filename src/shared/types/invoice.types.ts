@@ -4,6 +4,54 @@
 
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
 
+/**
+ * Payment Status for Service Center Invoices
+ */
+export type PaymentStatus = "Paid" | "Unpaid" | "Overdue" | "Partially Paid";
+
+/**
+ * Invoice Statistics
+ */
+export interface InvoiceStats {
+  total: number;
+  paid: number;
+  unpaid: number;
+  overdue: number;
+  totalAmount: number;
+  paidAmount: number;
+}
+
+/**
+ * Service Center Invoice Item (simplified structure)
+ */
+export interface ServiceCenterInvoiceItem {
+  name: string;
+  qty: number;
+  price: string;
+}
+
+/**
+ * Service Center Invoice (for service center invoices page)
+ */
+export interface ServiceCenterInvoice {
+  id: string;
+  jobCardId?: string;
+  customerId?: string;
+  vehicleId?: string;
+  customerName: string;
+  vehicle: string;
+  date: string;
+  dueDate: string;
+  amount: string;
+  paidAmount: string;
+  balance: string;
+  status: PaymentStatus;
+  paymentMethod?: string | null;
+  serviceCenterId?: string;
+  serviceCenterName?: string;
+  items: ServiceCenterInvoiceItem[];
+}
+
 export interface InvoiceItem {
   id: string;
   partId: string;
