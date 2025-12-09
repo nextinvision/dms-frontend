@@ -14,13 +14,17 @@ import {
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { useToast } from "@/contexts/ToastContext";
 import { centralInventoryRepository } from "@/__mocks__/repositories/central-inventory.repository";
+import { adminApprovalService } from "@/services/central-inventory/adminApproval.service";
 import type {
   CentralStock,
   ServiceCenterInfo,
   PartsIssueFormData,
   PurchaseOrder,
 } from "@/shared/types/central-inventory.types";
+import { useSearchParams } from "next/navigation";
 
 interface IssueItem {
   partId: string;
@@ -35,7 +39,10 @@ interface IssueItem {
 export default function StockIssuePage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
+  const { showSuccess, showError, showWarning } = useToast();
   const serviceCenterId = params.serviceCenterId as string;
+  const poIdFromQuery = searchParams.get("poId");
 
   const [serviceCenter, setServiceCenter] = useState<ServiceCenterInfo | null>(null);
   const [stock, setStock] = useState<CentralStock[]>([]);
@@ -53,6 +60,7 @@ export default function StockIssuePage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -77,6 +85,70 @@ export default function StockIssuePage() {
             (po.status === "approved" || po.status === "partially_fulfilled")
         );
         setAvailablePOs(scPOs);
+
+        // Auto-fill from purchase order if coming from approval
+        if (poIdFromQuery) {
+          const po = scPOs.find(p => p.id === poIdFromQuery);
+          if (po) {
+            setPurchaseOrderId(po.id);
+            // Auto-fill items from approved purchase order
+            const autoFillItems: IssueItem[] = [];
+            for (const poItem of po.items) {
+              if (poItem.status === "approved" && poItem.approvedQty && poItem.approvedQty > 0) {
+                // Find matching stock item
+                const stockItem = stockData.find(s => s.partId === poItem.partId);
+                if (stockItem && stockItem.currentQty >= poItem.approvedQty) {
+                  autoFillItems.push({
+                    partId: poItem.partId,
+                    partName: poItem.partName,
+                    sku: poItem.sku,
+                    fromStock: stockItem.id,
+                    quantity: poItem.approvedQty,
+                    unitPrice: poItem.unitPrice,
+                    availableQty: stockItem.currentQty,
+                  });
+                }
+              }
+            }
+            if (autoFillItems.length > 0) {
+              setIssueItems(autoFillItems);
+              showSuccess(`Auto-filled ${autoFillItems.length} items from purchase order ${po.poNumber}`);
+            }
+          }
+        }
+
+        // Also check sessionStorage for auto-fill data
+        const autoFillData = sessionStorage.getItem('autoFillPO');
+        if (autoFillData && !poIdFromQuery) {
+          try {
+            const data = JSON.parse(autoFillData);
+            if (data.serviceCenterId === serviceCenterId && data.items) {
+              const autoFillItems: IssueItem[] = [];
+              for (const item of data.items) {
+                const stockItem = stockData.find(s => s.partId === item.partId);
+                if (stockItem && stockItem.currentQty >= item.quantity) {
+                  autoFillItems.push({
+                    partId: item.partId,
+                    partName: stockItem.partName,
+                    sku: stockItem.sku,
+                    fromStock: stockItem.id,
+                    quantity: item.quantity,
+                    unitPrice: stockItem.unitPrice,
+                    availableQty: stockItem.currentQty,
+                  });
+                }
+              }
+              if (autoFillItems.length > 0) {
+                setIssueItems(autoFillItems);
+                setPurchaseOrderId(data.purchaseOrderId);
+                sessionStorage.removeItem('autoFillPO');
+                showSuccess(`Auto-filled ${autoFillItems.length} items from purchase order`);
+              }
+            }
+          } catch (e) {
+            console.error("Failed to parse auto-fill data:", e);
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -87,16 +159,16 @@ export default function StockIssuePage() {
     if (serviceCenterId) {
       fetchData();
     }
-  }, [serviceCenterId, router]);
+  }, [serviceCenterId, router, poIdFromQuery, showSuccess]);
 
   const handleAddItem = () => {
     if (!selectedPart || quantity <= 0) {
-      alert("Please select a part and enter a valid quantity");
+      showWarning("Please select a part and enter a valid quantity");
       return;
     }
 
     if (quantity > selectedPart.currentQty) {
-      alert("Quantity cannot exceed available stock");
+      showError("Quantity cannot exceed available stock");
       return;
     }
 
@@ -105,7 +177,7 @@ export default function StockIssuePage() {
     if (existingIndex >= 0) {
       const newQty = issueItems[existingIndex].quantity + quantity;
       if (newQty > selectedPart.currentQty) {
-        alert("Total quantity cannot exceed available stock");
+        showError("Total quantity cannot exceed available stock");
         return;
       }
       const updated = [...issueItems];
@@ -141,7 +213,7 @@ export default function StockIssuePage() {
     }
     const item = issueItems[index];
     if (newQty > item.availableQty) {
-      alert("Quantity cannot exceed available stock");
+      showError("Quantity cannot exceed available stock");
       return;
     }
     const updated = [...issueItems];
@@ -153,14 +225,16 @@ export default function StockIssuePage() {
     e.preventDefault();
 
     if (issueItems.length === 0) {
-      alert("Please add at least one item to issue");
+      showWarning("Please add at least one item to issue");
       return;
     }
 
-    if (!confirm("Are you sure you want to issue these parts?")) {
-      return;
-    }
+    // Show confirmation modal instead of JavaScript confirm
+    setShowConfirmModal(true);
+  };
 
+  const handleConfirmSubmit = async () => {
+    setShowConfirmModal(false);
     setIsSubmitting(true);
     try {
       const userInfo = JSON.parse(
@@ -182,17 +256,26 @@ export default function StockIssuePage() {
             : undefined,
       };
 
-      await centralInventoryRepository.createPartsIssue(formData, userInfo.name || "Central Inventory Manager");
+      // Always send to admin for approval first (invoice will be created only after admin approval)
+      const createdRequest = await adminApprovalService.createPartsIssueRequest(
+        formData,
+        userInfo.name || "Central Inventory Manager"
+      );
 
-      alert("Parts issued successfully!");
-      router.push("/central-inventory/stock");
+      console.log("Request created successfully:", createdRequest);
+      showSuccess("Parts issue request sent to admin for approval. You will be notified once approved.");
+      
+      setTimeout(() => {
+        router.push("/central-inventory/stock");
+      }, 500);
     } catch (error) {
-      console.error("Failed to issue parts:", error);
-      alert("Failed to issue parts. Please try again.");
+      console.error("Failed to send request:", error);
+      showError("Failed to send request. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
+
 
   const filteredStock = stock.filter(
     (s) =>
@@ -220,6 +303,19 @@ export default function StockIssuePage() {
 
   return (
     <div className="bg-[#f9f9fb] min-h-screen">
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={handleConfirmSubmit}
+        title="Send Request to Admin"
+        message="Are you sure you want to send this parts issue request to admin for approval? The request will be reviewed before parts are issued."
+        type="info"
+        confirmText="Send to Admin"
+        cancelText="Cancel"
+        isLoading={isSubmitting}
+      />
+
       <div className="pt-6 pb-10">
         <div className="mb-6">
           <button
@@ -527,7 +623,7 @@ export default function StockIssuePage() {
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <CheckCircle className="w-5 h-5" />
-                      {isSubmitting ? "Issuing..." : "Issue Parts"}
+                      {isSubmitting ? "Sending Request..." : "Send to Admin for Approval"}
                     </button>
                   </div>
                 </CardBody>

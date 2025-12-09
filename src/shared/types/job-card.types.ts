@@ -68,6 +68,8 @@ export interface JobCardPart2Item {
   technician: string; // Technician (if provided)
   labourCode: string; // If Item Type = Work Item → extract labour text, If Item Type = Part → "Auto Select With Part"
   itemType?: "part" | "work_item"; // To distinguish between parts and work items
+  serialNumber?: string; // Serial number for warranty parts
+  isWarranty?: boolean; // Flag to indicate if this is a warranty part
 }
 
 /**

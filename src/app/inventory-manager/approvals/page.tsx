@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { jobCardPartsRequestService } from "@/services/inventory/jobCardPartsRequest.service";
 import { useRole } from "@/shared/hooks";
+import { useToast } from "@/contexts/ToastContext";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +11,7 @@ import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types
 
 export default function ApprovalsPage() {
   const { userInfo, userRole } = useRole();
+  const { showSuccess, showError, showWarning } = useToast();
   const isInventoryManager = userRole === "inventory_manager";
   const isScManager = userRole === "sc_manager";
   const [newRequests, setNewRequests] = useState<JobCardPartsRequest[]>([]);
@@ -59,7 +61,7 @@ export default function ApprovalsPage() {
 
   const handleScManagerApprove = async (id: string) => {
     if (!isScManager) {
-      alert("Only SC Manager can approve requests as SC Manager.");
+      showError("Only SC Manager can approve requests as SC Manager.");
       return;
     }
     try {
@@ -72,10 +74,10 @@ export default function ApprovalsPage() {
       setSelectedRequest(null);
       setNotes("");
       await fetchRequests();
-      alert("Request approved successfully! It will now appear in 'SC Manager Approved - Ready to Assign' section for Inventory Manager.");
+      showSuccess("Request approved successfully! It will now appear in 'SC Manager Approved - Ready to Assign' section for Inventory Manager.");
     } catch (error) {
       console.error("Failed to approve:", error);
-      alert(error instanceof Error ? error.message : "Failed to approve request");
+      showError(error instanceof Error ? error.message : "Failed to approve request");
     } finally {
       setIsProcessing(false);
     }
@@ -83,11 +85,11 @@ export default function ApprovalsPage() {
 
   const handleInventoryManagerApprove = async (id: string) => {
     if (!isInventoryManager) {
-      alert("Only Inventory Manager can approve and assign parts.");
+      showError("Only Inventory Manager can approve and assign parts.");
       return;
     }
     if (!assignedEngineer.trim()) {
-      alert("Please enter the engineer name to assign parts to.");
+      showWarning("Please enter the engineer name to assign parts to.");
       return;
     }
 
@@ -103,10 +105,10 @@ export default function ApprovalsPage() {
       setNotes("");
       setAssignedEngineer("");
       await fetchRequests();
-      alert("Parts assigned successfully! Stock has been decreased.");
+      showSuccess("Parts assigned successfully! Stock has been decreased.");
     } catch (error) {
       console.error("Failed to assign parts:", error);
-      alert(error instanceof Error ? error.message : "Failed to assign parts");
+      showError(error instanceof Error ? error.message : "Failed to assign parts");
     } finally {
       setIsProcessing(false);
     }
@@ -134,9 +136,10 @@ export default function ApprovalsPage() {
       setNotes("");
       setAssignedEngineer("");
       await fetchRequests();
+      showSuccess("Request rejected successfully.");
     } catch (error) {
       console.error("Failed to reject:", error);
-      alert("Failed to reject request");
+      showError("Failed to reject request");
     } finally {
       setIsProcessing(false);
     }
@@ -240,9 +243,19 @@ export default function ApprovalsPage() {
                   key={idx}
                   className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0"
                 >
-                  <div>
-                    <p className="font-medium text-gray-900">{part.partName}</p>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-medium text-gray-900">{part.partName}</p>
+                      {part.isWarranty && (
+                        <Badge variant="info" className="text-xs">Warranty</Badge>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-600">Part ID: {part.partId}</p>
+                    {part.isWarranty && part.serialNumber && (
+                      <p className="text-sm text-indigo-600 font-medium mt-1">
+                        Serial Number: <span className="font-mono">{part.serialNumber}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-gray-900">Qty: {part.quantity}</p>

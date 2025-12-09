@@ -17,6 +17,8 @@ export interface JobCardPartsRequest {
     partId: string;
     partName: string;
     quantity: number;
+    serialNumber?: string; // Serial number for warranty parts
+    isWarranty?: boolean; // Flag to indicate if this is a warranty part
   }>;
   approvedBy?: string;
   approvedAt?: string;

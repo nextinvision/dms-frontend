@@ -96,6 +96,8 @@ export default function JobCards() {
     technician: string;
     itemType: "part" | "work_item";
     labourCode: string;
+    serialNumber: string;
+    isWarranty: boolean;
   }>({
     partWarrantyTag: "",
     partName: "",
@@ -105,6 +107,8 @@ export default function JobCards() {
     technician: "",
     itemType: "part",
     labourCode: "Auto Select With Part",
+    serialNumber: "",
+    isWarranty: false,
   });
   const [allParts, setAllParts] = useState<any[]>([]);
   const [partSearchResults, setPartSearchResults] = useState<any[]>([]);
@@ -333,6 +337,8 @@ export default function JobCards() {
       technician: "",
       itemType: "part",
       labourCode: "Auto Select With Part",
+      serialNumber: "",
+      isWarranty: false,
     });
     setShowPartDropdown(false);
     setPartSearchResults([]);
@@ -352,15 +358,25 @@ export default function JobCards() {
     }
 
     // Use PART 2 items list if available, otherwise fall back to text input
-    let partsWithDetails: Array<{ partId: string; partName: string; quantity: number }> = [];
+    let partsWithDetails: Array<{ partId: string; partName: string; quantity: number; serialNumber?: string; isWarranty?: boolean }> = [];
+    
+    // Check if job card is a warranty case
+    const isWarrantyCase = selectedJobCard.warrantyStatus && 
+      (selectedJobCard.warrantyStatus.toLowerCase().includes("warranty") || 
+       selectedJobCard.warrantyStatus.toLowerCase() !== "no warranty");
     
     if (part2ItemsList.length > 0) {
       // Convert PART 2 items to parts request format
-      partsWithDetails = part2ItemsList.map((item) => ({
-        partId: item.partCode || `unknown-${item.partName.replace(/\s+/g, "-").toLowerCase()}`,
-        partName: item.partName,
-        quantity: item.qty,
-      }));
+      // Include serial numbers for warranty parts
+      partsWithDetails = part2ItemsList.map((item) => {
+        return {
+          partId: item.partCode || `unknown-${item.partName.replace(/\s+/g, "-").toLowerCase()}`,
+          partName: item.partName,
+          quantity: item.qty,
+          serialNumber: item.isWarranty && item.serialNumber ? item.serialNumber : undefined,
+          isWarranty: item.isWarranty || false,
+        };
+      });
     } else {
       // Fallback to text input parsing
       const partNames = partRequestInput
@@ -422,6 +438,8 @@ export default function JobCards() {
         technician: "",
         itemType: "part",
         labourCode: "Auto Select With Part",
+        serialNumber: "",
+        isWarranty: false,
       });
       setShowPartDropdown(false);
       setPartSearchResults([]);
@@ -441,6 +459,12 @@ export default function JobCards() {
       return;
     }
 
+    // Validate warranty part serial number
+    if (newItemForm.isWarranty && !newItemForm.serialNumber?.trim()) {
+      alert("Please enter the part serial number for warranty parts.");
+      return;
+    }
+
     const newItem: JobCardPart2Item = {
       srNo: part2ItemsList.length + 1,
       partWarrantyTag: newItemForm.partWarrantyTag,
@@ -453,6 +477,8 @@ export default function JobCards() {
         ? (newItemForm.labourCode || "R & R")
         : "Auto Select With Part",
       itemType: newItemForm.itemType,
+      serialNumber: newItemForm.isWarranty ? newItemForm.serialNumber : undefined,
+      isWarranty: newItemForm.isWarranty,
     };
 
     setPart2ItemsList([...part2ItemsList, newItem]);
@@ -467,6 +493,8 @@ export default function JobCards() {
       technician: "",
       itemType: "part",
       labourCode: "Auto Select With Part",
+      serialNumber: "",
+      isWarranty: false,
     });
   };
 
@@ -1303,6 +1331,8 @@ export default function JobCards() {
                         technician: "",
                         itemType: "part",
                         labourCode: "Auto Select With Part",
+                        serialNumber: "",
+                        isWarranty: false,
                       });
                       setShowPartDropdown(false);
                       setPartSearchResults([]);
@@ -1394,6 +1424,42 @@ export default function JobCards() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
+                      {newItemForm.itemType === "part" && (
+                        <>
+                          <div>
+                            <label className="flex items-center gap-2 text-xs font-medium text-gray-700 mb-1">
+                              <input
+                                type="checkbox"
+                                checked={newItemForm.isWarranty}
+                                onChange={(e) => setNewItemForm({ ...newItemForm, isWarranty: e.target.checked })}
+                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                              />
+                              <span>Warranty Part</span>
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Check if this part fits in vehicle and is a warranty case
+                            </p>
+                          </div>
+                          {newItemForm.isWarranty && (
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Part Serial Number *
+                              </label>
+                              <input
+                                type="text"
+                                value={newItemForm.serialNumber}
+                                onChange={(e) => setNewItemForm({ ...newItemForm, serialNumber: e.target.value })}
+                                placeholder="Enter part serial number"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                required
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                Serial number is required for warranty parts
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      )}
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Item Type *</label>
                         <select
@@ -1484,6 +1550,8 @@ export default function JobCards() {
                               <th className="px-3 py-2 text-left font-semibold text-gray-700">PART CODE</th>
                               <th className="px-3 py-2 text-left font-semibold text-gray-700">QTY</th>
                               <th className="px-3 py-2 text-left font-semibold text-gray-700">AMOUNT</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-700">WARRANTY</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-700">SERIAL NUMBER</th>
                               <th className="px-3 py-2 text-left font-semibold text-gray-700">TECHNICIAN</th>
                               <th className="px-3 py-2 text-left font-semibold text-gray-700">LABOUR CODE</th>
                               <th className="px-3 py-2 text-left font-semibold text-gray-700">Action</th>
@@ -1498,6 +1566,18 @@ export default function JobCards() {
                                 <td className="px-3 py-2 text-gray-700 font-mono text-xs">{item.partCode || "-"}</td>
                                 <td className="px-3 py-2 text-gray-700">{item.qty}</td>
                                 <td className="px-3 py-2 text-gray-700">₹{item.amount.toLocaleString("en-IN")}</td>
+                                <td className="px-3 py-2">
+                                  {item.isWarranty ? (
+                                    <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700 font-semibold">
+                                      Yes
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-600">No</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-gray-700 font-mono text-xs">
+                                  {item.isWarranty && item.serialNumber ? item.serialNumber : "-"}
+                                </td>
                                 <td className="px-3 py-2 text-gray-700">{item.technician || "-"}</td>
                                 <td className="px-3 py-2">
                                   <span className={`px-2 py-1 rounded text-xs ${

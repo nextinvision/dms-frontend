@@ -1,41 +1,52 @@
 /**
- * Invoice Type Definitions
+ * Invoice Type Definitions for Central Inventory
  */
 
-export type PaymentStatus = "Paid" | "Unpaid" | "Overdue" | "Partially Paid";
-export type PaymentMethod = "Cash" | "Card" | "UPI" | "Online" | "Cheque" | null;
+export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
 
 export interface InvoiceItem {
-  name: string;
-  qty: number;
-  price: string;
+  id: string;
+  partId: string;
+  partName: string;
+  partNumber: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
 }
 
 export interface Invoice {
   id: string;
-  jobCardId?: string;
-  customerName: string;
-  vehicle: string;
-  date: string;
-  dueDate: string;
-  amount: string;
-  paidAmount: string;
-  balance: string;
-  status: PaymentStatus;
-  paymentMethod: PaymentMethod;
+  invoiceNumber: string;
+  serviceCenterId: string;
+  serviceCenterName: string;
+  partsIssueId: string;
+  partsIssueNumber: string;
+  purchaseOrderId?: string;
+  purchaseOrderNumber?: string;
+  issuedBy: string;
+  issuedAt: string;
+  status: InvoiceStatus;
   items: InvoiceItem[];
-  customerId?: string;
-  vehicleId?: string;
-  serviceCenterId?: string | number;
-  serviceCenterName?: string;
-}
-
-export interface InvoiceStats {
-  total: number;
-  paid: number;
-  unpaid: number;
-  overdue: number;
+  subtotal: number;
+  tax?: number;
+  discount?: number;
   totalAmount: number;
-  paidAmount: number;
+  paymentScreenshot?: string; // Base64 or URL
+  paymentMethod?: string;
+  paymentReference?: string;
+  paidAt?: string;
+  paidBy?: string;
+  notes?: string;
+  createdAt: string;
+  createdBy: string;
 }
 
+export interface InvoiceFormData {
+  partsIssueId: string;
+  purchaseOrderId?: string;
+  paymentScreenshot?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+  notes?: string;
+}
