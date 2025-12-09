@@ -23,6 +23,8 @@ import {
   Warehouse,
   FileCheck,
   ArrowRightCircle,
+  CheckSquare,
+  Clock,
 } from "lucide-react";
 
 export interface MenuItem {
@@ -38,6 +40,7 @@ export const ADMIN_MENU_ITEMS: MenuItem[] = [
   { name: "Users & Roles", icon: Users, href: "/user&roles" },
   { name: "Roles & Permissions", icon: Shield, href: "/roles-permissions" },
   { name: "Inventory", icon: Package, href: "/inventory" },
+  { name: "Parts Issue Approvals", icon: CheckSquare, href: "/parts-issue-approvals" },
   { name: "Finance", icon: DollarSign, href: "/finance" },
   { name: "Reports", icon: FileText, href: "/reports" },
   { name: "Complaints", icon: AlertCircle, href: "/complaints" },
@@ -65,5 +68,7 @@ export const CENTRAL_INVENTORY_MANAGER_MENU_ITEMS: MenuItem[] = [
   { name: "Purchase Orders", icon: FileCheck, href: "/central-inventory/purchase-orders" },
   { name: "Central Stock", icon: Warehouse, href: "/central-inventory/stock" },
   { name: "Issue Parts", icon: ArrowRightCircle, href: "/central-inventory/stock/issue" },
+  { name: "Parts Issue Requests", icon: Clock, href: "/central-inventory/parts-issue-requests" },
+  { name: "Invoices", icon: FileText, href: "/central-inventory/invoices" },
 ];
 

@@ -94,7 +94,7 @@ export interface PartsIssue {
   serviceCenterName: string;
   issuedBy: string;
   issuedAt: string;
-  status: "pending" | "issued" | "received" | "cancelled";
+  status: "pending" | "pending_admin_approval" | "admin_approved" | "admin_rejected" | "issued" | "received" | "cancelled";
   items: Array<{
     id: string;
     partId: string;
@@ -116,6 +116,16 @@ export interface PartsIssue {
     trackingNumber?: string;
     expectedDelivery?: string;
   };
+  // Admin approval fields
+  sentToAdmin?: boolean;
+  sentToAdminAt?: string;
+  adminApproved?: boolean;
+  adminApprovedBy?: string;
+  adminApprovedAt?: string;
+  adminRejected?: boolean;
+  adminRejectedBy?: string;
+  adminRejectedAt?: string;
+  adminRejectionReason?: string;
 }
 
 /**

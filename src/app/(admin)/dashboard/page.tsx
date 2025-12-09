@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   DollarSign,
@@ -12,18 +12,49 @@ import {
   FileWarning,
   XCircle,
   LucideIcon,
+  CheckSquare,
+  ArrowRight,
 } from "lucide-react";
 import type { DashboardCard, Alert, QuickAction } from "@/shared/types";
 import { dashboardData, centres } from "@/__mocks__/data/dashboard.mock";
+import { adminApprovalService } from "@/services/central-inventory/adminApproval.service";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import type { PartsIssue } from "@/shared/types/central-inventory.types";
 
 export default function Dashboard() {
   const [selectedCentre, setSelectedCentre] = useState("All Centres");
+  const [pendingPartsIssues, setPendingPartsIssues] = useState<PartsIssue[]>([]);
+  const [isLoadingApprovals, setIsLoadingApprovals] = useState(true);
 
   const data = dashboardData;
 
   const current = data[selectedCentre] || data["All Centres"];
 
+  useEffect(() => {
+    const fetchPendingApprovals = async () => {
+      try {
+        setIsLoadingApprovals(true);
+        // Fetch pending parts issue approvals
+        const partsIssues = await adminApprovalService.getPendingApprovals();
+        setPendingPartsIssues(partsIssues);
+      } catch (error) {
+        console.error("Failed to fetch pending approvals:", error);
+      } finally {
+        setIsLoadingApprovals(false);
+      }
+    };
+
+    fetchPendingApprovals();
+  }, []);
+
   const quickActions: QuickAction[] = [
+    {
+      label: "Parts Issue Approvals",
+      icon: CheckSquare,
+      bg: "bg-gradient-to-r from-orange-500 to-red-500",
+      link: "/parts-issue-approvals",
+    },
     {
       label: "Add Service Centre",
       icon: PlusCircle,
@@ -71,6 +102,26 @@ export default function Dashboard() {
           </select>
         </div>
 
+        {/* Approval Stats Card */}
+        <div className="mb-6">
+          <Link href="/parts-issue-approvals">
+            <div className="rounded-2xl bg-gradient-to-tr from-orange-500 to-red-500 p-5 shadow-md hover:shadow-lg transition-all cursor-pointer max-w-md">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-3 rounded-xl text-orange-600 bg-white shadow-sm">
+                  <CheckSquare size={24} />
+                </div>
+                <Badge className="bg-white text-orange-600">
+                  {isLoadingApprovals ? "..." : pendingPartsIssues.length} Pending
+                </Badge>
+              </div>
+              <h2 className="text-2xl font-bold text-white">
+                {isLoadingApprovals ? "..." : pendingPartsIssues.length}
+              </h2>
+              <p className="text-sm text-white/90 mt-1">Parts Issue Approvals</p>
+            </div>
+          </Link>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
           {current.cards.map((c) => {
             const Icon = c.icon;
@@ -90,6 +141,68 @@ export default function Dashboard() {
               </div>
             );
           })}
+        </div>
+
+        {/* Pending Approvals Section */}
+        <div className="mb-10">
+          <Card className="border-l-4 border-l-orange-500">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                  <CheckSquare className="text-orange-600" size={20} />
+                  Parts Issue Approvals
+                </h3>
+                <Badge variant="warning" className="text-sm">
+                  {pendingPartsIssues.length} Pending
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardBody>
+              {isLoadingApprovals ? (
+                <div className="text-center py-4">
+                  <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
+                </div>
+              ) : pendingPartsIssues.length === 0 ? (
+                <div className="text-center py-4 text-gray-500">
+                  <CheckSquare className="mx-auto text-green-500 mb-2" size={32} />
+                  <p className="text-sm">No pending approvals</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingPartsIssues.slice(0, 3).map((issue) => (
+                    <div
+                      key={issue.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900 text-sm">
+                          {issue.issueNumber}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {issue.serviceCenterName} • ₹{issue.totalAmount.toLocaleString()}
+                        </p>
+                      </div>
+                      <Link href="/parts-issue-approvals">
+                        <button className="text-orange-600 hover:text-orange-700 text-sm font-medium flex items-center gap-1">
+                          Review
+                          <ArrowRight size={14} />
+                        </button>
+                      </Link>
+                    </div>
+                  ))}
+                  {pendingPartsIssues.length > 3 && (
+                    <Link href="/parts-issue-approvals">
+                      <div className="text-center pt-2">
+                        <button className="text-sm text-orange-600 hover:text-orange-700 font-medium">
+                          View all {pendingPartsIssues.length} pending approvals →
+                        </button>
+                      </div>
+                    </Link>
+                  )}
+                </div>
+              )}
+            </CardBody>
+          </Card>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

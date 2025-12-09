@@ -20,7 +20,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import type { Invoice, PaymentStatus, InvoiceStats, InvoiceItem } from "@/shared/types";
+import type { ServiceCenterInvoice, PaymentStatus, InvoiceStats, ServiceCenterInvoiceItem } from "@/shared/types";
 import { defaultInvoices } from "@/__mocks__/data/invoices.mock";
 import { filterByServiceCenter, getServiceCenterContext } from "@/shared/lib/serviceCenter";
 
@@ -29,7 +29,7 @@ type FilterType = "all" | "paid" | "unpaid" | "overdue";
 function InvoicesContent() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<ServiceCenterInvoice | null>(null);
   const [showDetails, setShowDetails] = useState<boolean>(false);
   const [showGenerateModal, setShowGenerateModal] = useState<boolean>(false);
   const [invoiceForm, setInvoiceForm] = useState({
@@ -38,7 +38,7 @@ function InvoicesContent() {
     jobCardId: "",
     date: new Date().toISOString().split("T")[0],
     dueDate: "",
-    items: [{ name: "", qty: 1, price: "" }] as InvoiceItem[],
+    items: [{ name: "", qty: 1, price: "" }] as ServiceCenterInvoiceItem[],
     paymentMethod: "" as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "",
     gstRequirement: false,
     businessNameForInvoice: "",
@@ -51,13 +51,13 @@ function InvoicesContent() {
   const [handledInvoiceId, setHandledInvoiceId] = useState<string | null>(null);
 
   // Use mock data from __mocks__ folder
-  const [invoices, setInvoices] = useState<Invoice[]>(() => {
-    const storedInvoices = typeof window !== "undefined" ? safeStorage.getItem<Invoice[]>("serviceHistoryInvoices", []) : [];
-    const base = typeof window !== "undefined" ? safeStorage.getItem<Invoice[]>("invoices", []) : [];
+  const [invoices, setInvoices] = useState<ServiceCenterInvoice[]>(() => {
+    const storedInvoices = typeof window !== "undefined" ? safeStorage.getItem<ServiceCenterInvoice[]>("serviceHistoryInvoices", []) : [];
+    const base = typeof window !== "undefined" ? safeStorage.getItem<ServiceCenterInvoice[]>("invoices", []) : [];
     if (base.length > 0 || storedInvoices.length > 0) {
       const existingIds = new Set<string>();
-      const merged: Invoice[] = [];
-      [...defaultInvoices, ...base, ...storedInvoices].forEach((inv) => {
+      const merged: ServiceCenterInvoice[] = [];
+      [...(defaultInvoices as unknown as ServiceCenterInvoice[]), ...base, ...storedInvoices].forEach((inv) => {
         if (!existingIds.has(inv.id)) {
           existingIds.add(inv.id);
           merged.push(inv);
@@ -65,7 +65,7 @@ function InvoicesContent() {
       });
       return merged;
     }
-    return [...defaultInvoices, ...storedInvoices];
+    return [...(defaultInvoices as unknown as ServiceCenterInvoice[]), ...storedInvoices];
   });
 
   useEffect(() => {
@@ -102,7 +102,8 @@ function InvoicesContent() {
       invoice.vehicle.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (filter === "all") return matchesSearch;
-    return matchesSearch && invoice.status.toLowerCase() === filter;
+    const statusLower = invoice.status.toLowerCase();
+    return matchesSearch && (statusLower === filter || (filter === "paid" && statusLower === "paid") || (filter === "unpaid" && statusLower === "unpaid") || (filter === "overdue" && statusLower === "overdue"));
   });
 
   const getStatusColor = (status: PaymentStatus): string => {
@@ -141,7 +142,7 @@ function InvoicesContent() {
                 status: "Paid" as PaymentStatus,
                 paidAmount: inv.amount,
                 balance: "₹0",
-                paymentMethod: method as "Cash" | "Card" | "UPI" | "Online" | "Cheque",
+                paymentMethod: method as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | null,
               }
             : inv
         )
@@ -166,7 +167,7 @@ function InvoicesContent() {
     }
   };
 
-  const handleUpdateInvoiceItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
+  const handleUpdateInvoiceItem = (index: number, field: keyof ServiceCenterInvoiceItem, value: string | number) => {
     const updatedItems = [...invoiceForm.items];
     updatedItems[index] = { ...updatedItems[index], [field]: value };
     setInvoiceForm({ ...invoiceForm, items: updatedItems });
@@ -197,7 +198,7 @@ function InvoicesContent() {
     const contextServiceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
     const contextServiceCenterName = serviceCenterContext.serviceCenterName ?? "Service Center";
 
-    const newInvoice: Invoice = {
+    const newInvoice: ServiceCenterInvoice = {
       id: newId,
       jobCardId: invoiceForm.jobCardId || undefined,
       customerName: invoiceForm.customerName,
@@ -207,7 +208,7 @@ function InvoicesContent() {
       amount: `₹${totalAmount.toLocaleString("en-IN")}`,
       paidAmount: "₹0",
       balance: `₹${totalAmount.toLocaleString("en-IN")}`,
-      status: "Unpaid",
+      status: "Unpaid" as PaymentStatus,
       paymentMethod: invoiceForm.paymentMethod || null,
       serviceCenterId: contextServiceCenterId,
       serviceCenterName: contextServiceCenterName,

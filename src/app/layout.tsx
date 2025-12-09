@@ -6,6 +6,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useRole } from "@/shared/hooks";
 import type { UserRole } from "@/shared/types";
 import { TopLoadingBar } from "@/components/ui/TopLoadingBar";
+import { ToastProvider } from "@/contexts/ToastContext";
 import "./globals.css";
 
 interface RootLayoutProps {
@@ -73,7 +74,8 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
       <body className="antialiased bg-[#f9f9fb] flex" suppressHydrationWarning>
-        <ErrorBoundary>
+        <ToastProvider>
+          <ErrorBoundary>
           {isLoggedIn &&
             (useCentralInventorySidebar ? (
               <CentralInventorySidebar open={open} setOpen={setOpen} />
@@ -103,6 +105,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             </main>
           </div>
         </ErrorBoundary>
+        </ToastProvider>
       </body>
     </html>
   );

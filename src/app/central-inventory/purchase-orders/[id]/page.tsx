@@ -16,12 +16,16 @@ import {
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { useToast } from "@/contexts/ToastContext";
 import { centralInventoryRepository } from "@/__mocks__/repositories/central-inventory.repository";
 import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
 
 export default function PurchaseOrderDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const { showSuccess, showError, showWarning } = useToast();
   const poId = params.id as string;
 
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
@@ -29,6 +33,7 @@ export default function PurchaseOrderDetailPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showApproveModal, setShowApproveModal] = useState(false);
 
   useEffect(() => {
     const fetchPurchaseOrder = async () => {
@@ -54,10 +59,7 @@ export default function PurchaseOrderDetailPage() {
   const handleApprove = async () => {
     if (!purchaseOrder) return;
 
-    if (!confirm("Are you sure you want to approve this purchase order?")) {
-      return;
-    }
-
+    setShowApproveModal(false);
     setIsProcessing(true);
     try {
       const userInfo = JSON.parse(localStorage.getItem("userInfo") || '{"name": "Central Inventory Manager"}');
@@ -66,10 +68,31 @@ export default function PurchaseOrderDetailPage() {
         userInfo.name || "Central Inventory Manager"
       );
       setPurchaseOrder(approvedPO);
-      alert("Purchase order approved successfully!");
+      showSuccess("Purchase order approved successfully! Redirecting to issue parts page...");
+      
+      // Navigate to issue parts page with auto-filled data
+      // Pass approved items as query params
+      const approvedItems = approvedPO.items
+        .filter(item => item.status === "approved" && item.approvedQty && item.approvedQty > 0)
+        .map(item => ({
+          partId: item.partId,
+          quantity: item.approvedQty || item.requestedQty
+        }));
+      
+      // Store purchase order data in sessionStorage for auto-fill
+      sessionStorage.setItem('autoFillPO', JSON.stringify({
+        purchaseOrderId: approvedPO.id,
+        serviceCenterId: approvedPO.serviceCenterId,
+        items: approvedItems
+      }));
+      
+      // Navigate to issue parts page
+      setTimeout(() => {
+        router.push(`/central-inventory/stock/issue/${approvedPO.serviceCenterId}?poId=${approvedPO.id}`);
+      }, 1000);
     } catch (error) {
       console.error("Failed to approve purchase order:", error);
-      alert("Failed to approve purchase order. Please try again.");
+      showError("Failed to approve purchase order. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -92,7 +115,7 @@ export default function PurchaseOrderDetailPage() {
       setPurchaseOrder(rejectedPO);
       setShowRejectModal(false);
       setRejectionReason("");
-      alert("Purchase order rejected successfully!");
+      showSuccess("Purchase order rejected successfully!");
     } catch (error) {
       console.error("Failed to reject purchase order:", error);
       alert("Failed to reject purchase order. Please try again.");
@@ -166,14 +189,14 @@ export default function PurchaseOrderDetailPage() {
                   <XCircle className="w-5 h-5" />
                   Reject
                 </button>
-                <button
-                  onClick={handleApprove}
+                <Button
+                  onClick={() => setShowApproveModal(true)}
                   disabled={isProcessing}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
                 >
                   <CheckCircle className="w-5 h-5" />
                   Approve
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -399,6 +422,19 @@ export default function PurchaseOrderDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Approve Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showApproveModal}
+        onClose={() => setShowApproveModal(false)}
+        onConfirm={handleApprove}
+        title="Approve Purchase Order"
+        message="Are you sure you want to approve this purchase order? After approval, you will be redirected to issue parts page with auto-filled data."
+        type="info"
+        confirmText="Approve & Issue Parts"
+        cancelText="Cancel"
+        isLoading={isProcessing}
+      />
 
       {/* Reject Modal */}
       {showRejectModal && (

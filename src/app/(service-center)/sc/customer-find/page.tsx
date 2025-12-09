@@ -304,7 +304,7 @@ export default function CustomerFind() {
 
       const customerName = selectedCustomer?.name || "Customer";
 
-      const serviceInvoice: Invoice = {
+      const serviceInvoice = {
         id: service.invoice,
         jobCardId: service.jobCardId,
         customerName,
@@ -314,11 +314,29 @@ export default function CustomerFind() {
         amount: service.total,
         paidAmount: service.total,
         balance: "₹0",
-        status: "Paid",
-        paymentMethod: null,
+        status: "paid" as const,
+        paymentMethod: undefined,
         items: [
-          { name: "Labor", qty: 1, price: service.labor },
-          { name: "Parts", qty: 1, price: service.partsCost },
+          {
+            id: `item-${service.invoice}-labor`,
+            partId: "labor",
+            partName: "Labor",
+            partNumber: "LABOR-001",
+            sku: "LABOR-001",
+            quantity: 1,
+            unitPrice: parseFloat(service.labor.replace(/[₹,]/g, "")) || 0,
+            totalPrice: parseFloat(service.labor.replace(/[₹,]/g, "")) || 0,
+          },
+          {
+            id: `item-${service.invoice}-parts`,
+            partId: "parts",
+            partName: "Parts",
+            partNumber: "PARTS-001",
+            sku: "PARTS-001",
+            quantity: 1,
+            unitPrice: parseFloat(service.partsCost.replace(/[₹,]/g, "")) || 0,
+            totalPrice: parseFloat(service.partsCost.replace(/[₹,]/g, "")) || 0,
+          },
         ],
       };
 
