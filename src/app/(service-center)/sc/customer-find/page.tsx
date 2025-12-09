@@ -98,13 +98,36 @@ const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
   urls: [],
 };
 
+// Helper functions (defined before use)
+const getCurrentTime = (): string => {
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const getCurrentDate = (): string => {
+  return new Date().toISOString().split("T")[0];
+};
+
+const isToday = (dateString: string): boolean => {
+  return dateString === getCurrentDate();
+};
+
+const getMinTime = (selectedDate: string): string | undefined => {
+  if (isToday(selectedDate)) {
+    return getCurrentTime();
+  }
+  return undefined; // No restriction for future dates
+};
+
 const initialAppointmentForm = {
   customerName: "",
   phone: "",
   vehicle: "",
   serviceType: "",
   date: new Date().toISOString().split("T")[0],
-  time: "",
+  time: getCurrentTime(),
   duration: "2",
   // Customer Information
   customerType: undefined as "B2C" | "B2B" | undefined,
@@ -127,7 +150,13 @@ const initialAppointmentForm = {
   assignedTechnician: undefined as string | undefined,
   pickupDropRequired: undefined as boolean | undefined,
   pickupAddress: undefined as string | undefined,
+  pickupState: undefined as string | undefined,
+  pickupCity: undefined as string | undefined,
+  pickupPincode: undefined as string | undefined,
   dropAddress: undefined as string | undefined,
+  dropState: undefined as string | undefined,
+  dropCity: undefined as string | undefined,
+  dropPincode: undefined as string | undefined,
   preferredCommunicationMode: undefined as "Phone" | "Email" | "SMS" | "WhatsApp" | undefined,
   assignedServiceCenter: undefined as string | undefined,
   // Billing & Payment
@@ -141,7 +170,6 @@ const initialAppointmentForm = {
   amcSubscriptionStatus: undefined as string | undefined,
 };
 
-// Helper functions
 const formatTime = (time24: string): string => {
   const [hours, minutes] = time24.split(":");
   const hour = parseInt(hours);
@@ -372,6 +400,12 @@ export default function CustomerFind() {
   const [vehicleFormState, setVehicleFormState] = useState<string>("");
   const [vehicleFormCity, setVehicleFormCity] = useState<string>("");
   const [hasInsurance, setHasInsurance] = useState<boolean>(false);
+  // State for pickup and drop address
+  const [pickupState, setPickupState] = useState<string>("");
+  const [pickupCity, setPickupCity] = useState<string>("");
+  const [dropState, setDropState] = useState<string>("");
+  const [dropCity, setDropCity] = useState<string>("");
+  const [dropSameAsPickup, setDropSameAsPickup] = useState<boolean>(false);
   
   // Toast notification state
   const [toast, setToast] = useState<{ show: boolean; message: string; type?: "success" | "error" }>({
@@ -542,7 +576,13 @@ export default function CustomerFind() {
   }, [setNewVehicleForm]);
 
   const resetAppointmentForm = useCallback(() => {
-    setAppointmentForm({ ...initialAppointmentForm, date: new Date().toISOString().split("T")[0] });
+    setAppointmentForm({ ...initialAppointmentForm, date: new Date().toISOString().split("T")[0], time: getCurrentTime() });
+    setPickupState("");
+    setPickupCity("");
+    setDropState("");
+    setDropCity("");
+    setPickupAddressDifferent(false);
+    setDropSameAsPickup(false);
   }, [setAppointmentForm]);
 
   // Helper to initialize appointment form with customer and vehicle data
@@ -554,7 +594,7 @@ export default function CustomerFind() {
       vehicle: `${vehicle.vehicleMake} ${vehicle.vehicleModel} (${vehicle.vehicleYear})`,
       serviceType: "",
       date: new Date().toISOString().split("T")[0],
-      time: "",
+      time: getCurrentTime(),
       duration: "2",
     });
   }, [setAppointmentForm]);
@@ -594,6 +634,12 @@ export default function CustomerFind() {
     setShowScheduleAppointment(false);
     setValidationError("");
     setAppointmentFieldErrors({});
+    setPickupState("");
+    setPickupCity("");
+    setDropState("");
+    setDropCity("");
+    setPickupAddressDifferent(false);
+    setDropSameAsPickup(false);
   }, [setAppointmentForm]);
 
   // Handle direct create customer button
@@ -2823,12 +2869,20 @@ export default function CustomerFind() {
                         type="date"
                         value={appointmentForm.date}
                         onChange={(e) => {
-                          setAppointmentForm({ ...appointmentForm, date: e.target.value });
+                          const newDate = e.target.value;
+                          // If changing to today and current time is in the past, update time to current time
+                          let updatedTime = appointmentForm.time;
+                          if (isToday(newDate) && appointmentForm.time) {
+                            const currentTime = getCurrentTime();
+                            if (appointmentForm.time < currentTime) {
+                              updatedTime = currentTime;
+                            }
+                          }
+                          setAppointmentForm({ ...appointmentForm, date: newDate, time: updatedTime });
                           if (appointmentFieldErrors.date) {
                             setAppointmentFieldErrors({ ...appointmentFieldErrors, date: "" });
                           }
                         }}
-                        // @ts-ignore
                         min={new Date().toISOString().split("T")[0]}
                         error={appointmentFieldErrors.date}
                       />
@@ -2839,11 +2893,21 @@ export default function CustomerFind() {
                       type="time"
                       value={appointmentForm.time}
                       onChange={(e) => {
-                        setAppointmentForm({ ...appointmentForm, time: e.target.value });
+                        const selectedTime = e.target.value;
+                        // Validate time if date is today
+                        if (appointmentForm.date && isToday(appointmentForm.date)) {
+                          const currentTime = getCurrentTime();
+                          if (selectedTime < currentTime) {
+                            // Don't allow past times for today
+                            return;
+                          }
+                        }
+                        setAppointmentForm({ ...appointmentForm, time: selectedTime });
                         if (appointmentFieldErrors.time) {
                           setAppointmentFieldErrors({ ...appointmentFieldErrors, time: "" });
                         }
                       }}
+                      min={appointmentForm.date ? getMinTime(appointmentForm.date) : undefined}
                       error={appointmentFieldErrors.time}
                     />
                   </div>
@@ -2899,11 +2963,21 @@ export default function CustomerFind() {
                                     ? {}
                                     : {
                                         pickupAddress: undefined,
+                                        pickupState: undefined,
+                                        pickupCity: undefined,
+                                        pickupPincode: undefined,
                                         dropAddress: undefined,
+                                        dropState: undefined,
+                                        dropCity: undefined,
+                                        dropPincode: undefined,
                                       }),
                                 });
                                 if (!checked) {
                                   setPickupAddressDifferent(false);
+                                  setPickupState("");
+                                  setPickupCity("");
+                                  setDropState("");
+                                  setDropCity("");
                                 }
                               }}
                               className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
@@ -2925,8 +2999,18 @@ export default function CustomerFind() {
                                       setAppointmentForm({
                                         ...appointmentForm,
                                         pickupAddress: undefined,
+                                        pickupState: undefined,
+                                        pickupCity: undefined,
+                                        pickupPincode: undefined,
                                         dropAddress: undefined,
+                                        dropState: undefined,
+                                        dropCity: undefined,
+                                        dropPincode: undefined,
                                       });
+                                      setPickupState("");
+                                      setPickupCity("");
+                                      setDropState("");
+                                      setDropCity("");
                                     }
                                   }}
                                   className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
@@ -2938,23 +3022,168 @@ export default function CustomerFind() {
 
                               {pickupAddressDifferent && canAccessPickupAddress && (
                                 <>
-                                  <FormInput
-                                    label="Pickup Address"
-                                    value={appointmentForm.pickupAddress || ""}
-                                    onChange={(e) =>
-                                      setAppointmentForm({ ...appointmentForm, pickupAddress: e.target.value })
-                                    }
-                                    placeholder="Enter pickup address"
-                                  />
+                                  {/* Pickup Address Section */}
+                                  <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                                    <h4 className="text-md font-semibold text-gray-800 mb-3">Pickup Address</h4>
+                                    <FormInput
+                                      label="Address"
+                                      value={appointmentForm.pickupAddress || ""}
+                                      onChange={(e) => {
+                                        const newValue = e.target.value;
+                                        setAppointmentForm({ 
+                                          ...appointmentForm, 
+                                          pickupAddress: newValue,
+                                          ...(dropSameAsPickup ? { dropAddress: newValue } : {})
+                                        });
+                                      }}
+                                      placeholder="Enter full address"
+                                    />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <FormSelect
+                                        label="State"
+                                        value={pickupState}
+                                        onChange={(e) => {
+                                          const newState = e.target.value;
+                                          setPickupState(newState);
+                                          setPickupCity(""); // Reset city when state changes
+                                          setAppointmentForm({ 
+                                            ...appointmentForm, 
+                                            pickupState: newState, 
+                                            pickupCity: undefined,
+                                            ...(dropSameAsPickup ? { 
+                                              dropState: newState, 
+                                              dropCity: undefined 
+                                            } : {})
+                                          });
+                                          if (dropSameAsPickup) {
+                                            setDropState(newState);
+                                            setDropCity("");
+                                          }
+                                        }}
+                                        placeholder="Select State"
+                                        options={INDIAN_STATES.map((state) => ({ value: state.name, label: state.name }))}
+                                      />
+                                      <FormSelect
+                                        label="City"
+                                        value={pickupCity}
+                                        onChange={(e) => {
+                                          const newCity = e.target.value;
+                                          setPickupCity(newCity);
+                                          setAppointmentForm({ 
+                                            ...appointmentForm, 
+                                            pickupCity: newCity,
+                                            ...(dropSameAsPickup ? { dropCity: newCity } : {})
+                                          });
+                                          if (dropSameAsPickup) {
+                                            setDropCity(newCity);
+                                          }
+                                        }}
+                                        placeholder={pickupState ? "Select City" : "Select State First"}
+                                        options={pickupState ? getCitiesByState(pickupState).map((city) => ({ value: city, label: city })) : []}
+                                        disabled={!pickupState}
+                                      />
+                                    </div>
+                                    <FormInput
+                                      label="Pincode"
+                                      value={appointmentForm.pickupPincode || ""}
+                                      onChange={(e) => {
+                                        const newPincode = e.target.value.replace(/\D/g, "").slice(0, 6);
+                                        setAppointmentForm({ 
+                                          ...appointmentForm, 
+                                          pickupPincode: newPincode,
+                                          ...(dropSameAsPickup ? { dropPincode: newPincode } : {})
+                                        });
+                                      }}
+                                      placeholder="6-digit pincode"
+                                      maxLength={6}
+                                    />
+                                  </div>
 
-                                  <FormInput
-                                    label="Drop Address"
-                                    value={appointmentForm.dropAddress || ""}
-                                    onChange={(e) =>
-                                      setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })
-                                    }
-                                    placeholder="Enter drop address"
-                                  />
+                                  {/* Drop Address Section */}
+                                  <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="text-md font-semibold text-gray-800">Drop Address</h4>
+                                      <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={dropSameAsPickup}
+                                          onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            setDropSameAsPickup(checked);
+                                            if (checked) {
+                                              // Copy pickup address to drop address
+                                              setDropState(pickupState);
+                                              setDropCity(pickupCity);
+                                              setAppointmentForm({
+                                                ...appointmentForm,
+                                                dropAddress: appointmentForm.pickupAddress,
+                                                dropState: appointmentForm.pickupState,
+                                                dropCity: appointmentForm.pickupCity,
+                                                dropPincode: appointmentForm.pickupPincode,
+                                              });
+                                            } else {
+                                              // Clear drop address when unchecked
+                                              setDropState("");
+                                              setDropCity("");
+                                              setAppointmentForm({
+                                                ...appointmentForm,
+                                                dropAddress: undefined,
+                                                dropState: undefined,
+                                                dropCity: undefined,
+                                                dropPincode: undefined,
+                                              });
+                                            }
+                                          }}
+                                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                        />
+                                        <span className="text-sm text-gray-700">Same as pickup address</span>
+                                      </label>
+                                    </div>
+                                    <FormInput
+                                      label="Address"
+                                      value={appointmentForm.dropAddress || ""}
+                                      onChange={(e) =>
+                                        setAppointmentForm({ ...appointmentForm, dropAddress: e.target.value })
+                                      }
+                                      placeholder="Enter full address"
+                                      readOnly={dropSameAsPickup}
+                                    />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <FormSelect
+                                        label="State"
+                                        value={dropState}
+                                        onChange={(e) => {
+                                          setDropState(e.target.value);
+                                          setDropCity(""); // Reset city when state changes
+                                          setAppointmentForm({ ...appointmentForm, dropState: e.target.value, dropCity: undefined });
+                                        }}
+                                        placeholder="Select State"
+                                        options={INDIAN_STATES.map((state) => ({ value: state.name, label: state.name }))}
+                                        disabled={dropSameAsPickup}
+                                      />
+                                      <FormSelect
+                                        label="City"
+                                        value={dropCity}
+                                        onChange={(e) => {
+                                          setDropCity(e.target.value);
+                                          setAppointmentForm({ ...appointmentForm, dropCity: e.target.value });
+                                        }}
+                                        placeholder={dropState ? "Select City" : "Select State First"}
+                                        options={dropState ? getCitiesByState(dropState).map((city) => ({ value: city, label: city })) : []}
+                                        disabled={!dropState || dropSameAsPickup}
+                                      />
+                                    </div>
+                                    <FormInput
+                                      label="Pincode"
+                                      value={appointmentForm.dropPincode || ""}
+                                      onChange={(e) =>
+                                        setAppointmentForm({ ...appointmentForm, dropPincode: e.target.value.replace(/\D/g, "").slice(0, 6) })
+                                      }
+                                      placeholder="6-digit pincode"
+                                      maxLength={6}
+                                      readOnly={dropSameAsPickup}
+                                    />
+                                  </div>
                                 </>
                               )}
                             </div>
@@ -3061,6 +3290,13 @@ export default function CustomerFind() {
                       if (!appointmentForm.time?.trim()) {
                         errors.time = "Time is required";
                         missingFields.push("Time");
+                      } else if (appointmentForm.date && isToday(appointmentForm.date)) {
+                        // Validate that time is not in the past for today's date
+                        const currentTime = getCurrentTime();
+                        if (appointmentForm.time < currentTime) {
+                          errors.time = "Cannot schedule appointment for a past time on today's date";
+                          missingFields.push("Time");
+                        }
                       }
 
                       if (isCallCenter && !appointmentForm.customerComplaintIssue?.trim()) {
@@ -3113,7 +3349,13 @@ export default function CustomerFind() {
                         serviceCenterName: serviceCenterName,
                         pickupDropRequired: appointmentForm.pickupDropRequired,
                         pickupAddress: appointmentForm.pickupAddress,
+                        pickupState: appointmentForm.pickupState,
+                        pickupCity: appointmentForm.pickupCity,
+                        pickupPincode: appointmentForm.pickupPincode,
                         dropAddress: appointmentForm.dropAddress,
+                        dropState: appointmentForm.dropState,
+                        dropCity: appointmentForm.dropCity,
+                        dropPincode: appointmentForm.dropPincode,
                         preferredCommunicationMode: appointmentForm.preferredCommunicationMode,
                         paymentMethod: appointmentForm.paymentMethod,
                         gstRequirement: appointmentForm.gstRequirement,

@@ -84,8 +84,11 @@ export const FormSelect = ({
     <select
       value={value}
       onChange={onChange}
+      disabled={props.disabled}
       className={`w-full px-4 py-2.5 rounded-lg focus:bg-white focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 ${
-        error 
+        props.disabled
+          ? "bg-gray-100 border border-gray-200 cursor-not-allowed text-gray-400"
+          : error 
           ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500" 
           : "bg-gray-50/50 focus:ring-indigo-500/20 border border-gray-200"
       } ${className}`}
