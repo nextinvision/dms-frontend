@@ -33,12 +33,19 @@ export function AppointmentFormModal({
   canAccessVehicleInfo,
   existingAppointments = [],
 }: AppointmentFormModalProps) {
-  if (!isOpen || !customer) return null;
+  // Allow modal to open even without customer for edit mode
+  if (!isOpen) return null;
+
+  const isEditMode = !!initialFormData?.customerName;
 
   return (
-    <Modal title="Schedule Appointment" onClose={onClose} maxWidth="max-w-3xl">
+    <Modal 
+      title={isEditMode ? "Edit Appointment" : "Schedule Appointment"} 
+      onClose={onClose} 
+      maxWidth="max-w-3xl"
+    >
       <div className="p-6 space-y-6">
-        {canAccessCustomerType && (
+        {customer && canAccessCustomerType && (
           <CustomerInfoCard customer={customer} title="Customer Information (Pre-filled)" />
         )}
 
@@ -85,8 +92,8 @@ export function AppointmentFormModal({
           initialData={initialFormData}
           onSubmit={onSubmit}
           onCancel={onClose}
-          mode="create"
-          customerInfo={customer}
+          mode={isEditMode ? "edit" : "create"}
+          customerInfo={customer || undefined}
           vehicleInfo={vehicle || undefined}
           existingAppointments={existingAppointments}
         />

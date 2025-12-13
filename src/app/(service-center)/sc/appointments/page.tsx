@@ -339,6 +339,48 @@ const getStatusBadgeClass = (status: string): string => {
   return `px-2 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`;
 };
 
+// Convert AppointmentRecord to AppointmentFormType for editing
+const convertAppointmentToFormData = (appointment: AppointmentRecord): Partial<AppointmentFormType> => {
+  return {
+    customerName: appointment.customerName,
+    vehicle: appointment.vehicle,
+    phone: appointment.phone,
+    serviceType: appointment.serviceType,
+    date: appointment.date,
+    time: appointment.time,
+    duration: appointment.duration.replace(" hours", "").replace(" hour", ""),
+    serviceCenterId: appointment.serviceCenterId ? Number(appointment.serviceCenterId) : undefined,
+    serviceCenterName: appointment.serviceCenterName || undefined,
+    customerType: appointment.customerType,
+    customerComplaintIssue: appointment.customerComplaintIssue,
+    previousServiceHistory: appointment.previousServiceHistory,
+    estimatedServiceTime: appointment.estimatedServiceTime,
+    estimatedCost: appointment.estimatedCost?.replace("₹", "").replace(",", ""),
+    odometerReading: appointment.odometerReading,
+    isMajorIssue: appointment.isMajorIssue,
+    estimatedDeliveryDate: appointment.estimatedDeliveryDate,
+    assignedServiceAdvisor: appointment.assignedServiceAdvisor,
+    assignedTechnician: appointment.assignedTechnician,
+    pickupDropRequired: appointment.pickupDropRequired,
+    pickupAddress: appointment.pickupAddress,
+    pickupState: (appointment as any).pickupState,
+    pickupCity: (appointment as any).pickupCity,
+    pickupPincode: (appointment as any).pickupPincode,
+    dropAddress: appointment.dropAddress,
+    dropState: (appointment as any).dropState,
+    dropCity: (appointment as any).dropCity,
+    dropPincode: (appointment as any).dropPincode,
+    preferredCommunicationMode: appointment.preferredCommunicationMode,
+    paymentMethod: appointment.paymentMethod,
+    gstRequirement: appointment.gstRequirement,
+    businessNameForInvoice: appointment.businessNameForInvoice,
+    feedbackRating: appointment.feedbackRating,
+    nextServiceDueDate: appointment.nextServiceDueDate,
+    amcSubscriptionStatus: appointment.amcSubscriptionStatus,
+    serviceStatus: (appointment as any).serviceStatus,
+  };
+};
+
 // validateAppointmentForm is now imported from canonical types file
 
 
@@ -793,6 +835,30 @@ function AppointmentsContent() {
     setDetailCustomer(detailCustomerDerived);
   }, [detailCustomerDerived]);
 
+  // Update customer/vehicle for appointment form when search completes
+  useEffect(() => {
+    if (!selectedAppointment || !showAppointmentFormModal) return;
+    
+    const customer = customerSearchResults.find(
+      (c) => c.phone === selectedAppointment.phone
+    ) || null;
+
+    if (customer) {
+      const vehicle = customer.vehicles?.find((v) => {
+        const vehicleString = formatVehicleString(v);
+        return vehicleString === selectedAppointment.vehicle;
+      }) || customer.vehicles?.[0] || null;
+      
+      setSelectedAppointmentCustomer(customer);
+      setSelectedAppointmentVehicle(vehicle);
+    } else {
+      // If customer not found, still allow form to open (edit mode)
+      // Just don't set customer/vehicle
+      setSelectedAppointmentCustomer(null);
+      setSelectedAppointmentVehicle(null);
+    }
+  }, [customerSearchResults, selectedAppointment, showAppointmentFormModal]);
+
   // ==================== Helper Functions ====================
   const showToast = useCallback((message: string, type: ToastType = "success") => {
     setToast({ show: true, message, type });
@@ -828,13 +894,33 @@ function AppointmentsContent() {
 
   // ==================== Event Handlers ====================
   const handleAppointmentClick = useCallback((appointment: AppointmentRecord) => {
-    setSelectedAppointment(appointment);
-    setDetailCustomer(null);
-    setShowDetailModal(true);
-    // Reset service intake form when opening appointment details
-    setCustomerArrivalStatus(null);
-    setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
-  }, []);
+    // For service advisor, if customer has arrived, show detail modal for service intake
+    if (isServiceAdvisor && 
+        (appointment.status === "In Progress" || appointment.status === "Sent to Manager")) {
+      setSelectedAppointment(appointment);
+      setDetailCustomer(null);
+      setShowDetailModal(true);
+      setCustomerArrivalStatus("arrived");
+      setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
+      return;
+    }
+
+    // For all other cases, open the form modal for editing
+    try {
+      // Convert appointment to form data immediately
+      const formData = convertAppointmentToFormData(appointment);
+
+      // Set state for form modal immediately
+      // Note: Setting selectedAppointment will trigger useEffect to search for customer
+      setSelectedAppointment(appointment);
+      setAppointmentFormData(formData);
+      setShowAppointmentFormModal(true);
+      // Customer/vehicle will be updated via useEffect when search completes
+    } catch (error) {
+      console.error("Error loading appointment for edit:", error);
+      showToast("Failed to load appointment details. Please try again.", "error");
+    }
+  }, [isServiceAdvisor, showToast]);
 
   const handleDeleteAppointment = useCallback(
     (id: number) => {
@@ -842,7 +928,17 @@ function AppointmentsContent() {
       const updatedAppointments = appointments.filter((apt) => apt.id !== id);
       setAppointments(updatedAppointments);
       safeStorage.setItem("appointments", updatedAppointments);
+      
+      // Close any open modals
       closeDetailModal();
+      // Close appointment form modal if open
+      setShowAppointmentFormModal(false);
+      setSelectedAppointment(null);
+      setSelectedAppointmentCustomer(null);
+      setSelectedAppointmentVehicle(null);
+      setAppointmentFormData(getInitialAppointmentForm());
+      clearAppointmentCustomerSearch();
+      
       showToast(
         appointmentToDelete
           ? `Appointment for ${appointmentToDelete.customerName} deleted successfully!`
@@ -850,7 +946,7 @@ function AppointmentsContent() {
         "success"
       );
     },
-    [appointments, closeDetailModal, showToast]
+    [appointments, closeDetailModal, showToast, clearAppointmentCustomerSearch]
   );
 
 
@@ -1226,6 +1322,7 @@ function AppointmentsContent() {
 
   const handleCloseAppointmentForm = useCallback(() => {
     setShowAppointmentFormModal(false);
+    setSelectedAppointment(null); // Reset appointment to prevent unwanted searches
     setSelectedAppointmentCustomer(null);
     setSelectedAppointmentVehicle(null);
     setAppointmentFormData(getInitialAppointmentForm());
@@ -1274,8 +1371,8 @@ function AppointmentsContent() {
       date: form.date,
       time: formatTime(form.time),
       duration: `${form.duration} hours`,
-      status: "Confirmed",
-      customerType: selectedAppointmentCustomer?.customerType,
+      status: selectedAppointment?.status || "Confirmed", // Preserve existing status
+      customerType: selectedAppointmentCustomer?.customerType || form.customerType,
       alternateMobile: (form as any).alternateMobile,
       customerComplaintIssue: form.customerComplaintIssue,
       previousServiceHistory: form.previousServiceHistory,
@@ -1312,24 +1409,37 @@ function AppointmentsContent() {
         warrantyCardServiceBook: form.warrantyCardServiceBook?.files.length || 0,
         photosVideos: form.photosVideos?.files.length || 0,
       },
-      createdByRole: isCallCenter ? "call_center" : isServiceAdvisor ? "service_advisor" : undefined,
+      createdByRole: selectedAppointment?.createdByRole || (isCallCenter ? "call_center" : isServiceAdvisor ? "service_advisor" : undefined),
     };
 
     // Get existing appointments from localStorage
     const existingAppointments = safeStorage.getItem<Array<any>>("appointments", []);
 
-    // Create new appointment
-    const newAppointment: AppointmentRecord = {
-      id: existingAppointments.length > 0 
-        ? Math.max(...existingAppointments.map((a: any) => a.id)) + 1 
-        : 1,
-      ...appointmentData,
-    };
+    // Check if this is an update or create
+    if (selectedAppointment) {
+      // Update existing appointment
+      const updatedAppointments = existingAppointments.map((apt: any) =>
+        apt.id === selectedAppointment.id
+          ? { ...apt, ...appointmentData }
+          : apt
+      );
+      safeStorage.setItem("appointments", updatedAppointments);
+      setAppointments(updatedAppointments);
+      showToast(`Appointment updated successfully! Customer: ${form.customerName} | Vehicle: ${form.vehicle}`, "success");
+    } else {
+      // Create new appointment
+      const newAppointment: AppointmentRecord = {
+        id: existingAppointments.length > 0 
+          ? Math.max(...existingAppointments.map((a: any) => a.id)) + 1 
+          : 1,
+        ...appointmentData,
+      };
 
-    // Save to localStorage
-    const updatedAppointments = [...existingAppointments, newAppointment];
-    safeStorage.setItem("appointments", updatedAppointments);
-    setAppointments(updatedAppointments);
+      const updatedAppointments = [...existingAppointments, newAppointment];
+      safeStorage.setItem("appointments", updatedAppointments);
+      setAppointments(updatedAppointments);
+      showToast(`Appointment scheduled successfully! Customer: ${form.customerName} | Vehicle: ${form.vehicle} | Service: ${form.serviceType} | Date: ${form.date} | Time: ${formatTime(form.time)}`, "success");
+    }
 
     // Clean up file URLs
     if (form.customerIdProof?.urls) {
@@ -1345,11 +1455,9 @@ function AppointmentsContent() {
       form.photosVideos.urls.forEach((url: string) => URL.revokeObjectURL(url));
     }
 
-    showToast(`Appointment scheduled successfully! Customer: ${form.customerName} | Vehicle: ${form.vehicle} | Service: ${form.serviceType} | Date: ${form.date} | Time: ${formatTime(form.time)}`, "success");
-
     // Close modal and reset form
     handleCloseAppointmentForm();
-  }, [selectedAppointmentCustomer, isCallCenter, isServiceAdvisor, showToast, handleCloseAppointmentForm]);
+  }, [selectedAppointment, selectedAppointmentCustomer, isCallCenter, isServiceAdvisor, showToast, handleCloseAppointmentForm]);
 
   // File Upload Handlers
   const handleDocumentUpload = useCallback(
@@ -1768,32 +1876,47 @@ function AppointmentsContent() {
               {visibleAppointments.map((apt) => (
                 <div
                   key={apt.id}
-                  onClick={() => handleAppointmentClick(apt)}
-                  className="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all duration-200 bg-white hover:bg-blue-50/30"
+                  className="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all duration-200 bg-white hover:bg-blue-50/30 relative group"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Clock size={16} className="text-blue-600" />
-                      <span className="font-semibold text-sm">{apt.time}</span>
+                  {/* Delete Icon */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Are you sure you want to delete the appointment for ${apt.customerName}?`)) {
+                        handleDeleteAppointment(apt.id);
+                      }
+                    }}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-red-50 text-red-600 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 z-10"
+                    title="Delete appointment"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  
+                  <div onClick={() => handleAppointmentClick(apt)}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Clock size={16} className="text-blue-600" />
+                        <span className="font-semibold text-sm">{apt.time}</span>
+                      </div>
+                      <StatusBadge status={apt.status} />
                     </div>
-                    <StatusBadge status={apt.status} />
-                  </div>
-                  <p className="font-medium text-gray-800 text-sm mb-1">{apt.customerName}</p>
-                  <div className="flex items-center gap-1 mb-1">
-                    <Car size={12} className="text-gray-400" />
-                    <p className="text-xs text-gray-600">{apt.vehicle}</p>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">{apt.serviceType}</p>
-                  <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-100">
-                    <Phone size={12} className="text-gray-400" />
-                    <p className="text-xs text-gray-500">{apt.phone}</p>
-                  </div>
-                  {isCallCenter && apt.serviceCenterName && (
+                    <p className="font-medium text-gray-800 text-sm mb-1">{apt.customerName}</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <Car size={12} className="text-gray-400" />
+                      <p className="text-xs text-gray-600">{apt.vehicle}</p>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{apt.serviceType}</p>
                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-100">
-                      <Building2 size={12} className="text-indigo-500" />
-                      <p className="text-xs text-indigo-600 font-medium">{apt.serviceCenterName}</p>
+                      <Phone size={12} className="text-gray-400" />
+                      <p className="text-xs text-gray-500">{apt.phone}</p>
                     </div>
-                  )}
+                    {isCallCenter && apt.serviceCenterName && (
+                      <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-100">
+                        <Building2 size={12} className="text-indigo-500" />
+                        <p className="text-xs text-indigo-600 font-medium">{apt.serviceCenterName}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -3038,13 +3161,6 @@ function AppointmentsContent() {
             {/* Action Buttons */}
             <div className="flex gap-3 pt-4 border-t border-gray-200">
               <button
-                onClick={handleViewVehicleDetails}
-                className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2"
-              >
-                <Eye size={18} />
-                View Details
-              </button>
-              <button
                 onClick={() => handleDeleteAppointment(selectedAppointment.id)}
                 className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-700 transition"
               >
@@ -3209,8 +3325,8 @@ function AppointmentsContent() {
         <CheckInSlip data={checkInSlipData} onClose={() => setShowCheckInSlipModal(false)} />
       )}
 
-      {/* Create New Appointment Modal */}
-      {showAppointmentFormModal && selectedAppointmentCustomer && (
+      {/* Create/Edit Appointment Modal */}
+      {showAppointmentFormModal && (
         <AppointmentFormModal
           isOpen={showAppointmentFormModal}
           customer={selectedAppointmentCustomer}
@@ -3220,12 +3336,12 @@ function AppointmentsContent() {
           onSubmit={handleSubmitAppointmentForm}
           canAccessCustomerType={canEditCustomerInformation}
           canAccessVehicleInfo={canEditVehicleInformation}
-          existingAppointments={appointments}
+          existingAppointments={appointments.filter(apt => apt.id !== selectedAppointment?.id)} // Exclude current appointment from conflict check
         />
       )}
 
-      {/* Customer Search Modal for Appointment Creation */}
-      {showAppointmentFormModal && !selectedAppointmentCustomer && (
+      {/* Customer Search Modal for Appointment Creation (only show when creating new, not editing) */}
+      {showAppointmentFormModal && !selectedAppointmentCustomer && !selectedAppointment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white p-6 flex items-center justify-between rounded-t-2xl z-10 border-b border-gray-200">

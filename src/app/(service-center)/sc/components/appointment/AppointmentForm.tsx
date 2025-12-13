@@ -401,20 +401,6 @@ export const AppointmentForm = ({
         </div>
       )}
 
-      {/* Customer Type */}
-      {canAccessCustomerType && (
-        <FormSelect
-          label="Customer Type"
-          value={formData.customerType || ""}
-          onChange={(e) => updateFormData({ customerType: e.target.value as "B2C" | "B2B" | undefined })}
-          placeholder="Select customer type"
-          options={[
-            { value: "B2C", label: "B2C" },
-            { value: "B2B", label: "B2B" },
-          ]}
-        />
-      )}
-
       {/* Service Details Section */}
       {canAccessServiceDetails && (
         <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
@@ -969,97 +955,6 @@ export const AppointmentForm = ({
             <p className="text-xs text-gray-500">
               Note: Payment method and billing details will be collected when creating the invoice during vehicle delivery.
             </p>
-          </div>
-        </div>
-      )}
-
-      {/* Post-Service Feedback */}
-      {canAccessPostServiceSurvey && (
-        <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <CheckCircle className="text-teal-600" size={20} />
-            Post-Service Feedback
-          </h3>
-          <div className="space-y-4">
-            {/* Service Status */}
-            {canAccessServiceStatus && (
-              <FormSelect
-                label="Service Status"
-                value={formData.serviceStatus || ""}
-                onChange={(e) => updateFormData({ serviceStatus: e.target.value })}
-                placeholder="Select service status"
-                options={[
-                  { value: "Pending", label: "Pending" },
-                  { value: "In Service", label: "In Service" },
-                  { value: "Ready for Delivery", label: "Ready for Delivery" },
-                  { value: "Delivered", label: "Delivered" },
-                  { value: "Cancelled", label: "Cancelled" },
-                ]}
-              />
-            )}
-
-            {/* Feedback Rating */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Feedback Rating
-              </label>
-              <div className="flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map((rating) => (
-                  <button
-                    key={rating}
-                    type="button"
-                    onClick={() => updateFormData({ feedbackRating: rating })}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
-                      formData.feedbackRating === rating
-                        ? "bg-teal-600 text-white scale-110"
-                        : "bg-gray-200 text-gray-600 hover:bg-teal-100 hover:text-teal-700"
-                    }`}
-                  >
-                    {rating}
-                  </button>
-                ))}
-                {formData.feedbackRating && (
-                  <span className="text-sm text-gray-600 ml-2">
-                    {formData.feedbackRating === 5
-                      ? "Excellent"
-                      : formData.feedbackRating === 4
-                      ? "Very Good"
-                      : formData.feedbackRating === 3
-                      ? "Good"
-                      : formData.feedbackRating === 2
-                      ? "Fair"
-                      : "Poor"}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Next Service Due Date */}
-            {canAccessServiceStatus && (
-              <FormInput
-                label="Next Service Due Date"
-                type="date"
-                value={formData.nextServiceDueDate || ""}
-                onChange={(e) => updateFormData({ nextServiceDueDate: e.target.value })}
-                placeholder="Select next service due date"
-              />
-            )}
-
-            {/* AMC / Subscription Status */}
-            {canAccessAMCStatus && (
-              <FormSelect
-                label="AMC / Subscription Status"
-                value={formData.amcSubscriptionStatus || ""}
-                onChange={(e) => updateFormData({ amcSubscriptionStatus: e.target.value })}
-                placeholder="Select AMC/Subscription status"
-                options={[
-                  { value: "Active", label: "Active" },
-                  { value: "Expired", label: "Expired" },
-                  { value: "Not Applicable", label: "Not Applicable" },
-                  { value: "Pending Renewal", label: "Pending Renewal" },
-                ]}
-              />
-            )}
           </div>
         </div>
       )}
