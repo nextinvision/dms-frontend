@@ -95,6 +95,20 @@ export interface AppointmentForm {
   nextServiceDueDate?: string;
   amcSubscriptionStatus?: string;
   serviceStatus?: string; // Post-Service Feedback: Service Status (Pending, In Service, Ready for Delivery, Delivered, Cancelled)
+  // Vehicle Information Fields
+  vehicleBrand?: string;
+  vehicleModel?: string;
+  registrationNumber?: string;
+  vinChassisNumber?: string;
+  variantBatteryCapacity?: string;
+  motorNumber?: string;
+  chargerSerialNumber?: string;
+  dateOfPurchase?: string;
+  warrantyStatus?: string;
+  insuranceStartDate?: string;
+  insuranceEndDate?: string;
+  insuranceCompanyName?: string;
+  vehicleColor?: string;
 }
 
 export const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
@@ -143,6 +157,19 @@ export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   nextServiceDueDate: undefined,
   amcSubscriptionStatus: undefined,
   serviceStatus: undefined,
+  vehicleBrand: undefined,
+  vehicleModel: undefined,
+  registrationNumber: undefined,
+  vinChassisNumber: undefined,
+  variantBatteryCapacity: undefined,
+  motorNumber: undefined,
+  chargerSerialNumber: undefined,
+  dateOfPurchase: undefined,
+  warrantyStatus: undefined,
+  insuranceStartDate: undefined,
+  insuranceEndDate: undefined,
+  insuranceCompanyName: undefined,
+  vehicleColor: undefined,
 };
 
 export const DEFAULT_MAX_APPOINTMENTS_PER_DAY = 20;

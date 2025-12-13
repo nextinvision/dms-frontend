@@ -20,6 +20,9 @@ export interface AppointmentFormModalProps {
   canAccessCustomerType: boolean;
   canAccessVehicleInfo: boolean;
   existingAppointments?: any[];
+  onCustomerArrived?: (form: AppointmentFormType) => void;
+  appointmentStatus?: string;
+  customerArrived?: boolean;
 }
 
 export function AppointmentFormModal({
@@ -32,6 +35,9 @@ export function AppointmentFormModal({
   canAccessCustomerType,
   canAccessVehicleInfo,
   existingAppointments = [],
+  onCustomerArrived,
+  appointmentStatus,
+  customerArrived,
 }: AppointmentFormModalProps) {
   // Allow modal to open even without customer for edit mode
   if (!isOpen) return null;
@@ -96,6 +102,9 @@ export function AppointmentFormModal({
           customerInfo={customer || undefined}
           vehicleInfo={vehicle || undefined}
           existingAppointments={existingAppointments}
+          onCustomerArrived={onCustomerArrived}
+          appointmentStatus={appointmentStatus}
+          customerArrived={customerArrived}
         />
       </div>
     </Modal>

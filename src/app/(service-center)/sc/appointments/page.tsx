@@ -378,6 +378,25 @@ const convertAppointmentToFormData = (appointment: AppointmentRecord): Partial<A
     nextServiceDueDate: appointment.nextServiceDueDate,
     amcSubscriptionStatus: appointment.amcSubscriptionStatus,
     serviceStatus: (appointment as any).serviceStatus,
+    // Vehicle Information Fields
+    vehicleBrand: (appointment as any).vehicleBrand,
+    vehicleModel: (appointment as any).vehicleModel,
+    registrationNumber: (appointment as any).registrationNumber,
+    vinChassisNumber: (appointment as any).vinChassisNumber,
+    variantBatteryCapacity: (appointment as any).variantBatteryCapacity,
+    motorNumber: (appointment as any).motorNumber,
+    chargerSerialNumber: (appointment as any).chargerSerialNumber,
+    dateOfPurchase: (appointment as any).dateOfPurchase,
+    warrantyStatus: (appointment as any).warrantyStatus,
+    insuranceStartDate: (appointment as any).insuranceStartDate,
+    insuranceEndDate: (appointment as any).insuranceEndDate,
+    insuranceCompanyName: (appointment as any).insuranceCompanyName,
+    vehicleColor: (appointment as any).vehicleColor,
+    // Documentation files (if stored as URLs)
+    customerIdProof: (appointment as any).customerIdProof,
+    vehicleRCCopy: (appointment as any).vehicleRCCopy,
+    warrantyCardServiceBook: (appointment as any).warrantyCardServiceBook,
+    photosVideos: (appointment as any).photosVideos,
   };
 };
 
@@ -894,18 +913,7 @@ function AppointmentsContent() {
 
   // ==================== Event Handlers ====================
   const handleAppointmentClick = useCallback((appointment: AppointmentRecord) => {
-    // For service advisor, if customer has arrived, show detail modal for service intake
-    if (isServiceAdvisor && 
-        (appointment.status === "In Progress" || appointment.status === "Sent to Manager")) {
-      setSelectedAppointment(appointment);
-      setDetailCustomer(null);
-      setShowDetailModal(true);
-      setCustomerArrivalStatus("arrived");
-      setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
-      return;
-    }
-
-    // For all other cases, open the form modal for editing
+    // For all cases, open the form modal for editing
     try {
       // Convert appointment to form data immediately
       const formData = convertAppointmentToFormData(appointment);
@@ -920,7 +928,7 @@ function AppointmentsContent() {
       console.error("Error loading appointment for edit:", error);
       showToast("Failed to load appointment details. Please try again.", "error");
     }
-  }, [isServiceAdvisor, showToast]);
+  }, [showToast]);
 
   const handleDeleteAppointment = useCallback(
     (id: number) => {
@@ -1409,6 +1417,25 @@ function AppointmentsContent() {
         warrantyCardServiceBook: form.warrantyCardServiceBook?.files.length || 0,
         photosVideos: form.photosVideos?.files.length || 0,
       },
+      // Vehicle Information Fields
+      vehicleBrand: form.vehicleBrand,
+      vehicleModel: form.vehicleModel,
+      registrationNumber: form.registrationNumber,
+      vinChassisNumber: form.vinChassisNumber,
+      variantBatteryCapacity: form.variantBatteryCapacity,
+      motorNumber: form.motorNumber,
+      chargerSerialNumber: form.chargerSerialNumber,
+      dateOfPurchase: form.dateOfPurchase,
+      warrantyStatus: form.warrantyStatus,
+      insuranceStartDate: form.insuranceStartDate,
+      insuranceEndDate: form.insuranceEndDate,
+      insuranceCompanyName: form.insuranceCompanyName,
+      vehicleColor: form.vehicleColor,
+      // Store documentation files for later retrieval
+      customerIdProof: form.customerIdProof,
+      vehicleRCCopy: form.vehicleRCCopy,
+      warrantyCardServiceBook: form.warrantyCardServiceBook,
+      photosVideos: form.photosVideos,
       createdByRole: selectedAppointment?.createdByRole || (isCallCenter ? "call_center" : isServiceAdvisor ? "service_advisor" : undefined),
     };
 
@@ -1458,6 +1485,45 @@ function AppointmentsContent() {
     // Close modal and reset form
     handleCloseAppointmentForm();
   }, [selectedAppointment, selectedAppointmentCustomer, isCallCenter, isServiceAdvisor, showToast, handleCloseAppointmentForm]);
+
+  // Handle Customer Arrived from Form
+  const handleCustomerArrivedFromForm = useCallback((form: AppointmentFormType) => {
+    if (!selectedAppointment) return;
+
+    // Update appointment status to "In Progress" and save all form data
+    const selectedServiceCenter = form.serviceCenterName
+      ? staticServiceCenters.find((center) => center.name === form.serviceCenterName)
+      : null;
+    const serviceCenterId = (selectedServiceCenter as any)?.serviceCenterId || selectedServiceCenter?.id?.toString() || null;
+    const serviceCenterName = form.serviceCenterName || null;
+
+    const appointmentData: any = {
+      ...form,
+      status: "In Progress", // Update status to In Progress
+      serviceCenterId: serviceCenterId,
+      serviceCenterName: serviceCenterName,
+      time: formatTime(form.time),
+      duration: `${form.duration} hours`,
+      createdByRole: selectedAppointment.createdByRole,
+    };
+
+    // Update appointment
+    const existingAppointments = safeStorage.getItem<Array<any>>("appointments", []);
+    const updatedAppointments = existingAppointments.map((apt: any) =>
+      apt.id === selectedAppointment.id
+        ? { ...apt, ...appointmentData }
+        : apt
+    );
+    safeStorage.setItem("appointments", updatedAppointments);
+    setAppointments(updatedAppointments);
+
+    // Update selectedAppointment state
+    const updatedAppointment = { ...selectedAppointment, ...appointmentData };
+    setSelectedAppointment(updatedAppointment);
+    setAppointmentFormData(form);
+
+    showToast("Customer arrival recorded. Appointment status updated to 'In Progress'.", "success");
+  }, [selectedAppointment, showToast]);
 
   // File Upload Handlers
   const handleDocumentUpload = useCallback(
@@ -2395,6 +2461,7 @@ function AppointmentsContent() {
 
             {/* Customer Arrival Confirmation (Service Advisor Only) - Show when customer has arrived */}
             {isServiceAdvisor &&
+              selectedAppointment &&
               (customerArrivalStatus === "arrived" ||
                 selectedAppointment.status === "In Progress" ||
                 selectedAppointment.status === "Sent to Manager") && (
@@ -2413,912 +2480,8 @@ function AppointmentsContent() {
                   </div>
                 </div>
               )}
-            {isServiceAdvisor && customerArrivalStatus === "arrived" && (
-              <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-5 shadow-sm">
-                <div className="flex flex-col gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-700 mb-2">Select Action</p>
-                    <p className="text-xs text-gray-500">Choose how to proceed with this customer arrival.</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Navigate to quotations page to create quotation/estimation
-                        const serviceIntakeData = {
-                          appointmentId: selectedAppointment?.id,
-                          customerName: selectedAppointment?.customerName,
-                          phone: selectedAppointment?.phone,
-                          vehicle: selectedAppointment?.vehicle,
-                          customerId: detailCustomer?.id?.toString() || selectedAppointment?.customerExternalId,
-                          serviceCenterId: selectedAppointment?.serviceCenterId?.toString() || serviceCenterContext.serviceCenterId,
-                          serviceCenterName: selectedAppointment?.serviceCenterName || serviceCenterContext.serviceCenterName,
-                          serviceIntakeForm: {
-                            ...serviceIntakeForm,
-                            customerIdProof: { files: [], urls: serviceIntakeForm.customerIdProof.urls },
-                            vehicleRCCopy: { files: [], urls: serviceIntakeForm.vehicleRCCopy.urls },
-                            warrantyCardServiceBook: { files: [], urls: serviceIntakeForm.warrantyCardServiceBook.urls },
-                            photosVideos: { files: [], urls: serviceIntakeForm.photosVideos.urls },
-                          },
-                        };
-                        safeStorage.setItem("pendingQuotationFromAppointment", serviceIntakeData);
-                        router.push("/sc/quotations?fromAppointment=true");
-                        closeDetailModal();
-                      }}
-                      className="px-4 py-3 rounded-lg border-2 border-indigo-300 bg-indigo-50 hover:bg-indigo-100 font-medium text-sm text-indigo-700 transition flex items-center justify-center gap-2"
-                    >
-                      <FileText size={18} />
-                      Create Quotation/Estimation
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Pass to manager with service intake data
-                        if (!selectedAppointment) return;
-
-                        // Create service intake request
-                        const serviceIntakeRequest: ServiceIntakeRequest = {
-                          id: `SIR-${Date.now()}`,
-                          appointmentId: selectedAppointment.id,
-                          appointment: selectedAppointment,
-                          serviceIntakeForm: serviceIntakeForm,
-                          status: "pending",
-                          submittedAt: new Date().toISOString(),
-                          submittedBy: userInfo?.name || userInfo?.id || "Service Advisor",
-                          serviceCenterId: selectedAppointment.serviceCenterId || (serviceCenterContext.serviceCenterId !== null ? serviceCenterContext.serviceCenterId : undefined),
-                          serviceCenterName: selectedAppointment.serviceCenterName || (serviceCenterContext.serviceCenterName !== null ? serviceCenterContext.serviceCenterName : undefined),
-                        };
-
-                        // Save service intake request
-                        const existingRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
-                        const updatedRequests = [...existingRequests, serviceIntakeRequest];
-                        safeStorage.setItem("serviceIntakeRequests", updatedRequests);
-
-                        // Update appointment status
-                        const updatedAppointments = appointments.map((apt) =>
-                          apt.id === selectedAppointment.id
-                            ? { ...apt, status: "Sent to Manager" }
-                            : apt
-                        );
-                        setAppointments(updatedAppointments);
-                        safeStorage.setItem("appointments", updatedAppointments);
-                        setSelectedAppointment({ ...selectedAppointment, status: "Sent to Manager" });
-
-                        showToast("Service intake request sent to manager for approval.", "success");
-                      }}
-                      className="px-4 py-3 rounded-lg border-2 border-blue-300 bg-blue-50 hover:bg-blue-100 font-medium text-sm text-blue-700 transition flex items-center justify-center gap-2"
-                    >
-                      <User size={18} />
-                      Pass to Manager
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Generate check-in slip
-                        if (!selectedAppointment) return;
-                        const slipData = generateCheckInSlipData();
-                        if (slipData) {
-                          setCheckInSlipData(slipData);
-                          setServiceIntakeForm((prev) => ({
-                            ...prev,
-                            checkInSlipNumber: slipData.slipNumber,
-                            checkInDate: slipData.checkInDate,
-                            checkInTime: slipData.checkInTime,
-                          }));
-                          setShowCheckInSlipModal(true);
-                          showToast("Check-in slip generated successfully.", "success");
-                        }
-                      }}
-                      className="px-4 py-3 rounded-lg border-2 border-green-300 bg-green-50 hover:bg-green-100 font-medium text-sm text-green-700 transition flex items-center justify-center gap-2"
-                    >
-                      <FileText size={18} />
-                      Generate Check-in Slip
-                    </button>
-                  </div>
-                </div>
-
-                {/* Check-in Slip Status */}
-                {checkInSlipData && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle className="text-green-600" size={20} />
-                      <p className="font-semibold text-green-800">Check-in Slip Generated</p>
-                    </div>
-                    <p className="text-sm text-green-700 mb-3">
-                      Check-in slip has been generated. You can view or print it below.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setShowCheckInSlipModal(true)}
-                      className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition text-sm flex items-center gap-2"
-                    >
-                      <FileText size={16} />
-                      View / Print Check-in Slip
-                    </button>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-semibold text-gray-500">Job Card Status</p>
-                    <p className="text-lg font-semibold text-gray-900">
-                      {currentJobCard ? currentJobCard.jobCardNumber : "Not Created Yet"}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {currentJobCard
-                        ? `Status: ${currentJobCard.status}`
-                        : "Job card will be created after quotation approval"}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-gray-700">Check-in Notes</label>
-                    <textarea
-                      value={serviceIntakeForm.checkInNotes || ""}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, checkInNotes: e.target.value })}
-                      rows={3}
-                      placeholder="Record observations from the arrival (e.g., vehicle condition, missing documentation)."
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none text-sm text-gray-900 transition-all duration-200 resize-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Vehicle Condition Media</label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,video/*"
-                    onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
-                    className="text-sm text-gray-700"
-                  />
-                  {serviceIntakeForm.photosVideos.files.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                      {serviceIntakeForm.photosVideos.files.map((file, index) => (
-                        <div key={index} className="relative rounded-lg overflow-hidden">
-                          {file.type.startsWith("image/") ? (
-                            <img
-                              src={serviceIntakeForm.photosVideos.urls[index]}
-                              alt={file.name}
-                              className="w-full h-24 object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-24 bg-gray-100 flex items-center justify-center text-xs text-gray-500">
-                              {file.name}
-                            </div>
-                          )}
-                          <button
-                            onClick={() => handleRemoveDocument("photosVideos", index)}
-                            className="absolute top-1 right-1 text-white bg-black/50 rounded-full p-1"
-                            type="button"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Service Intake Form (Service Advisor Only - When Customer Arrived) */}
-            {isServiceAdvisor && customerArrivalStatus === "arrived" && (
-              <div className="space-y-6 border-t border-gray-200 pt-6">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">Service Intake Form</h3>
-
-                {/* Documentation Section */}
-                <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 rounded-xl border border-indigo-200">
-                  <h4 className="text-lg font-semibold text-indigo-900 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                    Documentation
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Customer ID Proof */}
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                      <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Customer ID Proof
-                      </label>
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                            <div className="flex flex-col items-center gap-2">
-                              <Upload className="text-indigo-600" size={24} />
-                              <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                              <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
-                            </div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              accept=".pdf,.jpg,.jpeg,.png"
-                              multiple
-                              onChange={(e) => handleDocumentUpload("customerIdProof", e.target.files)}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCamera("customerIdProof")}
-                            className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
-                            title="Capture from camera"
-                          >
-                            <Camera size={24} />
-                            <span className="text-xs font-medium">Camera</span>
-                          </button>
-                        </div>
-                        {serviceIntakeForm.customerIdProof.files.length > 0 && (
-                          <div className="space-y-2">
-                            {serviceIntakeForm.customerIdProof.files.map((file, index) => (
-                              <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                <FileText className="text-indigo-600 shrink-0" size={18} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                                  <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                                </div>
-                                <button
-                                  onClick={() => handleRemoveDocument("customerIdProof", index)}
-                                  className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                                  title="Remove file"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Vehicle RC Copy */}
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                      <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Vehicle RC Copy
-                      </label>
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                            <div className="flex flex-col items-center gap-2">
-                              <Upload className="text-indigo-600" size={24} />
-                              <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                              <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
-                            </div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              accept=".pdf,.jpg,.jpeg,.png"
-                              multiple
-                              onChange={(e) => handleDocumentUpload("vehicleRCCopy", e.target.files)}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCamera("vehicleRCCopy")}
-                            className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
-                            title="Capture from camera"
-                          >
-                            <Camera size={24} />
-                            <span className="text-xs font-medium">Camera</span>
-                          </button>
-                        </div>
-                        {serviceIntakeForm.vehicleRCCopy.files.length > 0 && (
-                          <div className="space-y-2">
-                            {serviceIntakeForm.vehicleRCCopy.files.map((file, index) => (
-                              <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                <FileText className="text-indigo-600 shrink-0" size={18} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                                  <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                                </div>
-                                <button
-                                  onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
-                                  className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                                  title="Remove file"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Warranty Card / Service Book */}
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                      <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Warranty Card / Service Book
-                      </label>
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                            <div className="flex flex-col items-center gap-2">
-                              <Upload className="text-indigo-600" size={24} />
-                              <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                              <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
-                            </div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              accept=".pdf,.jpg,.jpeg,.png"
-                              multiple
-                              onChange={(e) => handleDocumentUpload("warrantyCardServiceBook", e.target.files)}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCamera("warrantyCardServiceBook")}
-                            className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
-                            title="Capture from camera"
-                          >
-                            <Camera size={24} />
-                            <span className="text-xs font-medium">Camera</span>
-                          </button>
-                        </div>
-                        {serviceIntakeForm.warrantyCardServiceBook.files.length > 0 && (
-                          <div className="space-y-2">
-                            {serviceIntakeForm.warrantyCardServiceBook.files.map((file, index) => (
-                              <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                <FileText className="text-indigo-600 shrink-0" size={18} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                                  <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                                </div>
-                                <button
-                                  onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
-                                  className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                                  title="Remove file"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Photos/Videos of Vehicle at Drop-off */}
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                      <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Photos/Videos of Vehicle at Drop-off
-                      </label>
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                            <div className="flex flex-col items-center gap-2">
-                              <ImageIcon className="text-indigo-600" size={24} />
-                              <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                              <span className="text-xs text-gray-500">JPG, PNG, MP4, MOV (Max 50MB)</span>
-                            </div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              accept=".jpg,.jpeg,.png,.mp4,.mov"
-                              multiple
-                              onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCamera("photosVideos")}
-                            className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
-                            title="Capture from camera"
-                          >
-                            <Camera size={24} />
-                            <span className="text-xs font-medium">Camera</span>
-                          </button>
-                        </div>
-                        {serviceIntakeForm.photosVideos.files.length > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            {serviceIntakeForm.photosVideos.files.map((file, index) => (
-                              <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                                {file.type.startsWith("image/") ? (
-                                  <Image
-                                    src={serviceIntakeForm.photosVideos.urls[index]}
-                                    alt={file.name}
-                                    width={128}
-                                    height={128}
-                                    className="w-full h-32 object-cover"
-                                    unoptimized
-                                  />
-                                ) : (
-                                  <div className="w-full h-32 flex items-center justify-center bg-gray-100">
-                                    <FileText className="text-gray-400" size={32} />
-                                  </div>
-                                )}
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <button
-                                    onClick={() => handleRemoveDocument("photosVideos", index)}
-                                    className="text-white hover:text-red-300 p-2 rounded transition"
-                                    title="Remove file"
-                                  >
-                                    <Trash2 size={20} />
-                                  </button>
-                                </div>
-                                <div className="p-2 bg-white">
-                                  <p className="text-xs font-medium text-gray-800 truncate">{file.name}</p>
-                                  <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Vehicle Information Section */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
-                  <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-green-600 rounded"></span>
-                    Vehicle Information
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormInput
-                      label="Vehicle Brand"
-                      required
-                      value={serviceIntakeForm.vehicleBrand}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, vehicleBrand: e.target.value })}
-                      placeholder="Enter vehicle brand"
-                    />
-                    <FormInput
-                      label="Vehicle Model"
-                      required
-                      value={serviceIntakeForm.vehicleModel}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, vehicleModel: e.target.value })}
-                      placeholder="Enter vehicle model"
-                    />
-                    <FormInput
-                      label="Registration Number"
-                      required
-                      value={serviceIntakeForm.registrationNumber}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, registrationNumber: e.target.value.toUpperCase() })}
-                      placeholder="Enter registration number"
-                    />
-                    <FormInput
-                      label="VIN / Chassis Number"
-                      value={serviceIntakeForm.vinChassisNumber}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, vinChassisNumber: e.target.value.toUpperCase() })}
-                      placeholder="Enter VIN/Chassis number"
-                    />
-                    <FormInput
-                      label="Variant / Battery Capacity"
-                      value={serviceIntakeForm.variantBatteryCapacity}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, variantBatteryCapacity: e.target.value })}
-                      placeholder="Enter variant/battery capacity"
-                    />
-                    <FormInput
-                      label="Motor Number"
-                      value={serviceIntakeForm.motorNumber}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, motorNumber: e.target.value })}
-                      placeholder="Enter motor number"
-                    />
-                    <FormInput
-                      label="Charger Serial Number"
-                      value={serviceIntakeForm.chargerSerialNumber}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, chargerSerialNumber: e.target.value })}
-                      placeholder="Enter charger serial number"
-                    />
-                    <div>
-                      <FormInput
-                        label="Date of Purchase"
-                        value={serviceIntakeForm.dateOfPurchase}
-                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, dateOfPurchase: e.target.value })}
-                        type="date"
-                      />
-                      {serviceIntakeForm.dateOfPurchase && (() => {
-                        const purchaseDate = new Date(serviceIntakeForm.dateOfPurchase);
-                        const today = new Date();
-                        const yearsDiff = today.getFullYear() - purchaseDate.getFullYear();
-                        const monthsDiff = today.getMonth() - purchaseDate.getMonth();
-                        let vehicleAge = "";
-                        if (yearsDiff > 0) {
-                          vehicleAge = monthsDiff >= 0
-                            ? `${yearsDiff} year${yearsDiff > 1 ? 's' : ''}`
-                            : `${yearsDiff - 1} year${yearsDiff - 1 > 1 ? 's' : ''}`;
-                        } else if (monthsDiff > 0) {
-                          vehicleAge = `${monthsDiff} month${monthsDiff > 1 ? 's' : ''}`;
-                        } else {
-                          vehicleAge = "Less than 1 month";
-                        }
-                        return (
-                          <div className="mt-2">
-                            <p className="text-sm text-gray-600">
-                              <span className="font-medium">Vehicle Age:</span> {vehicleAge}
-                            </p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <FormSelect
-                      label="Warranty Status"
-                      value={serviceIntakeForm.warrantyStatus}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, warrantyStatus: e.target.value })}
-                      options={[
-                        { value: "", label: "Select warranty status" },
-                        { value: "Active", label: "Active" },
-                        { value: "Expired", label: "Expired" },
-                        { value: "Not Applicable", label: "Not Applicable" },
-                      ]}
-                    />
-                    <FormInput
-                      label="Insurance Start Date"
-                      value={serviceIntakeForm.insuranceStartDate}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, insuranceStartDate: e.target.value })}
-                      type="date"
-                    />
-                    <FormInput
-                      label="Insurance End Date"
-                      value={serviceIntakeForm.insuranceEndDate}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, insuranceEndDate: e.target.value })}
-                      type="date"
-                    />
-                    <FormInput
-                      label="Insurance Company Name"
-                      value={serviceIntakeForm.insuranceCompanyName}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, insuranceCompanyName: e.target.value })}
-                      placeholder="Enter insurance company name"
-                    />
-                  </div>
-                </div>
-
-                {/* Service Details Section */}
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-5 rounded-xl border border-purple-200">
-                  <h4 className="text-lg font-semibold text-purple-900 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-purple-600 rounded"></span>
-                    Service Details
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormSelect
-                      label="Service Type"
-                      required
-                      value={serviceIntakeForm.serviceType}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, serviceType: e.target.value })}
-                      placeholder="Select service type"
-                      options={SERVICE_TYPES.map((type) => ({ value: type, label: type }))}
-                    />
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Customer Complaint / Issue Description <span className="text-red-500">*</span>
-                      </label>
-                      <textarea
-                        value={serviceIntakeForm.customerComplaintIssue}
-                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, customerComplaintIssue: e.target.value })}
-                        rows={3}
-                        placeholder="Describe the customer complaint or issue..."
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
-                      />
-                    </div>
-                    {/* Additional fields */}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Previous Service History
-                      </label>
-                      <textarea
-                        value={serviceIntakeForm.previousServiceHistory}
-                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, previousServiceHistory: e.target.value })}
-                        rows={3}
-                        placeholder="Enter previous service history..."
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
-                      />
-                    </div>
-                    <FormInput
-                      label="Estimated Service Time"
-                      value={serviceIntakeForm.estimatedServiceTime}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, estimatedServiceTime: e.target.value })}
-                      placeholder="e.g., 2 hours"
-                    />
-                    <FormInput
-                      label="Estimated Cost"
-                      value={serviceIntakeForm.estimatedCost}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, estimatedCost: e.target.value })}
-                      placeholder="Enter estimated cost"
-                      type="number"
-                    />
-                    <FormInput
-                      label="Odometer Reading"
-                      value={serviceIntakeForm.odometerReading}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, odometerReading: e.target.value })}
-                      placeholder="Enter odometer reading"
-                      type="number"
-                    />
-                  </div>
-                </div>
-
-                {/* Operational Details Section (Job Card) */}
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-5 rounded-xl border border-blue-200">
-                  <h4 className="text-lg font-semibold text-blue-900 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-blue-600 rounded"></span>
-                    Operational Details (Job Card)
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Estimated Delivery Date (Service Advisor & Service Manager) */}
-                    <FormInput
-                      label="Estimated Delivery Date"
-                      type="date"
-                      value={serviceIntakeForm.estimatedDeliveryDate}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, estimatedDeliveryDate: e.target.value })}
-                    />
-
-                    {/* Assigned Service Advisor (Call Center, Service Advisor, Service Manager) */}
-                    <FormInput
-                      label="Assigned Service Advisor"
-                      value={serviceIntakeForm.assignedServiceAdvisor}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, assignedServiceAdvisor: e.target.value })}
-                      placeholder="Enter service advisor name"
-                    />
-
-                    {/* Assigned Technician (Service Advisor & Service Manager) */}
-                    <FormInput
-                      label="Assigned Technician"
-                      value={serviceIntakeForm.assignedTechnician}
-                      onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, assignedTechnician: e.target.value })}
-                      placeholder="Enter technician name"
-                    />
-
-                    {/* Pickup / Drop Required */}
-                    <div className="md:col-span-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={serviceIntakeForm.pickupDropRequired}
-                          onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, pickupDropRequired: e.target.checked })}
-                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                        />
-                        <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
-                      </label>
-                    </div>
-
-                    {/* Pickup Address */}
-                    {serviceIntakeForm.pickupDropRequired && (
-                      <FormInput
-                        label="Pickup Address"
-                        value={serviceIntakeForm.pickupAddress}
-                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, pickupAddress: e.target.value })}
-                        placeholder="Enter pickup address"
-                      />
-                    )}
-
-                    {/* Drop Address */}
-                    {serviceIntakeForm.pickupDropRequired && (
-                      <FormInput
-                        label="Drop Address"
-                        value={serviceIntakeForm.dropAddress}
-                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, dropAddress: e.target.value })}
-                        placeholder="Enter drop address"
-                      />
-                    )}
-
-                    {/* Preferred Communication Mode */}
-                    <div className="md:col-span-2">
-                      <FormSelect
-                        label="Preferred Communication Mode"
-                        value={serviceIntakeForm.preferredCommunicationMode}
-                        onChange={(e) => setServiceIntakeForm({ ...serviceIntakeForm, preferredCommunicationMode: e.target.value as "Phone" | "Email" | "SMS" | "WhatsApp" | "" })}
-                        placeholder="Select communication mode"
-                        options={[
-                          { value: "Phone", label: "Phone" },
-                          { value: "Email", label: "Email" },
-                          { value: "SMS", label: "SMS" },
-                          { value: "WhatsApp", label: "WhatsApp" },
-                        ]}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Cost Estimation Note (Billing & Payment fields removed - only available during invoice creation) */}
-                {canViewCostEstimation && (
-                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-5 rounded-xl border border-blue-200">
-                    <h4 className="text-lg font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                      <span className="w-1 h-6 bg-blue-600 rounded"></span>
-                      Cost Estimation
-                    </h4>
-                    <FormInput
-                      label="Estimated Cost"
-                      value={serviceIntakeForm.estimatedCost ? `₹${serviceIntakeForm.estimatedCost}` : ""}
-                      onChange={() => { }}
-                      readOnly
-                      placeholder="Cost will be determined during service"
-                    />
-                    <p className="text-xs text-gray-600 mt-2">
-                      Note: Payment method, GST requirement, and billing details will be collected when creating the invoice during vehicle delivery.
-                    </p>
-                  </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => {
-                      setCustomerArrivalStatus(null);
-                      setServiceIntakeForm(INITIAL_SERVICE_INTAKE_FORM);
-                    }}
-                    className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveDraft}
-                    disabled={!currentJobCardId}
-                    className={`flex-1 rounded-lg px-4 py-3 font-medium transition ${currentJobCardId
-                        ? "bg-yellow-100 text-yellow-700 border border-yellow-200 hover:bg-yellow-200"
-                        : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      }`}
-                  >
-                    Save as Draft
-                  </button>
-                  <button
-                    onClick={handleConvertToQuotation}
-                    className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center gap-2"
-                  >
-                    <FileText size={18} />
-                    Convert into Estimation/Quotation
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4 border-t border-gray-200">
-              <button
-                onClick={() => handleDeleteAppointment(selectedAppointment.id)}
-                className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-700 transition"
-              >
-                Delete Appointment
-              </button>
-            </div>
           </div>
         )}
-      </Modal>
-
-      {/* Vehicle Details Modal */}
-      <Modal
-        show={showVehicleDetails}
-        onClose={closeVehicleDetailsModal}
-        title="Vehicle Details"
-        subtitle={selectedAppointment ? `${selectedAppointment.vehicle} - ${selectedAppointment.customerName}` : undefined}
-        maxWidth="4xl"
-      >
-        <div className="space-y-6">
-          {selectedVehicle ? (
-            <>
-              {/* Vehicle Information */}
-              <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 rounded-xl border border-indigo-200">
-                <h3 className="text-lg font-semibold text-indigo-900 mb-4 flex items-center gap-2">
-                  <Car size={20} />
-                  Vehicle Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Vehicle Brand</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.vehicleMake}</p>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Vehicle Model</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.vehicleModel}</p>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Year</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.vehicleYear}</p>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Registration Number</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.registration}</p>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">VIN / Chassis Number</p>
-                    <p className="text-gray-800 font-semibold font-mono text-xs break-all">{selectedVehicle.vin}</p>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Color</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.vehicleColor}</p>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Status</p>
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${selectedVehicle.currentStatus === "Active Job Card"
-                          ? "bg-orange-100 text-orange-700"
-                          : "bg-green-100 text-green-700"
-                        }`}
-                    >
-                      {selectedVehicle.currentStatus}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Total Services</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.totalServices}</p>
-                  </div>
-                  <div>
-                    <p className="text-indigo-600 font-medium mb-1">Total Spent</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.totalSpent}</p>
-                  </div>
-                  {selectedVehicle.lastServiceDate && (
-                    <div>
-                      <p className="text-indigo-600 font-medium mb-1">Last Service Date</p>
-                      <p className="text-gray-800 font-semibold">{selectedVehicle.lastServiceDate}</p>
-                    </div>
-                  )}
-                  {selectedVehicle.nextServiceDate && (
-                    <div>
-                      <p className="text-indigo-600 font-medium mb-1">Next Service Date</p>
-                      <p className="text-gray-800 font-semibold">{selectedVehicle.nextServiceDate}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Customer Information */}
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <User size={20} />
-                  Customer Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-gray-600 font-medium mb-1">Customer Name</p>
-                    <p className="text-gray-800 font-semibold">{selectedVehicle.customerName}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600 font-medium mb-1">Phone Number</p>
-                    <p className="text-gray-800 font-semibold flex items-center gap-2">
-                      <Phone size={14} />
-                      {selectedVehicle.phone}
-                    </p>
-                  </div>
-                  {selectedVehicle.customerEmail && (
-                    <div>
-                      <p className="text-gray-600 font-medium mb-1">Email</p>
-                      <p className="text-gray-800 font-semibold">{selectedVehicle.customerEmail}</p>
-                    </div>
-                  )}
-                  {selectedVehicle.customerAddress && (
-                    <div>
-                      <p className="text-gray-600 font-medium mb-1">Address</p>
-                      <p className="text-gray-800 font-semibold">{selectedVehicle.customerAddress}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-12">
-              <Car className="mx-auto text-gray-400 mb-4" size={48} />
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">Loading Vehicle Details...</h3>
-              <p className="text-gray-600">Searching for vehicle information...</p>
-              {customerSearchLoading && (
-                <div className="mt-4 flex justify-center">
-                  <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-              {!customerSearchLoading && customerSearchResults.length === 0 && selectedAppointment && (
-                <div className="mt-6 bg-gray-50 p-4 rounded-lg border border-gray-200 text-left max-w-md mx-auto">
-                  <h4 className="font-semibold text-gray-800 mb-3">Appointment Information</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-gray-600 font-medium mb-1">Customer</p>
-                      <p className="text-gray-800">{selectedAppointment.customerName}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600 font-medium mb-1">Phone</p>
-                      <p className="text-gray-800">{selectedAppointment.phone}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600 font-medium mb-1">Vehicle</p>
-                      <p className="text-gray-800">{selectedAppointment.vehicle}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600 font-medium mb-1">Service Type</p>
-                      <p className="text-gray-800">{selectedAppointment.serviceType}</p>
-                    </div>
-                  </div>
-                  <p className="text-gray-500 text-xs mt-4">
-                    Vehicle details not found in the system. The vehicle may not be registered yet.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
       </Modal>
 
       {showCheckInSlipModal && checkInSlipData && (
@@ -3337,6 +2500,9 @@ function AppointmentsContent() {
           canAccessCustomerType={canEditCustomerInformation}
           canAccessVehicleInfo={canEditVehicleInformation}
           existingAppointments={appointments.filter(apt => apt.id !== selectedAppointment?.id)} // Exclude current appointment from conflict check
+          onCustomerArrived={isServiceAdvisor ? handleCustomerArrivedFromForm : undefined}
+          appointmentStatus={selectedAppointment?.status}
+          customerArrived={selectedAppointment?.status === "In Progress" || selectedAppointment?.status === "Sent to Manager"}
         />
       )}
 

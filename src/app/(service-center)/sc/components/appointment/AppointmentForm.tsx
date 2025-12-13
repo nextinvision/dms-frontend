@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import Image from "next/image";
 import {
   Calendar,
   Clock,
@@ -9,12 +10,16 @@ import {
   Search,
   X,
   CheckCircle,
+  Camera,
+  Trash2,
+  Image as ImageIcon,
+  AlertCircle,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
 import { defaultServiceCenters } from "../service-center";
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 import { INDIAN_STATES, getCitiesByState } from "@/shared/constants/indian-states-cities";
-import { FormInput, FormSelect, formatVehicleString } from "../shared";
+import { FormInput, FormSelect, formatVehicleString, CameraModal } from "../shared";
 import { findNearestServiceCenter } from "./types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { AppointmentForm as AppointmentFormType } from "./types";
@@ -41,6 +46,9 @@ export interface AppointmentFormProps {
   customerSearchResults?: CustomerWithVehicles[];
   customerSearchLoading?: boolean;
   onVehicleChange?: (vehicle: Vehicle | null) => void;
+  onCustomerArrived?: (form: AppointmentFormType) => void;
+  appointmentStatus?: string;
+  customerArrived?: boolean;
 }
 
 export const AppointmentForm = ({
@@ -56,6 +64,9 @@ export const AppointmentForm = ({
   customerSearchResults = [],
   customerSearchLoading = false,
   onVehicleChange,
+  onCustomerArrived,
+  appointmentStatus,
+  customerArrived,
 }: AppointmentFormProps) => {
   const { userRole, userInfo } = useRole();
   const isCallCenter = userRole === "call_center";
@@ -288,6 +299,82 @@ export const AppointmentForm = ({
     }
   }, [fieldErrors]);
 
+  // Document handlers
+  const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+
+  const handleDocumentUpload = useCallback(
+    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
+      if (!files || files.length === 0) return;
+
+      const fileArray = Array.from(files);
+      const existingFiles = formData[field]?.files || [];
+      const existingUrls = formData[field]?.urls || [];
+
+      const newUrls = fileArray.map((file) => URL.createObjectURL(file));
+
+      updateFormData({
+        [field]: {
+          files: [...existingFiles, ...fileArray],
+          urls: [...existingUrls, ...newUrls],
+        },
+      });
+    },
+    [formData, updateFormData]
+  );
+
+  const handleRemoveDocument = useCallback(
+    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
+      const existingFiles = formData[field]?.files || [];
+      const existingUrls = formData[field]?.urls || [];
+
+      // Revoke URL to free memory
+      if (existingUrls[index]) {
+        URL.revokeObjectURL(existingUrls[index]);
+      }
+
+      const newFiles = existingFiles.filter((_, i) => i !== index);
+      const newUrls = existingUrls.filter((_, i) => i !== index);
+
+      updateFormData({
+        [field]: {
+          files: newFiles,
+          urls: newUrls,
+        },
+      });
+    },
+    [formData, updateFormData]
+  );
+
+  const handleOpenCamera = useCallback(
+    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos") => {
+      setCameraDocumentType(field);
+      setCameraModalOpen(true);
+    },
+    []
+  );
+
+  const handleCameraCapture = useCallback(
+    (file: File) => {
+      if (!cameraDocumentType) return;
+
+      const newUrl = URL.createObjectURL(file);
+      const existingFiles = formData[cameraDocumentType]?.files || [];
+      const existingUrls = formData[cameraDocumentType]?.urls || [];
+
+      updateFormData({
+        [cameraDocumentType]: {
+          files: [...existingFiles, file],
+          urls: [...existingUrls, newUrl],
+        },
+      });
+
+      setCameraModalOpen(false);
+      setCameraDocumentType(null);
+    },
+    [cameraDocumentType, formData, updateFormData]
+  );
+
   return (
     <div className="space-y-6 p-6">
       {validationError && (
@@ -476,129 +563,380 @@ export const AppointmentForm = ({
 
       {/* Documentation Section */}
       {(hasDocUploadAccess || hasDropoffMediaAccess) && (
-        <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Upload className="text-amber-600" size={20} />
+        <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 rounded-xl border border-indigo-200">
+          <h4 className="text-lg font-semibold text-indigo-900 mb-4 flex items-center gap-2">
+            <span className="w-1 h-6 bg-indigo-600 rounded"></span>
             Documentation
-          </h3>
-          <div className="space-y-4">
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {hasDocUploadAccess && (
               <>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Customer ID Proof <span className="text-xs font-normal text-gray-500">(Optional)</span>
+                {/* Customer ID Proof */}
+                <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Customer ID Proof
                   </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      const urls = files.map((file) => URL.createObjectURL(file));
-                      updateFormData({
-                        customerIdProof: { files, urls },
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                  />
-                  {formData.customerIdProof?.files && formData.customerIdProof.files.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {formData.customerIdProof.files.map((file, index) => (
-                        <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                          {file.name}
-                        </span>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="text-indigo-600" size={24} />
+                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
+                          onChange={(e) => handleDocumentUpload("customerIdProof", e.target.files)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCamera("customerIdProof")}
+                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                        title="Capture from camera"
+                      >
+                        <Camera size={24} />
+                        <span className="text-xs font-medium">Camera</span>
+                      </button>
                     </div>
-                  )}
+                    {formData.customerIdProof?.files && formData.customerIdProof.files.length > 0 && (
+                      <div className="space-y-2">
+                        {formData.customerIdProof.files.map((file, index) => (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveDocument("customerIdProof", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Vehicle RC Copy <span className="text-xs font-normal text-gray-500">(Optional)</span>
+
+                {/* Vehicle RC Copy */}
+                <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Vehicle RC Copy
                   </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      const urls = files.map((file) => URL.createObjectURL(file));
-                      updateFormData({
-                        vehicleRCCopy: { files, urls },
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                  />
-                  {formData.vehicleRCCopy?.files && formData.vehicleRCCopy.files.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {formData.vehicleRCCopy.files.map((file, index) => (
-                        <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                          {file.name}
-                        </span>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="text-indigo-600" size={24} />
+                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
+                          onChange={(e) => handleDocumentUpload("vehicleRCCopy", e.target.files)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCamera("vehicleRCCopy")}
+                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                        title="Capture from camera"
+                      >
+                        <Camera size={24} />
+                        <span className="text-xs font-medium">Camera</span>
+                      </button>
                     </div>
-                  )}
+                    {formData.vehicleRCCopy?.files && formData.vehicleRCCopy.files.length > 0 && (
+                      <div className="space-y-2">
+                        {formData.vehicleRCCopy.files.map((file, index) => (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+
+                {/* Warranty Card / Service Book */}
+                <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
                     Warranty Card / Service Book
                   </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      const urls = files.map((file) => URL.createObjectURL(file));
-                      updateFormData({
-                        warrantyCardServiceBook: { files, urls },
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                  />
-                  {formData.warrantyCardServiceBook?.files && formData.warrantyCardServiceBook.files.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {formData.warrantyCardServiceBook.files.map((file, index) => (
-                        <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                          {file.name}
-                        </span>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="text-indigo-600" size={24} />
+                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
+                          onChange={(e) => handleDocumentUpload("warrantyCardServiceBook", e.target.files)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCamera("warrantyCardServiceBook")}
+                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                        title="Capture from camera"
+                      >
+                        <Camera size={24} />
+                        <span className="text-xs font-medium">Camera</span>
+                      </button>
                     </div>
-                  )}
+                    {formData.warrantyCardServiceBook?.files && formData.warrantyCardServiceBook.files.length > 0 && (
+                      <div className="space-y-2">
+                        {formData.warrantyCardServiceBook.files.map((file, index) => (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>
             )}
             {hasDropoffMediaAccess && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
                   Photos/Videos of Vehicle at Drop-off
                 </label>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || []);
-                    const urls = files.map((file) => URL.createObjectURL(file));
-                    updateFormData({
-                      photosVideos: { files, urls },
-                    });
-                  }}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                />
-                {formData.photosVideos?.files && formData.photosVideos.files.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {formData.photosVideos.files.map((file, index) => (
-                      <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                        {file.name}
-                      </span>
-                    ))}
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                      <div className="flex flex-col items-center gap-2">
+                        <ImageIcon className="text-indigo-600" size={24} />
+                        <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                        <span className="text-xs text-gray-500">JPG, PNG, MP4, MOV (Max 50MB)</span>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".jpg,.jpeg,.png,.mp4,.mov"
+                        multiple
+                        onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCamera("photosVideos")}
+                      className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                      title="Capture from camera"
+                    >
+                      <Camera size={24} />
+                      <span className="text-xs font-medium">Camera</span>
+                    </button>
                   </div>
-                )}
+                  {formData.photosVideos?.files && formData.photosVideos.files.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {formData.photosVideos.files.map((file, index) => (
+                        <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                          {file.type.startsWith("image/") ? (
+                            <Image
+                              src={formData.photosVideos?.urls[index] || ""}
+                              alt={file.name}
+                              width={128}
+                              height={128}
+                              className="w-full h-32 object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="w-full h-32 flex items-center justify-center bg-gray-100">
+                              <FileText className="text-gray-400" size={32} />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button
+                              onClick={() => handleRemoveDocument("photosVideos", index)}
+                              className="text-white hover:text-red-300 p-2 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          </div>
+                          <div className="p-2 bg-white">
+                            <p className="text-xs font-medium text-gray-800 truncate">{file.name}</p>
+                            <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </div>
       )}
+
+      {/* Camera Modal */}
+      {cameraModalOpen && cameraDocumentType && (
+        <CameraModal
+          isOpen={cameraModalOpen}
+          onClose={() => {
+            setCameraModalOpen(false);
+            setCameraDocumentType(null);
+          }}
+          onCapture={handleCameraCapture}
+        />
+      )}
+
+      {/* Vehicle Information Section */}
+      <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
+        <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
+          <span className="w-1 h-6 bg-green-600 rounded"></span>
+          Vehicle Information
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormInput
+            label="Vehicle Brand"
+            value={formData.vehicleBrand || ""}
+            onChange={(e) => updateFormData({ vehicleBrand: e.target.value })}
+            placeholder="Enter vehicle brand"
+          />
+          <FormInput
+            label="Vehicle Model"
+            value={formData.vehicleModel || ""}
+            onChange={(e) => updateFormData({ vehicleModel: e.target.value })}
+            placeholder="Enter vehicle model"
+          />
+          <FormInput
+            label="Registration Number"
+            value={formData.registrationNumber || ""}
+            onChange={(e) => updateFormData({ registrationNumber: e.target.value.toUpperCase() })}
+            placeholder="Enter registration number"
+          />
+          <FormInput
+            label="VIN / Chassis Number"
+            value={formData.vinChassisNumber || ""}
+            onChange={(e) => updateFormData({ vinChassisNumber: e.target.value.toUpperCase() })}
+            placeholder="Enter VIN/Chassis number"
+          />
+          <FormInput
+            label="Variant / Battery Capacity"
+            value={formData.variantBatteryCapacity || ""}
+            onChange={(e) => updateFormData({ variantBatteryCapacity: e.target.value })}
+            placeholder="Enter variant/battery capacity"
+          />
+          <FormInput
+            label="Motor Number"
+            value={formData.motorNumber || ""}
+            onChange={(e) => updateFormData({ motorNumber: e.target.value })}
+            placeholder="Enter motor number"
+          />
+          <FormInput
+            label="Charger Serial Number"
+            value={formData.chargerSerialNumber || ""}
+            onChange={(e) => updateFormData({ chargerSerialNumber: e.target.value })}
+            placeholder="Enter charger serial number"
+          />
+          <div>
+            <FormInput
+              label="Date of Purchase"
+              type="date"
+              value={formData.dateOfPurchase || ""}
+              onChange={(e) => updateFormData({ dateOfPurchase: e.target.value })}
+            />
+            {formData.dateOfPurchase && (() => {
+              const purchaseDate = new Date(formData.dateOfPurchase);
+              const today = new Date();
+              const yearsDiff = today.getFullYear() - purchaseDate.getFullYear();
+              const monthsDiff = today.getMonth() - purchaseDate.getMonth();
+              let vehicleAge = "";
+              if (yearsDiff > 0) {
+                vehicleAge = monthsDiff >= 0
+                  ? `${yearsDiff} year${yearsDiff > 1 ? 's' : ''}`
+                  : `${yearsDiff - 1} year${yearsDiff - 1 > 1 ? 's' : ''}`;
+              } else if (monthsDiff > 0) {
+                vehicleAge = `${monthsDiff} month${monthsDiff > 1 ? 's' : ''}`;
+              } else {
+                vehicleAge = "Less than 1 month";
+              }
+              return (
+                <div className="mt-2">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Vehicle Age:</span> {vehicleAge}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+          <FormSelect
+            label="Warranty Status"
+            value={formData.warrantyStatus || ""}
+            onChange={(e) => updateFormData({ warrantyStatus: e.target.value })}
+            placeholder="Select warranty status"
+            options={[
+              { value: "", label: "Select warranty status" },
+              { value: "Active", label: "Active" },
+              { value: "Expired", label: "Expired" },
+              { value: "Not Applicable", label: "Not Applicable" },
+            ]}
+          />
+          <FormInput
+            label="Insurance Start Date"
+            type="date"
+            value={formData.insuranceStartDate || ""}
+            onChange={(e) => updateFormData({ insuranceStartDate: e.target.value })}
+          />
+          <FormInput
+            label="Insurance End Date"
+            type="date"
+            value={formData.insuranceEndDate || ""}
+            onChange={(e) => updateFormData({ insuranceEndDate: e.target.value })}
+          />
+          <FormInput
+            label="Insurance Company Name"
+            value={formData.insuranceCompanyName || ""}
+            onChange={(e) => updateFormData({ insuranceCompanyName: e.target.value })}
+            placeholder="Enter insurance company name"
+          />
+          <FormInput
+            label="Vehicle Color"
+            value={formData.vehicleColor || ""}
+            onChange={(e) => updateFormData({ vehicleColor: e.target.value })}
+            placeholder="Enter vehicle color"
+          />
+        </div>
+      </div>
 
       {/* Date and Time */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -968,6 +1306,44 @@ export const AppointmentForm = ({
               <li key={field}>{error}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Customer Arrival Section (Service Advisor Only) */}
+      {isServiceAdvisor && 
+       onCustomerArrived && 
+       appointmentStatus && 
+       appointmentStatus !== "In Progress" && 
+       appointmentStatus !== "Sent to Manager" && (
+        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <CheckCircle size={20} className="text-blue-600" />
+            Customer Arrival
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Mark customer arrival status. This will update the appointment status when you save.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (onCustomerArrived) {
+                  onCustomerArrived({ ...formData });
+                }
+              }}
+              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
+            >
+              <CheckCircle size={18} />
+              Customer Arrived
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              Customer Not Arrived
+            </button>
+          </div>
         </div>
       )}
 
