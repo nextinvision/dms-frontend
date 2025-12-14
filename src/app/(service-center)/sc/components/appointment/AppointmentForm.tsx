@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import Image from "next/image";
 import {
   Calendar,
   Clock,
@@ -9,12 +10,16 @@ import {
   Search,
   X,
   CheckCircle,
+  Camera,
+  Trash2,
+  Image as ImageIcon,
+  AlertCircle,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
 import { defaultServiceCenters } from "../service-center";
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 import { INDIAN_STATES, getCitiesByState } from "@/shared/constants/indian-states-cities";
-import { FormInput, FormSelect, formatVehicleString } from "../shared";
+import { FormInput, FormSelect, formatVehicleString, CameraModal } from "../shared";
 import { findNearestServiceCenter } from "./types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { AppointmentForm as AppointmentFormType } from "./types";
@@ -26,7 +31,7 @@ import {
   getMinTime,
 } from "@/shared/utils/date";
 import { validatePhone } from "@/shared/utils/validation";
-import { getInitialAppointmentForm } from "./utils";
+import { getInitialAppointmentForm, mapVehicleToFormData, mapCustomerToFormData } from "./utils";
 
 export interface AppointmentFormProps {
   initialData?: Partial<AppointmentFormType>;
@@ -41,6 +46,10 @@ export interface AppointmentFormProps {
   customerSearchResults?: CustomerWithVehicles[];
   customerSearchLoading?: boolean;
   onVehicleChange?: (vehicle: Vehicle | null) => void;
+  onCustomerArrived?: (form: AppointmentFormType) => void;
+  appointmentStatus?: string;
+  customerArrived?: boolean;
+  onCreateQuotation?: (form: AppointmentFormType) => void;
 }
 
 export const AppointmentForm = ({
@@ -56,6 +65,10 @@ export const AppointmentForm = ({
   customerSearchResults = [],
   customerSearchLoading = false,
   onVehicleChange,
+  onCustomerArrived,
+  appointmentStatus,
+  customerArrived,
+  onCreateQuotation,
 }: AppointmentFormProps) => {
   const { userRole, userInfo } = useRole();
   const isCallCenter = userRole === "call_center";
@@ -81,9 +94,6 @@ export const AppointmentForm = ({
   const canAccessPreferredCommunication = hasRoleAccess(["call_center", "service_advisor", "sc_manager"]);
   const canAccessPickupAddress = hasRoleAccess(["call_center", "service_advisor"]);
   const canAssignServiceCenter = canAccessOperationalDetails;
-  const canAccessPostServiceSurvey = hasRoleAccess(["call_center", "service_advisor", "sc_manager", "service_engineer"]);
-  const canAccessServiceStatus = hasRoleAccess(["call_center", "service_advisor", "sc_manager", "service_engineer"]);
-  const canAccessAMCStatus = hasRoleAccess(["call_center", "service_advisor", "sc_manager"]);
   const canViewCostEstimation = canAccessEstimatedCost || isInventoryManager;
 
   // Form state
@@ -153,16 +163,51 @@ export const AppointmentForm = ({
         ...prev,
         ...initialData,
       }));
+      
+      // Initialize pickup/drop state and city from initialData
+      if (initialData.pickupState) {
+        setPickupState(initialData.pickupState);
+      }
+      if (initialData.pickupCity) {
+        setPickupCity(initialData.pickupCity);
+      }
+      if (initialData.dropState) {
+        setDropState(initialData.dropState);
+      }
+      if (initialData.dropCity) {
+        setDropCity(initialData.dropCity);
+      }
+      // Initialize pickupAddressDifferent if pickup address exists
+      if (initialData.pickupAddress) {
+        setPickupAddressDifferent(true);
+      }
+      // Initialize dropSameAsPickup if drop address matches pickup
+      if (initialData.dropAddress && 
+          initialData.dropAddress === initialData.pickupAddress &&
+          initialData.dropState === initialData.pickupState &&
+          initialData.dropCity === initialData.pickupCity &&
+          initialData.dropPincode === initialData.pickupPincode) {
+        setDropSameAsPickup(true);
+      }
     }
   }, [initialData]);
 
   // Update form when customer/vehicle info changes
   useEffect(() => {
     if (selectedCustomer) {
+      const customerData = mapCustomerToFormData(selectedCustomer);
       setFormData((prev) => ({
         ...prev,
-        customerName: selectedCustomer.name || prev.customerName,
-        phone: selectedCustomer.phone || prev.phone,
+        // Only populate if field is empty (preserve user edits)
+        customerName: prev.customerName || customerData.customerName || "",
+        phone: prev.phone || customerData.phone || "",
+        whatsappNumber: prev.whatsappNumber || customerData.whatsappNumber || "",
+        alternateMobile: prev.alternateMobile || customerData.alternateMobile || "",
+        email: prev.email || customerData.email || "",
+        address: prev.address || customerData.address || "",
+        cityState: prev.cityState || customerData.cityState || "",
+        pincode: prev.pincode || customerData.pincode || "",
+        customerType: prev.customerType || customerData.customerType || undefined,
       }));
       
       // Auto-select first vehicle if none selected and customer has vehicles
@@ -201,6 +246,31 @@ export const AppointmentForm = ({
     }
   }, [formData.vehicle, selectedCustomer, onVehicleChange]);
 
+  // Auto-populate vehicle fields from selectedVehicle (preserve user edits)
+  useEffect(() => {
+    if (selectedVehicle) {
+      const vehicleData = mapVehicleToFormData(selectedVehicle);
+      setFormData((prev) => ({
+        ...prev,
+        // Only populate if field is empty (preserve user edits)
+        vehicleBrand: prev.vehicleBrand || vehicleData.vehicleBrand || "",
+        vehicleModel: prev.vehicleModel || vehicleData.vehicleModel || "",
+        vehicleYear: prev.vehicleYear || vehicleData.vehicleYear || undefined,
+        registrationNumber: prev.registrationNumber || vehicleData.registrationNumber || "",
+        vinChassisNumber: prev.vinChassisNumber || vehicleData.vinChassisNumber || "",
+        variantBatteryCapacity: prev.variantBatteryCapacity || vehicleData.variantBatteryCapacity || "",
+        motorNumber: prev.motorNumber || vehicleData.motorNumber || "",
+        chargerSerialNumber: prev.chargerSerialNumber || vehicleData.chargerSerialNumber || "",
+        vehicleColor: prev.vehicleColor || vehicleData.vehicleColor || "",
+        dateOfPurchase: prev.dateOfPurchase || vehicleData.dateOfPurchase || "",
+        warrantyStatus: prev.warrantyStatus || vehicleData.warrantyStatus || "",
+        insuranceStartDate: prev.insuranceStartDate || vehicleData.insuranceStartDate || "",
+        insuranceEndDate: prev.insuranceEndDate || vehicleData.insuranceEndDate || "",
+        insuranceCompanyName: prev.insuranceCompanyName || vehicleData.insuranceCompanyName || "",
+      }));
+    }
+  }, [selectedVehicle]);
+
   const handleAssignNearestServiceCenter = useCallback(() => {
     if (!selectedCustomer?.address) return;
     const nearestId = findNearestServiceCenter(selectedCustomer.address);
@@ -215,49 +285,59 @@ export const AppointmentForm = ({
   }, [selectedCustomer, availableServiceCenters]);
 
   const handleSubmit = useCallback(() => {
+    // Ensure all state values are synced to formData before submission
+    const finalFormData: AppointmentFormType = {
+      ...formData,
+      // Sync pickup/drop state and city from separate state variables
+      pickupState: pickupState || formData.pickupState,
+      pickupCity: pickupCity || formData.pickupCity,
+      dropState: dropState || formData.dropState,
+      dropCity: dropCity || formData.dropCity,
+    };
+    
     const errors: Record<string, string> = {};
     const missingFields: string[] = [];
 
-    if (!formData.customerName?.trim()) {
+    if (!finalFormData.customerName?.trim()) {
       errors.customerName = "Customer Name is required";
       missingFields.push("Customer Name");
     }
 
-    if (!formData.phone?.trim()) {
+    if (!finalFormData.phone?.trim()) {
       errors.phone = "Phone Number is required";
       missingFields.push("Phone Number");
-    } else if (!validatePhone(formData.phone)) {
+    } else if (!validatePhone(finalFormData.phone)) {
       errors.phone = "Please enter a valid 10-digit phone number";
       missingFields.push("Phone Number (invalid format)");
     }
 
-    if (!formData.vehicle?.trim()) {
+    if (!finalFormData.vehicle?.trim()) {
       errors.vehicle = "Vehicle is required";
       missingFields.push("Vehicle");
     }
 
-    if (!formData.serviceType?.trim()) {
+    if (!finalFormData.serviceType?.trim()) {
       errors.serviceType = "Service Type is required";
       missingFields.push("Service Type");
     }
 
-    if (!formData.date?.trim()) {
+    if (!finalFormData.date?.trim()) {
       errors.date = "Date is required";
       missingFields.push("Date");
     }
 
-    if (!formData.time?.trim()) {
+    if (!finalFormData.time?.trim()) {
       errors.time = "Time is required";
       missingFields.push("Time");
-    } else if (formData.date && isToday(formData.date)) {
+    } else if (finalFormData.date && isToday(finalFormData.date)) {
       const currentTime = getCurrentTime();
-      if (formData.time < currentTime) {
+      if (finalFormData.time < currentTime) {
         errors.time = "Cannot schedule appointment for a past time on today's date";
         missingFields.push("Time");
       }
     }
 
-    if (isCallCenter && !formData.customerComplaintIssue?.trim()) {
+    if (isCallCenter && !finalFormData.customerComplaintIssue?.trim()) {
       errors.customerComplaintIssue = "Customer Complaint / Issue Description is required";
       missingFields.push("Customer Complaint / Issue Description");
     }
@@ -272,8 +352,8 @@ export const AppointmentForm = ({
 
     setValidationError("");
     setFieldErrors({});
-    onSubmit(formData);
-  }, [formData, isCallCenter, onSubmit]);
+    onSubmit(finalFormData);
+  }, [formData, pickupState, pickupCity, dropState, dropCity, isCallCenter, onSubmit]);
 
   const updateFormData = useCallback((updates: Partial<AppointmentFormType>) => {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -287,6 +367,82 @@ export const AppointmentForm = ({
       });
     }
   }, [fieldErrors]);
+
+  // Document handlers
+  const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+
+  const handleDocumentUpload = useCallback(
+    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
+      if (!files || files.length === 0) return;
+
+      const fileArray = Array.from(files);
+      const existingFiles = formData[field]?.files || [];
+      const existingUrls = formData[field]?.urls || [];
+
+      const newUrls = fileArray.map((file) => URL.createObjectURL(file));
+
+      updateFormData({
+        [field]: {
+          files: [...existingFiles, ...fileArray],
+          urls: [...existingUrls, ...newUrls],
+        },
+      });
+    },
+    [formData, updateFormData]
+  );
+
+  const handleRemoveDocument = useCallback(
+    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
+      const existingFiles = formData[field]?.files || [];
+      const existingUrls = formData[field]?.urls || [];
+
+      // Revoke URL to free memory
+      if (existingUrls[index]) {
+        URL.revokeObjectURL(existingUrls[index]);
+      }
+
+      const newFiles = existingFiles.filter((_, i) => i !== index);
+      const newUrls = existingUrls.filter((_, i) => i !== index);
+
+      updateFormData({
+        [field]: {
+          files: newFiles,
+          urls: newUrls,
+        },
+      });
+    },
+    [formData, updateFormData]
+  );
+
+  const handleOpenCamera = useCallback(
+    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos") => {
+      setCameraDocumentType(field);
+      setCameraModalOpen(true);
+    },
+    []
+  );
+
+  const handleCameraCapture = useCallback(
+    (file: File) => {
+      if (!cameraDocumentType) return;
+
+      const newUrl = URL.createObjectURL(file);
+      const existingFiles = formData[cameraDocumentType]?.files || [];
+      const existingUrls = formData[cameraDocumentType]?.urls || [];
+
+      updateFormData({
+        [cameraDocumentType]: {
+          files: [...existingFiles, file],
+          urls: [...existingUrls, newUrl],
+        },
+      });
+
+      setCameraModalOpen(false);
+      setCameraDocumentType(null);
+    },
+    [cameraDocumentType, formData, updateFormData]
+  );
 
   return (
     <div className="space-y-6 p-6">
@@ -347,7 +503,124 @@ export const AppointmentForm = ({
           </p>
         )}
       </div>
-
+  {/* Vehicle Information Section */}
+  <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
+        <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
+          <span className="w-1 h-6 bg-green-600 rounded"></span>
+          Vehicle Information
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormInput
+            label="Vehicle Brand"
+            value={formData.vehicleBrand || ""}
+            onChange={(e) => updateFormData({ vehicleBrand: e.target.value })}
+            placeholder="Enter vehicle brand"
+          />
+          <FormInput
+            label="Vehicle Model"
+            value={formData.vehicleModel || ""}
+            onChange={(e) => updateFormData({ vehicleModel: e.target.value })}
+            placeholder="Enter vehicle model"
+          />
+          <FormInput
+            label="Registration Number"
+            value={formData.registrationNumber || ""}
+            onChange={(e) => updateFormData({ registrationNumber: e.target.value.toUpperCase() })}
+            placeholder="Enter registration number"
+          />
+          <FormInput
+            label="VIN / Chassis Number"
+            value={formData.vinChassisNumber || ""}
+            onChange={(e) => updateFormData({ vinChassisNumber: e.target.value.toUpperCase() })}
+            placeholder="Enter VIN/Chassis number"
+          />
+          <FormInput
+            label="Variant / Battery Capacity"
+            value={formData.variantBatteryCapacity || ""}
+            onChange={(e) => updateFormData({ variantBatteryCapacity: e.target.value })}
+            placeholder="Enter variant/battery capacity"
+          />
+          <FormInput
+            label="Motor Number"
+            value={formData.motorNumber || ""}
+            onChange={(e) => updateFormData({ motorNumber: e.target.value })}
+            placeholder="Enter motor number"
+          />
+          <FormInput
+            label="Charger Serial Number"
+            value={formData.chargerSerialNumber || ""}
+            onChange={(e) => updateFormData({ chargerSerialNumber: e.target.value })}
+            placeholder="Enter charger serial number"
+          />
+          <div>
+            <FormInput
+              label="Date of Purchase"
+              type="date"
+              value={formData.dateOfPurchase || ""}
+              onChange={(e) => updateFormData({ dateOfPurchase: e.target.value })}
+            />
+            {formData.dateOfPurchase && (() => {
+              const purchaseDate = new Date(formData.dateOfPurchase);
+              const today = new Date();
+              const yearsDiff = today.getFullYear() - purchaseDate.getFullYear();
+              const monthsDiff = today.getMonth() - purchaseDate.getMonth();
+              let vehicleAge = "";
+              if (yearsDiff > 0) {
+                vehicleAge = monthsDiff >= 0
+                  ? `${yearsDiff} year${yearsDiff > 1 ? 's' : ''}`
+                  : `${yearsDiff - 1} year${yearsDiff - 1 > 1 ? 's' : ''}`;
+              } else if (monthsDiff > 0) {
+                vehicleAge = `${monthsDiff} month${monthsDiff > 1 ? 's' : ''}`;
+              } else {
+                vehicleAge = "Less than 1 month";
+              }
+              return (
+                <div className="mt-2">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Vehicle Age:</span> {vehicleAge}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+          <FormSelect
+            label="Warranty Status"
+            value={formData.warrantyStatus || ""}
+            onChange={(e) => updateFormData({ warrantyStatus: e.target.value })}
+            placeholder="Select warranty status"
+            options={[
+              { value: "", label: "Select warranty status" },
+              { value: "Active", label: "Active" },
+              { value: "Expired", label: "Expired" },
+              { value: "Not Applicable", label: "Not Applicable" },
+            ]}
+          />
+          <FormInput
+            label="Insurance Start Date"
+            type="date"
+            value={formData.insuranceStartDate || ""}
+            onChange={(e) => updateFormData({ insuranceStartDate: e.target.value })}
+          />
+          <FormInput
+            label="Insurance End Date"
+            type="date"
+            value={formData.insuranceEndDate || ""}
+            onChange={(e) => updateFormData({ insuranceEndDate: e.target.value })}
+          />
+          <FormInput
+            label="Insurance Company Name"
+            value={formData.insuranceCompanyName || ""}
+            onChange={(e) => updateFormData({ insuranceCompanyName: e.target.value })}
+            placeholder="Enter insurance company name"
+          />
+          <FormInput
+            label="Vehicle Color"
+            value={formData.vehicleColor || ""}
+            onChange={(e) => updateFormData({ vehicleColor: e.target.value })}
+            placeholder="Enter vehicle color"
+          />
+        </div>
+      </div>
       {/* Service Type */}
       <FormSelect
         label="Service Type"
@@ -399,20 +672,6 @@ export const AppointmentForm = ({
             </p>
           )}
         </div>
-      )}
-
-      {/* Customer Type */}
-      {canAccessCustomerType && (
-        <FormSelect
-          label="Customer Type"
-          value={formData.customerType || ""}
-          onChange={(e) => updateFormData({ customerType: e.target.value as "B2C" | "B2B" | undefined })}
-          placeholder="Select customer type"
-          options={[
-            { value: "B2C", label: "B2C" },
-            { value: "B2B", label: "B2B" },
-          ]}
-        />
       )}
 
       {/* Service Details Section */}
@@ -488,131 +747,266 @@ export const AppointmentForm = ({
         </div>
       )}
 
+
       {/* Documentation Section */}
       {(hasDocUploadAccess || hasDropoffMediaAccess) && (
-        <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Upload className="text-amber-600" size={20} />
+        <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 rounded-xl border border-indigo-200">
+          <h4 className="text-lg font-semibold text-indigo-900 mb-4 flex items-center gap-2">
+            <span className="w-1 h-6 bg-indigo-600 rounded"></span>
             Documentation
-          </h3>
-          <div className="space-y-4">
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {hasDocUploadAccess && (
               <>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Customer ID Proof <span className="text-xs font-normal text-gray-500">(Optional)</span>
+                {/* Customer ID Proof */}
+                <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Customer ID Proof
                   </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      const urls = files.map((file) => URL.createObjectURL(file));
-                      updateFormData({
-                        customerIdProof: { files, urls },
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                  />
-                  {formData.customerIdProof?.files && formData.customerIdProof.files.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {formData.customerIdProof.files.map((file, index) => (
-                        <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                          {file.name}
-                        </span>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="text-indigo-600" size={24} />
+                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
+                          onChange={(e) => handleDocumentUpload("customerIdProof", e.target.files)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCamera("customerIdProof")}
+                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                        title="Capture from camera"
+                      >
+                        <Camera size={24} />
+                        <span className="text-xs font-medium">Camera</span>
+                      </button>
                     </div>
-                  )}
+                    {formData.customerIdProof?.files && formData.customerIdProof.files.length > 0 && (
+                      <div className="space-y-2">
+                        {formData.customerIdProof.files.map((file, index) => (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveDocument("customerIdProof", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Vehicle RC Copy <span className="text-xs font-normal text-gray-500">(Optional)</span>
+
+                {/* Vehicle RC Copy */}
+                <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Vehicle RC Copy
                   </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      const urls = files.map((file) => URL.createObjectURL(file));
-                      updateFormData({
-                        vehicleRCCopy: { files, urls },
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                  />
-                  {formData.vehicleRCCopy?.files && formData.vehicleRCCopy.files.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {formData.vehicleRCCopy.files.map((file, index) => (
-                        <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                          {file.name}
-                        </span>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="text-indigo-600" size={24} />
+                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
+                          onChange={(e) => handleDocumentUpload("vehicleRCCopy", e.target.files)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCamera("vehicleRCCopy")}
+                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                        title="Capture from camera"
+                      >
+                        <Camera size={24} />
+                        <span className="text-xs font-medium">Camera</span>
+                      </button>
                     </div>
-                  )}
+                    {formData.vehicleRCCopy?.files && formData.vehicleRCCopy.files.length > 0 && (
+                      <div className="space-y-2">
+                        {formData.vehicleRCCopy.files.map((file, index) => (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+
+                {/* Warranty Card / Service Book */}
+                <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
                     Warranty Card / Service Book
                   </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      const urls = files.map((file) => URL.createObjectURL(file));
-                      updateFormData({
-                        warrantyCardServiceBook: { files, urls },
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                  />
-                  {formData.warrantyCardServiceBook?.files && formData.warrantyCardServiceBook.files.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {formData.warrantyCardServiceBook.files.map((file, index) => (
-                        <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                          {file.name}
-                        </span>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="text-indigo-600" size={24} />
+                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
+                          onChange={(e) => handleDocumentUpload("warrantyCardServiceBook", e.target.files)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCamera("warrantyCardServiceBook")}
+                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                        title="Capture from camera"
+                      >
+                        <Camera size={24} />
+                        <span className="text-xs font-medium">Camera</span>
+                      </button>
                     </div>
-                  )}
+                    {formData.warrantyCardServiceBook?.files && formData.warrantyCardServiceBook.files.length > 0 && (
+                      <div className="space-y-2">
+                        {formData.warrantyCardServiceBook.files.map((file, index) => (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>
             )}
             {hasDropoffMediaAccess && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
                   Photos/Videos of Vehicle at Drop-off
                 </label>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || []);
-                    const urls = files.map((file) => URL.createObjectURL(file));
-                    updateFormData({
-                      photosVideos: { files, urls },
-                    });
-                  }}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white"
-                />
-                {formData.photosVideos?.files && formData.photosVideos.files.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {formData.photosVideos.files.map((file, index) => (
-                      <span key={index} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                        {file.name}
-                      </span>
-                    ))}
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                      <div className="flex flex-col items-center gap-2">
+                        <ImageIcon className="text-indigo-600" size={24} />
+                        <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                        <span className="text-xs text-gray-500">JPG, PNG, MP4, MOV (Max 50MB)</span>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".jpg,.jpeg,.png,.mp4,.mov"
+                        multiple
+                        onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCamera("photosVideos")}
+                      className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                      title="Capture from camera"
+                    >
+                      <Camera size={24} />
+                      <span className="text-xs font-medium">Camera</span>
+                    </button>
                   </div>
-                )}
+                  {formData.photosVideos?.files && formData.photosVideos.files.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {formData.photosVideos.files.map((file, index) => (
+                        <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                          {file.type.startsWith("image/") ? (
+                            <Image
+                              src={formData.photosVideos?.urls[index] || ""}
+                              alt={file.name}
+                              width={128}
+                              height={128}
+                              className="w-full h-32 object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="w-full h-32 flex items-center justify-center bg-gray-100">
+                              <FileText className="text-gray-400" size={32} />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button
+                              onClick={() => handleRemoveDocument("photosVideos", index)}
+                              className="text-white hover:text-red-300 p-2 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          </div>
+                          <div className="p-2 bg-white">
+                            <p className="text-xs font-medium text-gray-800 truncate">{file.name}</p>
+                            <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </div>
       )}
+
+      {/* Camera Modal */}
+      {cameraModalOpen && cameraDocumentType && (
+        <CameraModal
+          isOpen={cameraModalOpen}
+          onClose={() => {
+            setCameraModalOpen(false);
+            setCameraDocumentType(null);
+          }}
+          onCapture={handleCameraCapture}
+        />
+      )}
+
+    
 
       {/* Date and Time */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -973,97 +1367,6 @@ export const AppointmentForm = ({
         </div>
       )}
 
-      {/* Post-Service Feedback */}
-      {canAccessPostServiceSurvey && (
-        <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <CheckCircle className="text-teal-600" size={20} />
-            Post-Service Feedback
-          </h3>
-          <div className="space-y-4">
-            {/* Service Status */}
-            {canAccessServiceStatus && (
-              <FormSelect
-                label="Service Status"
-                value={formData.serviceStatus || ""}
-                onChange={(e) => updateFormData({ serviceStatus: e.target.value })}
-                placeholder="Select service status"
-                options={[
-                  { value: "Pending", label: "Pending" },
-                  { value: "In Service", label: "In Service" },
-                  { value: "Ready for Delivery", label: "Ready for Delivery" },
-                  { value: "Delivered", label: "Delivered" },
-                  { value: "Cancelled", label: "Cancelled" },
-                ]}
-              />
-            )}
-
-            {/* Feedback Rating */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Feedback Rating
-              </label>
-              <div className="flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map((rating) => (
-                  <button
-                    key={rating}
-                    type="button"
-                    onClick={() => updateFormData({ feedbackRating: rating })}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
-                      formData.feedbackRating === rating
-                        ? "bg-teal-600 text-white scale-110"
-                        : "bg-gray-200 text-gray-600 hover:bg-teal-100 hover:text-teal-700"
-                    }`}
-                  >
-                    {rating}
-                  </button>
-                ))}
-                {formData.feedbackRating && (
-                  <span className="text-sm text-gray-600 ml-2">
-                    {formData.feedbackRating === 5
-                      ? "Excellent"
-                      : formData.feedbackRating === 4
-                      ? "Very Good"
-                      : formData.feedbackRating === 3
-                      ? "Good"
-                      : formData.feedbackRating === 2
-                      ? "Fair"
-                      : "Poor"}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Next Service Due Date */}
-            {canAccessServiceStatus && (
-              <FormInput
-                label="Next Service Due Date"
-                type="date"
-                value={formData.nextServiceDueDate || ""}
-                onChange={(e) => updateFormData({ nextServiceDueDate: e.target.value })}
-                placeholder="Select next service due date"
-              />
-            )}
-
-            {/* AMC / Subscription Status */}
-            {canAccessAMCStatus && (
-              <FormSelect
-                label="AMC / Subscription Status"
-                value={formData.amcSubscriptionStatus || ""}
-                onChange={(e) => updateFormData({ amcSubscriptionStatus: e.target.value })}
-                placeholder="Select AMC/Subscription status"
-                options={[
-                  { value: "Active", label: "Active" },
-                  { value: "Expired", label: "Expired" },
-                  { value: "Not Applicable", label: "Not Applicable" },
-                  { value: "Pending Renewal", label: "Pending Renewal" },
-                ]}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Validation Errors */}
       {Object.keys(fieldErrors).length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -1076,6 +1379,52 @@ export const AppointmentForm = ({
         </div>
       )}
 
+      {/* Customer Arrival Section (Service Advisor Only) */}
+      {isServiceAdvisor && 
+       onCustomerArrived && 
+       appointmentStatus && 
+       appointmentStatus !== "In Progress" && 
+       appointmentStatus !== "Sent to Manager" && (
+        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <CheckCircle size={20} className="text-blue-600" />
+            Customer Arrival
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Mark customer arrival status. This will update the appointment status when you save.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (onCustomerArrived) {
+                  // Ensure all state values are synced to formData
+                  const finalFormData: AppointmentFormType = {
+                    ...formData,
+                    pickupState: pickupState || formData.pickupState,
+                    pickupCity: pickupCity || formData.pickupCity,
+                    dropState: dropState || formData.dropState,
+                    dropCity: dropCity || formData.dropCity,
+                  };
+                  onCustomerArrived(finalFormData);
+                }
+              }}
+              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
+            >
+              <CheckCircle size={18} />
+              Customer Arrived
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              Customer Not Arrived
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex gap-3 pt-4 border-t border-gray-200">
         <button
@@ -1084,12 +1433,34 @@ export const AppointmentForm = ({
         >
           Cancel
         </button>
-        <button
-          onClick={handleSubmit}
-          className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
-        >
-          {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
-        </button>
+        {customerArrived && onCreateQuotation ? (
+          <button
+            onClick={() => {
+              if (onCreateQuotation) {
+                // Ensure all state values are synced to formData
+                const finalFormData: AppointmentFormType = {
+                  ...formData,
+                  pickupState: pickupState || formData.pickupState,
+                  pickupCity: pickupCity || formData.pickupCity,
+                  dropState: dropState || formData.dropState,
+                  dropCity: dropCity || formData.dropCity,
+                };
+                onCreateQuotation(finalFormData);
+              }
+            }}
+            className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center gap-2"
+          >
+            <FileText size={18} />
+            Create Quotation
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+          >
+            {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
+          </button>
+        )}
       </div>
 
       {/* Service Center Selector Modal */}
