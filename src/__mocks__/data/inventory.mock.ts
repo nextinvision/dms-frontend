@@ -7,124 +7,55 @@ import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types
 import { safeStorage } from "@/shared/lib/localStorage";
 
 /**
- * Mock Inventory Item type for Admin inventory page
+ * Convert Part to InventoryItem
+ * Helper function to convert Parts Master data to Service Center Inventory format
  */
-export interface MockInventoryItem {
-  id: number;
-  partName: string;
-  hsnCode: string;
-  partCode?: string;
-  category: string;
-  quantity: string;
-  price: string;
-  status: "In Stock" | "Low Stock";
-  centerId: string;
-  centerName?: string;
+export function convertPartToInventoryItem(part: Part, index: number): InventoryItem {
+  // Calculate status based on stock quantity vs min stock level
+  let status: "In Stock" | "Low Stock" | "Out of Stock" = "In Stock";
+  if (part.stockQuantity === 0) {
+    status = "Out of Stock";
+  } else if (part.stockQuantity <= part.minStockLevel) {
+    status = "Low Stock";
+  }
+
+  // Format price with Indian Rupee symbol
+  const formatPrice = (price: number): string => {
+    return `₹${price.toLocaleString("en-IN")}`;
+  };
+
+  // Calculate cost price from preGstAmountToUs or estimate as 80% of price
+  const costPriceValue = part.preGstAmountToUs 
+    ? parseFloat(part.preGstAmountToUs) 
+    : part.price * 0.8;
+
+  // Parse ID from part.id (e.g., "part-1" -> 1) or use index + 1
+  const id = part.id && part.id.includes("-") 
+    ? parseInt(part.id.split("-")[1]) || index + 1
+    : index + 1;
+
+  return {
+    id,
+    partName: part.partName,
+    hsnCode: part.hsnCode || part.partNumber || "",
+    partCode: part.partCode,
+    category: part.category || "",
+    currentQty: part.stockQuantity,
+    minStock: part.minStockLevel,
+    unitPrice: formatPrice(part.price),
+    costPrice: formatPrice(costPriceValue),
+    supplier: part.brandName || "Supplier",
+    location: "Warehouse A",
+    status,
+  };
 }
 
 /**
- * Default inventory data for Admin inventory page
+ * Convert array of Parts to InventoryItems
  */
-export const defaultInventoryData: MockInventoryItem[] = [
-  {
-    id: 1,
-    partName: "Brake Pad Set - Front",
-    hsnCode: "BP-FR-001",
-    partCode: "P001",
-    category: "Brakes",
-    quantity: "45",
-    price: "2500",
-    status: "In Stock",
-    centerId: "1",
-    centerName: "Pune Phase 1",
-  },
-  {
-    id: 2,
-    partName: "Engine Oil Filter",
-    hsnCode: "EOF-001",
-    partCode: "P002",
-    category: "Engine",
-    quantity: "120",
-    price: "350",
-    status: "In Stock",
-    centerId: "1",
-    centerName: "Pune Phase 1",
-  },
-  {
-    id: 3,
-    partName: "Air Filter Element",
-    hsnCode: "AFE-001",
-    partCode: "P003",
-    category: "Engine",
-    quantity: "8",
-    price: "450",
-    status: "Low Stock",
-    centerId: "1",
-    centerName: "Pune Phase 1",
-  },
-];
-
-/**
- * Default service center inventory data
- */
-export const defaultServiceCenterInventory: InventoryItem[] = [
-  {
-    id: 1,
-    partName: "Brake Pad Set - Front",
-    hsnCode: "BP-FR-001",
-    partCode: "P001",
-    category: "Brakes",
-    currentQty: 45,
-    minStock: 20,
-    unitPrice: "₹2,500",
-    costPrice: "₹2,000",
-    supplier: "Auto Parts Co.",
-    location: "Warehouse A",
-    status: "In Stock",
-  },
-  {
-    id: 2,
-    partName: "Engine Oil Filter",
-    hsnCode: "EOF-001",
-    partCode: "P002",
-    category: "Engine",
-    currentQty: 120,
-    minStock: 50,
-    unitPrice: "₹350",
-    costPrice: "₹280",
-    supplier: "Filter Solutions",
-    location: "Warehouse A",
-    status: "In Stock",
-  },
-  {
-    id: 3,
-    partName: "Air Filter Element",
-    hsnCode: "AFE-001",
-    partCode: "P003",
-    category: "Engine",
-    currentQty: 8,
-    minStock: 15,
-    unitPrice: "₹450",
-    costPrice: "₹360",
-    supplier: "Filter Solutions",
-    location: "Warehouse B",
-    status: "Low Stock",
-  },
-  {
-    id: 4,
-    partName: "Battery 12V 60Ah",
-    hsnCode: "BAT-12V-60",
-    partCode: "P004",
-    category: "Electrical",
-    currentQty: 0,
-    minStock: 10,
-    unitPrice: "₹8,500",
-    costPrice: "₹7,200",
-    supplier: "Battery Corp",
-    location: "Warehouse A",
-    status: "Out of Stock",
-  },
-];
+export function convertPartsToInventoryItems(parts: Part[]): InventoryItem[] {
+  return parts.map((part, index) => convertPartToInventoryItem(part, index));
+}
 
 /**
  * Mock Parts Master Data
@@ -549,12 +480,23 @@ export const mockJobCardPartsRequests: JobCardPartsRequest[] = [
 ];
 
 /**
- * Service Center Inventory Data (for admin service center detail page)
+ * Get default service center inventory data from mockParts
+ * Converts Parts Master data to InventoryItem format
  */
-export const serviceCenterInventoryData = defaultServiceCenterInventory.map((item) => ({
-  ...item,
-  selectedQuantity: 0,
-}));
+export function getDefaultServiceCenterInventory(): InventoryItem[] {
+  return convertPartsToInventoryItems(mockParts);
+}
+
+/**
+ * Service Center Inventory Data (for admin service center detail page)
+ * Includes selectedQuantity field for form handling
+ */
+export function getServiceCenterInventoryData() {
+  return getDefaultServiceCenterInventory().map((item) => ({
+    ...item,
+    selectedQuantity: 0,
+  }));
+}
 
 /**
  * Initialize mock data in localStorage
