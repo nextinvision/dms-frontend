@@ -179,7 +179,7 @@ export default function SCInventory() {
       const newItem: RequestItem = {
         partId: selectedPart.id,
         partName: selectedPart.partName,
-        sku: selectedPart.sku,
+        hsnCode: selectedPart.hsnCode,
         partCode: selectedPart.partCode,
         quantity: currentRequest?.quantity || selectedPart.minStock * 2 - selectedPart.currentQty,
         urgency: currentRequest?.urgency || "Normal",
@@ -194,7 +194,7 @@ export default function SCInventory() {
       finalItems.push({
         partId: selectedPart.id,
         partName: selectedPart.partName,
-        sku: selectedPart.sku,
+        hsnCode: selectedPart.hsnCode,
         partCode: selectedPart.partCode,
         quantity: currentRequest?.quantity || selectedPart.minStock * 2 - selectedPart.currentQty,
         urgency: currentRequest?.urgency || "Normal",

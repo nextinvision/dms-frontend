@@ -127,7 +127,7 @@ export interface PartsIssue {
     partId: string;
     partName: string;
     partNumber: string;
-    sku: string; // HSN Code
+    hsnCode: string; // HSN Code
     quantity: number;
     unitPrice: number;
     totalPrice: number;
