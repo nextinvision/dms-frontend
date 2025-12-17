@@ -23,7 +23,6 @@ export function mapFormDataToPartFormData(formData: PartsMasterFormData): PartFo
     // partName is required
     partName: formData.partName?.trim() || "",
     // Optional basic fields - only include if they have data
-    ...(formData.partId?.trim() && { partId: formData.partId.trim() }),
     ...(formData.partNumber?.trim() && { partNumber: formData.partNumber.trim() }),
     ...(formData.category?.trim() && { category: formData.category.trim() }),
     // Calculate price from totalPrice if available, otherwise use purchasePrice
@@ -73,7 +72,6 @@ export function mapPartToFormData(part: Part): PartsMasterFormData {
   
   return {
     ...initialData,
-    partId: part.partId,
     partName: part.partName,
     partNumber: part.partNumber,
     category: part.category,

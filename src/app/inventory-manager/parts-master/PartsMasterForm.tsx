@@ -127,11 +127,6 @@ export function PartsMasterForm({
       return false;
     }
 
-    // Skip partId if not provided
-    if (field.name === "partId" && !formData.partId) {
-      return false;
-    }
-
     // Skip partNumber if not provided
     if (field.name === "partNumber" && formData.partNumber === undefined) {
       return false;
