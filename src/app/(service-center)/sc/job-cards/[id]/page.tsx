@@ -21,8 +21,10 @@ interface AdvisorJobCardPageProps {
 const fetchJobCard = (id: string): JobCard | undefined => {
   if (typeof window !== "undefined") {
     try {
-    const stored = safeStorage.getItem<JobCard[]>("jobCards", []);
-    const merged = [...stored, ...defaultJobCards];
+      // Migrate existing job cards before fetching
+      const { migrateAllJobCards } = require("../utils/migrateJobCards.util");
+      const stored = migrateAllJobCards();
+      const merged = [...stored, ...defaultJobCards];
       
       // Debug logging (remove in production)
       if (process.env.NODE_ENV === "development") {

@@ -130,7 +130,9 @@ export default function JobCards() {
       setIsClient(true);
       // Load job cards after role is determined
       const loadJobCards = () => {
-        const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+        // Import and run migration for existing job cards
+        const { migrateAllJobCards } = require("./utils/migrateJobCards.util");
+        const storedJobCards = migrateAllJobCards();
         if (storedJobCards.length > 0) {
           // For service engineers, merge stored cards with service engineer mock data
           if (isTechnician) {

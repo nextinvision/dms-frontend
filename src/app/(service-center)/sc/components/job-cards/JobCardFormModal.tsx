@@ -233,7 +233,8 @@ export default function JobCardFormModal({
       
       // In edit mode, load existing job card
       if (mode === "edit" && jobCardId) {
-        const existingJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+        const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+        const existingJobCards = migrateAllJobCards();
         const existingJobCard = existingJobCards.find((jc) => jc.id === jobCardId);
         if (existingJobCard) {
           setPreviewJobCardNumber(existingJobCard.jobCardNumber);
@@ -822,7 +823,8 @@ export default function JobCardFormModal({
   };
 
   const generateJobCardNumber = (serviceCenterCode: string = "SC001") => {
-    const storedCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+    const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+    const storedCards = migrateAllJobCards();
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -869,7 +871,8 @@ export default function JobCardFormModal({
       // In edit mode, find existing job card and preserve its data
       let existingJobCard: JobCard | null = null;
       if (mode === "edit" && jobCardId) {
-        const existingJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+        const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+        const existingJobCards = migrateAllJobCards();
         existingJobCard = existingJobCards.find((jc) => jc.id === jobCardId) || null;
         if (!existingJobCard) {
           onError?.("Job card not found.");
@@ -1043,7 +1046,8 @@ export default function JobCardFormModal({
           part2A,
         };
 
-        const existingJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+        const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+        const existingJobCards = migrateAllJobCards();
         const updatedJobCards = existingJobCards.map((jc) =>
           jc.id === existingJobCard.id ? updatedJobCard : jc
         );
@@ -1120,7 +1124,8 @@ export default function JobCardFormModal({
           part2A,
         };
 
-        const existingJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+        const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+        const existingJobCards = migrateAllJobCards();
         safeStorage.setItem("jobCards", [newJobCard, ...existingJobCards]);
 
         // If parts are selected, create a parts request for inventory manager

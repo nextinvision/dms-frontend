@@ -42,7 +42,8 @@ export default function Workshop() {
   // Fetch all job cards from localStorage/defaultJobCards
   const [jobCards, setJobCards] = useState<JobCard[]>(() => {
     if (typeof window !== "undefined") {
-      const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+      const { migrateAllJobCards } = require("../job-cards/utils/migrateJobCards.util");
+      const storedJobCards = migrateAllJobCards();
       if (storedJobCards.length > 0) {
         return storedJobCards;
       }
@@ -58,7 +59,8 @@ export default function Workshop() {
 
   // Load job cards from localStorage on mount
   useEffect(() => {
-    const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
+    const { migrateAllJobCards } = require("../job-cards/utils/migrateJobCards.util");
+    const storedJobCards = migrateAllJobCards();
     if (storedJobCards.length > 0) {
       try {
         if (Array.isArray(storedJobCards) && storedJobCards.length > 0) {
