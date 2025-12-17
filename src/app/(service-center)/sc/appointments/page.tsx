@@ -424,24 +424,63 @@ function AppointmentsContent() {
         {
           customerFeedback: appointment.customerComplaintIssue || "",
           estimatedDeliveryDate: appointment.estimatedDeliveryDate || "",
-          warrantyStatus: "", // Will be filled from service intake form
+          warrantyStatus: (appointment as any).warrantyStatus || "",
+          technicianObservation: (appointment as any).technicianObservation || "",
+          insuranceStartDate: (appointment as any).insuranceStartDate || "",
+          insuranceEndDate: (appointment as any).insuranceEndDate || "",
+          insuranceCompanyName: (appointment as any).insuranceCompanyName || "",
+          batterySerialNumber: (appointment as any).batterySerialNumber || "",
+          mcuSerialNumber: (appointment as any).mcuSerialNumber || "",
+          vcuSerialNumber: (appointment as any).vcuSerialNumber || "",
+          otherPartSerialNumber: (appointment as any).otherPartSerialNumber || "",
+          variantBatteryCapacity: (appointment as any).variantBatteryCapacity || "",
         }
       )
       : createEmptyJobCardPart1(jobCardNumber);
 
-    // If customer/vehicle data not found, populate from appointment
-    if (!customerData) {
-      part1.fullName = appointment.customerName;
-      part1.mobilePrimary = appointment.phone;
-      part1.customerType = appointment.customerType || "";
-      part1.customerFeedback = appointment.customerComplaintIssue || "";
-      part1.estimatedDeliveryDate = appointment.estimatedDeliveryDate || "";
+    // Populate PART 1 from appointment fields (overrides customer/vehicle data if appointment has more details)
+    part1.fullName = appointment.customerName || part1.fullName;
+    part1.mobilePrimary = appointment.phone || part1.mobilePrimary;
+    part1.customerType = (appointment.customerType || part1.customerType) as "B2C" | "B2B" | "";
+    part1.customerFeedback = appointment.customerComplaintIssue || part1.customerFeedback;
+    part1.estimatedDeliveryDate = appointment.estimatedDeliveryDate || part1.estimatedDeliveryDate;
+    
+    // Build full customer address with city/state/pincode
+    const fullAddress = [
+      (appointment as any).address,
+      (appointment as any).cityState,
+      (appointment as any).pincode
+    ].filter(Boolean).join(", ");
+    part1.customerAddress = fullAddress || part1.customerAddress;
+    
+    // Append previous service history to customer feedback if available
+    if ((appointment as any).previousServiceHistory) {
+      const existingFeedback = part1.customerFeedback || "";
+      const serviceHistory = `Previous Service History: ${(appointment as any).previousServiceHistory}`;
+      part1.customerFeedback = existingFeedback 
+        ? `${existingFeedback}\n\n${serviceHistory}`
+        : serviceHistory;
     }
-    if (!vehicleData) {
-      part1.vehicleBrand = vehicleMake;
-      part1.vehicleModel = vehicleModel;
-      part1.registrationNumber = ""; // Will be filled from service intake form
-    }
+    
+    // Vehicle fields from appointment
+    part1.vehicleBrand = (appointment as any).vehicleBrand || vehicleMake || part1.vehicleBrand;
+    part1.vehicleModel = (appointment as any).vehicleModel || vehicleModel || part1.vehicleModel;
+    part1.registrationNumber = (appointment as any).registrationNumber || part1.registrationNumber;
+    part1.vinChassisNumber = (appointment as any).vinChassisNumber || part1.vinChassisNumber;
+    part1.variantBatteryCapacity = (appointment as any).variantBatteryCapacity || part1.variantBatteryCapacity;
+    
+    // Warranty and insurance fields from appointment
+    part1.warrantyStatus = (appointment as any).warrantyStatus || part1.warrantyStatus;
+    part1.technicianObservation = (appointment as any).technicianObservation || part1.technicianObservation;
+    part1.insuranceStartDate = (appointment as any).insuranceStartDate || part1.insuranceStartDate;
+    part1.insuranceEndDate = (appointment as any).insuranceEndDate || part1.insuranceEndDate;
+    part1.insuranceCompanyName = (appointment as any).insuranceCompanyName || part1.insuranceCompanyName;
+    
+    // Serial numbers from appointment
+    part1.batterySerialNumber = (appointment as any).batterySerialNumber || part1.batterySerialNumber;
+    part1.mcuSerialNumber = (appointment as any).mcuSerialNumber || part1.mcuSerialNumber;
+    part1.vcuSerialNumber = (appointment as any).vcuSerialNumber || part1.vcuSerialNumber;
+    part1.otherPartSerialNumber = (appointment as any).otherPartSerialNumber || part1.otherPartSerialNumber;
 
     // Create job card from appointment with structured PART 1
     const newJobCard: JobCard = {
@@ -449,17 +488,18 @@ function AppointmentsContent() {
       jobCardNumber,
       serviceCenterId: appointment.serviceCenterId?.toString() || serviceCenterContext.serviceCenterId?.toString() || "sc-001",
       serviceCenterCode,
+      serviceCenterName: appointment.serviceCenterName || serviceCenterContext.serviceCenterName || undefined,
       customerId: customerData?.id?.toString() || appointment.customerExternalId?.toString() || `customer-${appointment.id}`,
       customerName: appointment.customerName,
-      vehicleId: vehicleData?.id?.toString(),
+      vehicleId: vehicleData?.id?.toString() || (appointment as any).vehicleExternalId?.toString(),
       vehicle: appointment.vehicle,
-      registration: vehicleData?.registration || "",
-      vehicleMake,
-      vehicleModel,
+      registration: (appointment as any).registrationNumber || vehicleData?.registration || part1.registrationNumber || "",
+      vehicleMake: (appointment as any).vehicleBrand || vehicleMake || "",
+      vehicleModel: (appointment as any).vehicleModel || vehicleModel || "",
       customerType: appointment.customerType,
       serviceType: appointment.serviceType,
       description: appointment.customerComplaintIssue || `Service: ${appointment.serviceType}`,
-      status: "Created",
+      status: "Awaiting Quotation Approval",
       priority: "Normal",
       assignedEngineer: appointment.assignedTechnician || null,
       estimatedCost: appointment.estimatedCost ? `₹${appointment.estimatedCost}` : "₹0",
@@ -471,6 +511,32 @@ function AppointmentsContent() {
       sourceAppointmentId: appointment.id,
       isTemporary: true,
       customerArrivalTimestamp: new Date().toISOString(),
+      // Additional appointment data fields
+      customerWhatsappNumber: (appointment as any).whatsappNumber,
+      customerAlternateMobile: (appointment as any).alternateMobile,
+      customerEmail: (appointment as any).email,
+      vehicleYear: (appointment as any).vehicleYear,
+      motorNumber: (appointment as any).motorNumber,
+      chargerSerialNumber: (appointment as any).chargerSerialNumber,
+      dateOfPurchase: (appointment as any).dateOfPurchase,
+      vehicleColor: (appointment as any).vehicleColor,
+      previousServiceHistory: (appointment as any).previousServiceHistory,
+      odometerReading: (appointment as any).odometerReading,
+      pickupAddress: appointment.pickupAddress,
+      pickupState: appointment.pickupState,
+      pickupCity: appointment.pickupCity,
+      pickupPincode: appointment.pickupPincode,
+      dropAddress: appointment.dropAddress,
+      dropState: appointment.dropState,
+      dropCity: appointment.dropCity,
+      dropPincode: appointment.dropPincode,
+      preferredCommunicationMode: appointment.preferredCommunicationMode,
+      pickupDropRequired: appointment.pickupDropRequired,
+      arrivalMode: (appointment as any).arrivalMode || appointment.arrivalMode,
+      checkInNotes: (appointment as any).checkInNotes,
+      checkInSlipNumber: (appointment as any).checkInSlipNumber,
+      checkInDate: (appointment as any).checkInDate,
+      checkInTime: (appointment as any).checkInTime,
       // Structured PART 1 data
       part1,
       // PART 2 will be populated when parts are added
@@ -829,100 +895,6 @@ function AppointmentsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Handle Create Quotation from Form (when customer has arrived)
-  const handleCreateQuotationFromForm = useCallback(async (form: AppointmentFormType) => {
-    if (!selectedAppointment) return;
-
-    // First, save/update the appointment with form data
-    const selectedServiceCenter = form.serviceCenterName
-      ? staticServiceCenters.find((center) => center.name === form.serviceCenterName)
-      : null;
-    const serviceCenterId = (selectedServiceCenter as any)?.serviceCenterId || selectedServiceCenter?.id?.toString() || null;
-    const serviceCenterName = form.serviceCenterName || null;
-
-    const appointmentData: any = {
-      ...form,
-      status: "In Progress", // Ensure status is In Progress
-      serviceCenterId: serviceCenterId,
-      serviceCenterName: serviceCenterName,
-      time: formatTime(form.time),
-      duration: `${form.duration} hours`,
-      createdByRole: selectedAppointment.createdByRole,
-    };
-
-    // Update appointment in storage
-    const existingAppointments = safeStorage.getItem<Array<any>>("appointments", []);
-    const updatedAppointments = existingAppointments.map((apt: any) =>
-      apt.id === selectedAppointment.id
-        ? { ...apt, ...appointmentData }
-        : apt
-    );
-    safeStorage.setItem("appointments", updatedAppointments);
-    setAppointments(updatedAppointments);
-
-    // Update selectedAppointment state
-    const updatedAppointment = { ...selectedAppointment, ...appointmentData };
-    setSelectedAppointment(updatedAppointment);
-
-    // Ensure job card exists
-    if (!currentJobCardId) {
-      const jobCard = await convertAppointmentToJobCard(updatedAppointment);
-      setCurrentJobCardId(jobCard.id);
-    }
-
-    // Prepare quotation data from appointment form
-    const customerIdForQuotation =
-      selectedAppointmentCustomer?.id?.toString() ||
-      updatedAppointment.customerExternalId ||
-      undefined;
-    const serviceCenterIdForQuotation =
-      serviceCenterId ||
-      serviceCenterContext.serviceCenterId ||
-      undefined;
-    const serviceCenterNameForQuotation =
-      serviceCenterName ||
-      serviceCenterContext.serviceCenterName ||
-      undefined;
-
-    const quotationData = {
-      appointmentId: updatedAppointment.id,
-      customerName: updatedAppointment.customerName,
-      phone: updatedAppointment.phone,
-      vehicle: updatedAppointment.vehicle,
-      customerId: customerIdForQuotation,
-      serviceCenterId: serviceCenterIdForQuotation,
-      serviceCenterName: serviceCenterNameForQuotation,
-      jobCardId: currentJobCardId || undefined,
-      appointmentData: updatedAppointment, // Store full appointment data
-    };
-
-    // Store appointment data for quotation page
-    safeStorage.setItem("pendingQuotationFromAppointment", quotationData);
-
-    // Clean up file URLs
-    if (form.customerIdProof?.urls) {
-      form.customerIdProof.urls.forEach((url: string) => URL.revokeObjectURL(url));
-    }
-    if (form.vehicleRCCopy?.urls) {
-      form.vehicleRCCopy.urls.forEach((url: string) => URL.revokeObjectURL(url));
-    }
-    if (form.warrantyCardServiceBook?.urls) {
-      form.warrantyCardServiceBook.urls.forEach((url: string) => URL.revokeObjectURL(url));
-    }
-    if (form.photosVideos?.urls) {
-      form.photosVideos.urls.forEach((url: string) => URL.revokeObjectURL(url));
-    }
-
-    // Close modal
-    handleCloseAppointmentForm();
-
-    // Navigate to quotations page
-    router.push("/sc/quotations?fromAppointment=true");
-
-    showToast("Appointment saved. Redirecting to create quotation...", "success");
-  }, [selectedAppointment, selectedAppointmentCustomer, serviceCenterContext, currentJobCardId, convertAppointmentToJobCard, router, handleCloseAppointmentForm, showToast]);
-
-
   // Convert Appointment to Quotation
   const handleConvertToQuotation = useCallback(async () => {
     if (!selectedAppointment) return;
@@ -1053,21 +1025,12 @@ function AppointmentsContent() {
     // Store appointment data for quotation page
     safeStorage.setItem("pendingQuotationFromAppointment", quotationData);
 
-    // Update appointment status to indicate customer has arrived and intake is done
-    const updatedAppointments = appointments.map((apt) =>
-      apt.id === selectedAppointment.id
-        ? { ...apt, status: "In Progress" }
-        : apt
-    );
-    setAppointments(updatedAppointments);
-    safeStorage.setItem("appointments", updatedAppointments);
-
     // Navigate to quotations page
     router.push("/sc/quotations?fromAppointment=true");
 
     // Close the appointment detail modal
     closeDetailModal();
-  }, [selectedAppointment, appointments, router, closeDetailModal, showToast, currentJobCardId, updateStoredJobCard, detailCustomer, serviceCenterContext, convertAppointmentToJobCard]);
+  }, [selectedAppointment, detailCustomer, currentJobCardId, updateStoredJobCard, serviceCenterContext, router, closeDetailModal, showToast]);
 
   const updateLeadForAppointment = useCallback(
     (appointment: AppointmentRecord) => {
@@ -1115,10 +1078,14 @@ function AppointmentsContent() {
         );
         if (associatedJobCard) {
           setCurrentJobCardId(associatedJobCard.id);
+          // Redirect to job card detail page
+          router.push(`/sc/job-cards/${associatedJobCard.id}`);
         } else {
           // Auto-create job card when customer arrives
           convertAppointmentToJobCard(selectedAppointment).then((jobCard) => {
             setCurrentJobCardId(jobCard.id);
+            // Redirect to job card detail page after creation
+            router.push(`/sc/job-cards/${jobCard.id}`);
           }).catch((error) => {
             console.error("Error creating job card:", error);
           });
@@ -1130,7 +1097,7 @@ function AppointmentsContent() {
         setCustomerArrivalStatus(null);
       }
     }
-  }, [selectedAppointment, customerArrivalStatus, currentJobCardId, convertAppointmentToJobCard]);
+  }, [selectedAppointment, customerArrivalStatus, currentJobCardId, convertAppointmentToJobCard, router]);
 
   // Watch for customer search results to populate vehicle details
   useEffect(() => {
@@ -1246,7 +1213,6 @@ function AppointmentsContent() {
         setSelectedAppointment={setSelectedAppointment}
         showToast={showToast}
         appointments={appointments}
-        onConvertToQuotation={isServiceAdvisor && (selectedAppointment?.status === "In Progress" || selectedAppointment?.status === "Sent to Manager" || selectedAppointment?.status === "Quotation Created") ? handleConvertToQuotation : undefined}
         onGenerateCheckInSlip={handleGenerateCheckInSlip}
         currentJobCardId={currentJobCardId}
       />
@@ -1270,7 +1236,6 @@ function AppointmentsContent() {
           onCustomerArrived={isServiceAdvisor ? handleCustomerArrivedFromForm : undefined}
           appointmentStatus={selectedAppointment?.status}
           customerArrived={selectedAppointment?.status === "In Progress" || selectedAppointment?.status === "Sent to Manager"}
-          onCreateQuotation={isServiceAdvisor && (selectedAppointment?.status === "In Progress" || selectedAppointment?.status === "Sent to Manager" || selectedAppointment?.status === "Quotation Created") ? handleCreateQuotationFromForm : undefined}
         />
       )}
 

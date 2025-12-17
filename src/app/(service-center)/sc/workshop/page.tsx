@@ -190,6 +190,7 @@ export default function Workshop() {
       check_in_only: "bg-indigo-50 text-indigo-700 border-indigo-200",
       no_response_lead: "bg-red-100 text-red-700 border-red-200",
       manager_quote: "bg-purple-50 text-purple-700 border-purple-200",
+      "Awaiting Quotation Approval": "bg-amber-100 text-amber-700 border-amber-300",
       Created: "bg-gray-100 text-gray-700 border-gray-300",
       Assigned: "bg-blue-100 text-blue-700 border-blue-300",
       "In Progress": "bg-yellow-100 text-yellow-700 border-yellow-300",
