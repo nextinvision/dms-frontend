@@ -1,9 +1,9 @@
 "use client";
 import React from "react";
 import { Search, Filter } from "lucide-react";
+import type { JobCardViewType } from "@/shared/types/job-card.types";
 
-// You might want to move this type to shared/types/job-card.types.ts eventually
-export type FilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
+import type { JobCardFilterType } from "@/shared/types/job-card.types";
 
 interface JobCardFiltersProps {
     searchQuery: string;
@@ -12,9 +12,9 @@ interface JobCardFiltersProps {
     setShowMobileFilters: (show: boolean) => void;
     filter: string;
     setFilter: (filter: any) => void;
-    filterOptions: FilterType[];
+    filterOptions: JobCardFilterType[];
     filterLabelMap: Record<string, string>;
-    view: "kanban" | "list";
+    view: JobCardViewType;
 }
 
 export default function JobCardFilters({

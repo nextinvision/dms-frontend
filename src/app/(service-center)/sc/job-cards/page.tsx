@@ -20,7 +20,7 @@ import { useJobCardActions } from "@/features/job-cards/hooks/useJobCardActions"
 
 // Constants & Types
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
-import type { JobCard, JobCardStatus, FilterType } from "@/shared/types/job-card.types";
+import type { JobCard, JobCardStatus, JobCardFilterType } from "@/shared/types/job-card.types";
 
 // Lazy load modals to improve initial load
 const JobCardDetailsModal = dynamic(() => import("./components/JobCardDetailsModal"), {
@@ -148,7 +148,7 @@ export default function JobCards() {
   const [technicianApproved, setTechnicianApproved] = useState<boolean>(false);
   const [partsApproved, setPartsApproved] = useState<boolean>(false);
 
-  const filterLabelMap: Record<FilterType, string> = {
+  const filterLabelMap: Record<JobCardFilterType, string> = {
     all: "All",
     created: "Created",
     assigned: "Assigned",
@@ -157,7 +157,7 @@ export default function JobCards() {
     draft: "Drafts",
   };
 
-  const filterOptions: FilterType[] = ["all", "created", "assigned", "in_progress", "completed", "draft"];
+  const filterOptions: JobCardFilterType[] = ["all", "created", "assigned", "in_progress", "completed", "draft"];
 
   const handleJobCardError = (message: string) => {
     console.error(message);

@@ -278,6 +278,6 @@ export type CreateJobCardForm = {
   defectPart: string;
 };
 
-export type ViewType = "kanban" | "list";
-export type FilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
+// ViewType is exported from common.types.ts
+// FilterType is exported from shared/types/job-card.types.ts as JobCardFilterType
 

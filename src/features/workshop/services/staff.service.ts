@@ -16,7 +16,8 @@ class StaffService {
     }
 
     async getEngineers(): Promise<Engineer[]> {
-        return apiClient.get<Engineer[]>("/engineers");
+        const response = await apiClient.get<Engineer[]>("/engineers");
+        return response.data;
     }
 }
 

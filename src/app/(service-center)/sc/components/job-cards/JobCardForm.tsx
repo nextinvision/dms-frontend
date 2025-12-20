@@ -113,18 +113,44 @@ export default function JobCardForm({
 
             setSearching(true);
             try {
+                const query = searchQuery.toLowerCase();
+
+                // 1. Search Customers
                 const customersResponse = await customerService.search(searchQuery);
-                // Ensure customers is an array
                 const customers = Array.isArray(customersResponse) ? customersResponse : [];
+                const customerResults = customers.map((c) => ({
+                    type: "customer" as const,
+                    customer: c,
+                    vehicle: c.vehicles?.[0]
+                }));
 
-                const quotations = safeStorage.getItem<Quotation[]>("quotations", [])
-                    .filter((q) => q.quotationNumber?.toLowerCase().includes(searchQuery.toLowerCase()));
+                // 2. Search Approved Quotations
+                const allQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
+                const approvedQuotations = allQuotations.filter(
+                    q => q.status === "customer_approved" || q.customerApproved === true
+                );
 
-                setSearchResults([
-                    ...customers.map((c) => ({ type: "customer", data: c })),
-                    ...quotations.map((q) => ({ type: "quotation", data: q })),
-                ]);
-                setShowSearchResults(true);
+                const quotationResults = approvedQuotations
+                    .filter((q) => q.quotationNumber?.toLowerCase().includes(query))
+                    .map(async (q) => {
+                        try {
+                            const customer = await customerService.getById(q.customerId);
+                            const vehicle = customer.vehicles?.find(v => v.id.toString() === q.vehicleId);
+                            return { type: "quotation" as const, quotation: q, customer, vehicle };
+                        } catch {
+                            return null;
+                        }
+                    });
+
+                const resolvedQuotationResults = (await Promise.all(quotationResults)).filter(Boolean);
+
+                const combined = [
+                    ...resolvedQuotationResults,
+                    ...customerResults
+                ];
+
+                setSearchResults(combined);
+                setShowSearchResults(combined.length > 0);
             } catch (error) {
                 console.error("Search error:", error);
                 setSearchResults([]);
@@ -203,7 +229,8 @@ export default function JobCardForm({
                 alert("Job card updated successfully!");
             } else {
                 savedJobCard = await jobCardService.create({ ...jobCardData, id: `temp_${Date.now()}` });
-                await createPartsRequestFromJobCard(savedJobCard);
+                const requestedBy = `${serviceCenterContext.serviceCenterName || "Service Center"} - Manager`;
+                await createPartsRequestFromJobCard(savedJobCard, requestedBy);
                 alert("Job card created successfully!");
             }
 
@@ -284,9 +311,9 @@ export default function JobCardForm({
                                     key={index}
                                     onClick={() => {
                                         if (result.type === "customer") {
-                                            handleSelectCustomer(result.data);
+                                            handleSelectCustomer(result.customer, result.vehicle);
                                         } else {
-                                            handleSelectQuotation(result.data);
+                                            handleSelectQuotation(result.quotation, result.customer, result.vehicle);
                                         }
                                         setSearchQuery("");
                                         setShowSearchResults(false);
@@ -297,17 +324,17 @@ export default function JobCardForm({
                                         <div className="flex items-center gap-3">
                                             <UserPlus size={20} className="text-blue-600" />
                                             <div>
-                                                <p className="font-semibold text-gray-900">{result.data.name}</p>
-                                                <p className="text-sm text-gray-600">{result.data.phone}</p>
+                                                <p className="font-semibold text-gray-900">{result.customer.name}</p>
+                                                <p className="text-sm text-gray-600">{result.customer.phone}</p>
                                             </div>
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-3">
                                             <FileText size={20} className="text-green-600" />
                                             <div>
-                                                <p className="font-semibold text-gray-900">{result.data.quotationNumber}</p>
+                                                <p className="font-semibold text-gray-900">{result.quotation.quotationNumber}</p>
                                                 <p className="text-sm text-gray-600">
-                                                    {result.data.customer?.firstName} {result.data.customer?.lastName}
+                                                    {result.customer?.firstName} {result.customer?.lastName}
                                                 </p>
                                             </div>
                                         </div>
@@ -323,6 +350,7 @@ export default function JobCardForm({
                     <CustomerVehicleSection
                         form={form}
                         updateField={updateFormField}
+                        previewJobCardNumber={previewJobCardNumber}
                     />
 
                     <Part2ItemsSection

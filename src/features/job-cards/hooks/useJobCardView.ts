@@ -2,11 +2,11 @@ import { useState, useMemo, useEffect } from "react";
 import { useRole } from "@/shared/hooks";
 import { getServiceCenterContext, filterByServiceCenter, shouldFilterByServiceCenter } from "@/shared/lib/serviceCenter";
 import { useJobCards } from "@/features/job-cards/hooks/useJobCards";
-import type { JobCard, JobCardStatus, ViewType, FilterType, KanbanColumn } from "@/shared/types/job-card.types";
+import type { JobCard, JobCardStatus, JobCardFilterType, KanbanColumn, JobCardViewType } from "@/shared/types/job-card.types";
 
 export function useJobCardView() {
-    const [view, setView] = useState<ViewType>("list");
-    const [filter, setFilter] = useState<FilterType>("all");
+    const [view, setView] = useState<JobCardViewType>("list");
+    const [filter, setFilter] = useState<JobCardFilterType>("all");
     const [searchQuery, setSearchQuery] = useState<string>("");
     const { userRole, userInfo, isLoading: isRoleLoading } = useRole();
 

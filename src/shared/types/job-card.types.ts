@@ -214,6 +214,8 @@ export interface KanbanColumn {
   status: JobCardStatus;
 }
 
-export type ViewType = "kanban" | "list";
-export type FilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
+// ViewType is exported from common.types.ts
+// Job cards only support list and kanban views
+export type JobCardViewType = "kanban" | "list";
+export type JobCardFilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
 
