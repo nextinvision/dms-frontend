@@ -9,6 +9,8 @@ interface JobCardKanbanProps {
     partsRequestsData: Record<string, any>;
     onJobClick: (job: JobCard) => void;
     getPriorityColor: (priority: Priority) => string;
+    onUpdateStatus?: (jobId: string, status: JobCardStatus) => void;
+    isTechnician?: boolean;
 }
 
 const JobCardKanban: React.FC<JobCardKanbanProps> = ({
@@ -18,6 +20,8 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
     partsRequestsData,
     onJobClick,
     getPriorityColor,
+    onUpdateStatus,
+    isTechnician,
 }) => {
     return (
         <div className="p-6">
@@ -132,6 +136,38 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                                 <User size={12} className="text-gray-400" />
                                                                 <span className="font-medium truncate">{job.assignedEngineer}</span>
                                                             </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Status Change Buttons for Service Engineer */}
+                                                    {isTechnician && onUpdateStatus && (
+                                                        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                                                            {job.status === "Assigned" && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (confirm(`Start work on job card ${job.jobCardNumber || job.id}?`)) {
+                                                                            onUpdateStatus(job.id, "In Progress");
+                                                                        }
+                                                                    }}
+                                                                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition"
+                                                                >
+                                                                    Start Work (In Progress)
+                                                                </button>
+                                                            )}
+                                                            {job.status === "In Progress" && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (confirm(`Mark job card ${job.jobCardNumber || job.id} as completed?`)) {
+                                                                            onUpdateStatus(job.id, "Completed");
+                                                                        }
+                                                                    }}
+                                                                    className="w-full px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition"
+                                                                >
+                                                                    Mark as Completed
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
 

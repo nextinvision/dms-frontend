@@ -66,7 +66,7 @@ export const jobCardAdapter = {
 
         const part2Items: JobCardPart2Item[] = (quotation.items || []).map((item, index) => ({
             srNo: index + 1,
-            partWarrantyTag: "",
+            partWarrantyTag: false,
             partName: item?.partName || "",
             partCode: item?.partNumber || "",
             qty: item?.quantity || 0,

@@ -1,50 +1,60 @@
-import { useQuery } from '@tanstack/react-query';
-import { useRole } from '@/shared/hooks';
-import type { JobCard } from '@/shared/types';
-import {
-    defaultJobCards,
-    serviceEngineerJobCards,
-} from '@/__mocks__/data/job-cards.mock';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { jobCardRepository } from '@/core/repositories/job-card.repository';
+import type { JobCard } from '@/shared/types/job-card.types';
 
-export function useJobCards() {
-    const { userRole, userInfo } = useRole();
-    const isTechnician = userRole === 'service_engineer';
+export const jobCardKeys = {
+    all: ['job-cards'] as const,
+    lists: () => [...jobCardKeys.all, 'list'] as const,
+    list: (filters: Record<string, unknown>) => [...jobCardKeys.lists(), { filters }] as const,
+    details: () => [...jobCardKeys.all, 'detail'] as const,
+    detail: (id: string) => [...jobCardKeys.details(), id] as const,
+    byVehicle: (vehicleId: string) => [...jobCardKeys.all, 'vehicle', vehicleId] as const,
+};
 
+export function useJobCardsQuery(params: Record<string, unknown> = {}) {
     return useQuery({
-        queryKey: ['jobCards', userRole, isTechnician ? userInfo?.name : 'all'],
-        queryFn: async () => {
-            // Dynamically import the migration utility
-            // This ensures code splitting and avoids issues if the util assumes browser env immediately
-            const { migrateAllJobCards } = await import('@/app/(service-center)/sc/job-cards/utils/migrateJobCards.util');
-            const storedJobCards = migrateAllJobCards();
-
-            if (storedJobCards.length > 0) {
-                if (isTechnician) {
-                    // Merge service engineer job cards with stored cards, avoiding duplicates
-                    // logic copied from page.tsx
-                    const existingIds = new Set(storedJobCards.map((j: JobCard) => j.id));
-                    const newEngineerCards = serviceEngineerJobCards.filter((j: JobCard) => !existingIds.has(j.id));
-                    const engineerName = userInfo?.name || "Service Engineer";
-                    const updatedEngineerCards = newEngineerCards.map((card) => ({
-                        ...card,
-                        assignedEngineer: engineerName,
-                    }));
-                    return [...storedJobCards, ...updatedEngineerCards];
-                }
-                return storedJobCards;
-            }
-
-            // No stored data - use default or service engineer mock data
-            if (isTechnician) {
-                const engineerName = userInfo?.name || "Service Engineer";
-                return serviceEngineerJobCards.map((card) => ({
-                    ...card,
-                    assignedEngineer: engineerName,
-                }));
-            }
-
-            return defaultJobCards;
-        },
-        staleTime: 60 * 1000, // 1 minute
+        queryKey: jobCardKeys.list(params),
+        queryFn: () => jobCardRepository.getAll(params),
     });
 }
+
+export function useJobCardDetails(id: string) {
+    return useQuery({
+        queryKey: jobCardKeys.detail(id),
+        queryFn: () => jobCardRepository.getById(id),
+        enabled: !!id,
+    });
+}
+
+export function useVehicleJobCards(vehicleId: string) {
+    return useQuery({
+        queryKey: jobCardKeys.byVehicle(vehicleId),
+        queryFn: () => jobCardRepository.getByVehicleId(vehicleId),
+        enabled: !!vehicleId,
+    });
+}
+
+export function useCreateJobCard() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (data: Partial<JobCard>) => jobCardRepository.create(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: jobCardKeys.lists() });
+        },
+    });
+}
+
+export function useUpdateJobCard() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ id, data }: { id: string; data: Partial<JobCard> }) => jobCardRepository.update(id, data),
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: jobCardKeys.lists() });
+            queryClient.invalidateQueries({ queryKey: jobCardKeys.detail(data.id) });
+        },
+    });
+}
+// Alias for backward compatibility
+export const useJobCards = useJobCardsQuery;

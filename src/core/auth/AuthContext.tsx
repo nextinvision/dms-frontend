@@ -1,8 +1,9 @@
 "use client";
-import { createContext, useContext, ReactNode } from "react";
+import { ReactNode } from "react";
 import { useRole } from "@/shared/hooks";
 import type { UserRole, UserInfo } from "@/shared/types";
 
+// Interface preserved for backward compatibility
 interface AuthContextType {
   userRole: UserRole;
   userInfo: UserInfo | null;
@@ -11,37 +12,33 @@ interface AuthContextType {
   isAuthenticated: boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 interface AuthProviderProps {
   children: ReactNode;
 }
 
+/**
+ * @deprecated AuthProvider is no longer needed as state is managed by Zustand.
+ * Kept for backward compatibility.
+ */
 export function AuthProvider({ children }: AuthProviderProps) {
+  return <>{children}</>;
+}
+
+/**
+ * Hook to access auth state
+ * Now redirects to useRole() which uses Zustand
+ */
+export function useAuth(): AuthContextType {
   const { userRole, userInfo, updateRole, isLoading } = useRole();
 
+  // Calculate specific auth properties
   const isAuthenticated = !!userInfo && userRole !== "admin";
 
-  return (
-    <AuthContext.Provider
-      value={{
-        userRole,
-        userInfo,
-        updateRole,
-        isLoading,
-        isAuthenticated,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return {
+    userRole,
+    userInfo,
+    updateRole,
+    isLoading,
+    isAuthenticated,
+  };
 }
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return context;
-}
-

@@ -30,7 +30,7 @@ export function middleware(request: NextRequest) {
         const url = request.nextUrl.clone();
 
         // This is a bit simplified, ideally we'd use getRedirectPath but that's a client function usually
-        if (role === 'admin' || role === 'super_admin') {
+        if (role === 'admin') {
             url.pathname = '/dashboard';
         } else if (['sc_manager', 'service_engineer', 'service_advisor', 'call_center'].includes(role)) {
             url.pathname = '/sc/dashboard';

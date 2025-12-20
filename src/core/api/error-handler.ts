@@ -23,10 +23,19 @@ export class ApiErrorHandler extends Error {
  * Parse error response from API
  */
 export function parseApiError(error: any): ApiError {
-    // Handle network errors
+    // Handle null/undefined or non-object errors
+    if (!error || typeof error !== 'object') {
+        return {
+            message: String(error || 'An unknown error occurred'),
+            code: 'UNKNOWN_ERROR',
+            status: 0,
+        };
+    }
+
+    // Handle network errors (no response property)
     if (!error.response) {
         return {
-            message: 'Network error. Please check your connection.',
+            message: error.message || 'Network error. Please check your connection.',
             code: 'NETWORK_ERROR',
             status: 0,
         };
@@ -77,7 +86,15 @@ export function handleApiError(error: any, showToast?: (message: string, type: '
 
     // Log error in development
     if (process.env.NODE_ENV === 'development') {
-        console.error('API Error:', apiError);
+        const logData = {
+            originalError: error,
+            parsedError: apiError,
+            message: apiError.message,
+            code: apiError.code,
+            status: apiError.status,
+            errors: apiError.errors
+        };
+        console.error('API Error Details:', JSON.stringify(logData, null, 2));
     }
 
     return apiError;

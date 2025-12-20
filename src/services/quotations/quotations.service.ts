@@ -7,7 +7,7 @@ import { API_ENDPOINTS } from "@/config/api.config";
 import { API_CONFIG } from "@/config/api.config";
 import type { Quotation, CreateQuotationForm, QuotationStatus } from "@/shared/types/quotation.types";
 import type { Appointment } from "@/shared/types/appointment.types";
-import type { ApiRequestConfig } from "@/lib/api/types";
+import type { ApiRequestConfig } from "@/core/api/types";
 
 class QuotationsService {
   private useMock: boolean;

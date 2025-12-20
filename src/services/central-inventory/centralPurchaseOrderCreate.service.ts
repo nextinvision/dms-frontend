@@ -5,7 +5,7 @@
 import { apiClient, mockApiClient, ApiError } from "@/lib/api";
 import { API_CONFIG } from "@/config/api.config";
 import { centralInventoryRepository } from "@/__mocks__/repositories/central-inventory.repository";
-import type { ApiRequestConfig } from "@/lib/api/types";
+import type { ApiRequestConfig } from "@/core/api/types";
 import type {
   PurchaseOrder,
   PurchaseOrderFormData,

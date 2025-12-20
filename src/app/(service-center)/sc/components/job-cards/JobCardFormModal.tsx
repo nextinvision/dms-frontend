@@ -20,7 +20,6 @@ import { jobCardAdapter } from "@/features/job-cards/utils/jobCardAdapter";
 import { useHydratedJobCard } from "@/shared/hooks/useHydratedJobCard";
 import { CustomerVehicleSection } from "./sections/CustomerVehicleSection";
 import { Part2ItemsSection } from "./sections/Part2ItemsSection";
-import { DocumentationSection } from "./sections/DocumentationSection";
 import { CheckInSection } from "./sections/CheckInSection";
 import { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
 
@@ -333,11 +332,6 @@ export default function JobCardFormModal({
               form={form}
               updateField={updateFormField}
               onError={onError}
-            />
-
-            <DocumentationSection
-              form={form}
-              updateField={updateFormField}
             />
 
             <CheckInSection

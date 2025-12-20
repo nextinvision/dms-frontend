@@ -4,7 +4,7 @@
 
 import { apiClient, mockApiClient, ApiError } from "@/lib/api";
 import { API_CONFIG } from "@/config/api.config";
-import type { ApiRequestConfig } from "@/lib/api/types";
+import type { ApiRequestConfig } from "@/core/api/types";
 import type { PartsIssue, PartsIssueRequest, PartsIssueResponse } from "@/shared/types/parts-issue.types";
 
 class PartsIssueService {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
+import { INDIAN_STATES, getCitiesByState } from "@/shared/constants/indian-states-cities";
 
 interface CustomerVehicleSectionProps {
     form: CreateJobCardForm;
@@ -294,6 +295,61 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                         />
                     </div>
 
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                State <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                value={form.customerState || ""}
+                                onChange={(e) => {
+                                    updateField('customerState', e.target.value);
+                                    updateField('customerCity', ''); // Reset city when state changes
+                                }}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                <option value="">Select State</option>
+                                {INDIAN_STATES.map((state) => (
+                                    <option key={state.code} value={state.name}>
+                                        {state.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                City <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                value={form.customerCity || ""}
+                                onChange={(e) => updateField('customerCity', e.target.value)}
+                                disabled={!form.customerState}
+                                className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${!form.customerState ? 'bg-gray-100 cursor-not-allowed text-gray-400' : ''
+                                    }`}
+                            >
+                                <option value="">{form.customerState ? 'Select City' : 'Select State First'}</option>
+                                {form.customerState && getCitiesByState(form.customerState).map((city) => (
+                                    <option key={city} value={city}>
+                                        {city}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Pincode
+                            </label>
+                            <input
+                                type="text"
+                                value={form.customerPincode || ""}
+                                onChange={(e) => updateField('customerPincode', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                placeholder="6-digit pincode"
+                                maxLength={6}
+                            />
+                        </div>
+                    </div>
+
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                             Customer Feedback / Concerns
@@ -410,6 +466,49 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                                 placeholder="Serial number"
                             />
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Previous Service History
+                        </label>
+                        <textarea
+                            value={form.previousServiceHistory || ""}
+                            onChange={(e) => updateField('previousServiceHistory', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            rows={3}
+                            placeholder="Previous service records, repair history, etc."
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Odometer Reading
+                        </label>
+                        <input
+                            type="text"
+                            value={form.odometerReading || ""}
+                            onChange={(e) => updateField('odometerReading', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            placeholder="e.g., 15000 km"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Preferred Communication Mode
+                        </label>
+                        <select
+                            value={form.preferredCommunicationMode || ""}
+                            onChange={(e) => updateField('preferredCommunicationMode', e.target.value as any)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        >
+                            <option value="">Select Mode</option>
+                            <option value="Phone">Phone</option>
+                            <option value="Email">Email</option>
+                            <option value="SMS">SMS</option>
+                            <option value="WhatsApp">WhatsApp</option>
+                        </select>
                     </div>
                 </div>
             </div>

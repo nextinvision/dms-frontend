@@ -1,7 +1,19 @@
-import React, { useState } from 'react';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plus, Edit2, Trash2, Upload, Eye } from 'lucide-react';
 import { CreateJobCardForm, JobCardPart2Item } from "@/features/job-cards/types/job-card.types";
 import { extractPartCode, extractPartName, extractLabourCode, generateSrNoForPart2Items } from "@/features/job-cards/utils/jobCardUtils";
+import WarrantyDocumentationModal from "../modals/WarrantyDocumentationModal";
+
+interface WarrantyDocumentationData {
+    videoEvidence: string[];
+    vinImage: string[];
+    odoImage: string[];
+    damageImages: string[];
+    issueDescription: string;
+    numberOfObservations: string;
+    symptom: string;
+    defectPart: string;
+}
 
 interface Part2ItemsSectionProps {
     form: CreateJobCardForm;
@@ -15,8 +27,8 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
     onError,
 }) => {
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
-    const [newItem, setNewItem] = useState<Partial<JobCardPart2Item & { description: string }>>({
-        partWarrantyTag: "",
+    const [newItem, setNewItem] = useState<Partial<JobCardPart2Item>>({
+        partWarrantyTag: false,
         partName: "",
         partCode: "",
         qty: 1,
@@ -24,19 +36,26 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
         technician: "",
         labourCode: "",
         itemType: "part",
-        description: "",
     });
 
-    const handleDescriptionChange = (description: string) => {
-        const partCode = extractPartCode(description);
-        const partName = extractPartName(description);
-        setNewItem((prev) => ({
-            ...prev,
-            partCode: partCode || prev.partCode,
-            partName: partName || prev.partName,
-            description: description,
-        }));
+    // Warranty documentation modal state
+    const [showWarrantyModal, setShowWarrantyModal] = useState(false);
+    const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
+    const [warrantyModalMode, setWarrantyModalMode] = useState<"upload" | "view">("upload");
+
+    // Store warranty documentation for each item by index
+    const [warrantyDocuments, setWarrantyDocuments] = useState<Record<number, WarrantyDocumentationData>>({});
+
+    const handleFileUpload = (field: 'videoEvidence' | 'vinImage' | 'odoImage' | 'damageImages', files: FileList | null) => {
+        if (!files) return;
+        const newFiles = Array.from(files);
+        updateField(field, {
+            files: [...form[field].files, ...newFiles],
+            urls: form[field].urls,
+        });
     };
+
+
 
     const handleAddOrUpdate = () => {
         if (!newItem.partName || !newItem.partCode) {
@@ -46,7 +65,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
 
         const item: JobCardPart2Item = {
             srNo: editingIndex !== null ? form.part2Items[editingIndex].srNo : form.part2Items.length + 1,
-            partWarrantyTag: newItem.partWarrantyTag || "",
+            partWarrantyTag: newItem.partWarrantyTag || false,
             partName: newItem.partName || "",
             partCode: newItem.partCode || "",
             qty: newItem.qty || 1,
@@ -70,7 +89,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
 
         // Reset
         setNewItem({
-            partWarrantyTag: "",
+            partWarrantyTag: false,
             partName: "",
             partCode: "",
             qty: 1,
@@ -78,7 +97,6 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
             technician: "",
             labourCode: "",
             itemType: "part",
-            description: "",
         });
     };
 
@@ -86,7 +104,6 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
         const item = form.part2Items[index];
         setNewItem({
             ...item,
-            description: `${item.partCode} - ${item.partName}`,
         });
         setEditingIndex(index);
     };
@@ -107,73 +124,36 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">
                     {editingIndex !== null ? "Edit Item" : "Add New Item"}
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Part Name */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Item Description <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            value={newItem.description || ""}
-                            onChange={(e) => handleDescriptionChange(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            placeholder="e.g., 2W0000000027_011 - Front Fender"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Part Warranty Tag
-                        </label>
-                        <input
-                            type="text"
-                            value={newItem.partWarrantyTag || ""}
-                            onChange={(e) => setNewItem({ ...newItem, partWarrantyTag: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            placeholder="e.g., RQL251113259818"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Item Type <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                            value={newItem.itemType || "part"}
-                            onChange={(e) => {
-                                const itemType = e.target.value as "part" | "work_item";
-                                setNewItem({
-                                    ...newItem,
-                                    itemType,
-                                    labourCode: itemType === "part" ? "Auto Select With Part" : newItem.labourCode || "",
-                                });
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        >
-                            <option value="part">Part</option>
-                            <option value="work_item">Work Item</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Part Code
-                        </label>
-                        <input
-                            type="text"
-                            value={newItem.partCode || ""}
-                            onChange={(e) => setNewItem({ ...newItem, partCode: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Part Name
+                            Part Name <span className="text-red-500">*</span>
                         </label>
                         <input
                             type="text"
                             value={newItem.partName || ""}
                             onChange={(e) => setNewItem({ ...newItem, partName: e.target.value })}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            placeholder="e.g., Front Fender"
                         />
                     </div>
+
+                    {/* Part Code */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Part Code <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            value={newItem.partCode || ""}
+                            onChange={(e) => setNewItem({ ...newItem, partCode: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            placeholder="e.g., 2W0000000027_011"
+                        />
+                    </div>
+
+                    {/* QTY */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                             QTY <span className="text-red-500">*</span>
@@ -186,6 +166,45 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                         />
                     </div>
+
+                    {/* Labour Code */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Labour Code
+                        </label>
+                        <input
+                            type="text"
+                            value={newItem.labourCode || ""}
+                            onChange={(e) => setNewItem({ ...newItem, labourCode: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            placeholder={newItem.itemType === "part" ? "Auto Select With Part" : "Enter labour code"}
+                            disabled={newItem.itemType === "part"}
+                        />
+                    </div>
+
+                    {/* Part Type */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Part Type <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                            value={newItem.itemType || "part"}
+                            onChange={(e) => {
+                                const itemType = e.target.value as "part" | "work_item";
+                                setNewItem({
+                                    ...newItem,
+                                    itemType,
+                                    labourCode: itemType === "part" ? "Auto Select With Part" : "",
+                                });
+                            }}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        >
+                            <option value="part">Part</option>
+                            <option value="work_item">Work Item</option>
+                        </select>
+                    </div>
+
+                    {/* Amount */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                             Amount (₹)
@@ -199,6 +218,8 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                         />
                     </div>
+
+                    {/* Technician */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                             Technician
@@ -208,21 +229,28 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                             value={newItem.technician || ""}
                             onChange={(e) => setNewItem({ ...newItem, technician: e.target.value })}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            placeholder="Assign technician"
                         />
                     </div>
-                    {newItem.itemType === "work_item" && (
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                                Labour Code
-                            </label>
+
+                    {/* Under Warranty */}
+                    <div className="flex items-center">
+                        <label className="flex items-center gap-2 cursor-pointer">
                             <input
-                                type="text"
-                                value={newItem.labourCode || ""}
-                                onChange={(e) => setNewItem({ ...newItem, labourCode: e.target.value })}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                type="checkbox"
+                                checked={newItem.partWarrantyTag || false}
+                                onChange={(e) => setNewItem({ ...newItem, partWarrantyTag: e.target.checked })}
+                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                             />
-                        </div>
-                    )}
+                            <span className="text-xs font-medium text-gray-700">Under Warranty</span>
+                        </label>
+                        {newItem.partWarrantyTag && (
+                            <p className="text-xs text-amber-600 ml-2 flex items-center gap-1">
+                                <span>⚠️</span>
+                                <span>Documentation required</span>
+                            </p>
+                        )}
+                    </div>
                 </div>
                 <div className="flex gap-2 mt-4">
                     <button
@@ -238,7 +266,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                             onClick={() => {
                                 setEditingIndex(null);
                                 setNewItem({
-                                    partWarrantyTag: "",
+                                    partWarrantyTag: false,
                                     partName: "",
                                     partCode: "",
                                     qty: 1,
@@ -246,7 +274,6 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                     technician: "",
                                     labourCode: "",
                                     itemType: "part",
-                                    description: "",
                                 });
                             }}
                             className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition"
@@ -270,13 +297,14 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Amount</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Technician</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Type</th>
+                                <th className="px-3 py-2 text-left font-semibold text-gray-700">Documentation</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {form.part2Items.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
+                                    <td colSpan={10} className="px-3 py-8 text-center text-gray-500">
                                         No items added yet. Add items using the form above.
                                     </td>
                                 </tr>
@@ -284,7 +312,17 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                 form.part2Items.map((item, index) => (
                                     <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
                                         <td className="px-3 py-2 text-gray-700 font-medium">{item.srNo}</td>
-                                        <td className="px-3 py-2 text-gray-700">{item.partWarrantyTag || "-"}</td>
+                                        <td className="px-3 py-2">
+                                            {item.partWarrantyTag ? (
+                                                <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                                                    ✓ Warranty
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                                    No Warranty
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="px-3 py-2 text-gray-700">{item.partName}</td>
                                         <td className="px-3 py-2 text-gray-700 font-mono text-xs">{item.partCode}</td>
                                         <td className="px-3 py-2 text-gray-700">{item.qty}</td>
@@ -297,6 +335,43 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                                 }`}>
                                                 {item.itemType === "part" ? "Part" : "Work Item"}
                                             </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {item.partWarrantyTag ? (
+                                                <div className="flex gap-1">
+                                                    {warrantyDocuments[index] ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedItemIndex(index);
+                                                                setWarrantyModalMode("view");
+                                                                setShowWarrantyModal(true);
+                                                            }}
+                                                            className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition inline-flex items-center gap-1"
+                                                            title="View Documentation"
+                                                        >
+                                                            <Eye size={12} />
+                                                            View
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedItemIndex(index);
+                                                                setWarrantyModalMode("upload");
+                                                                setShowWarrantyModal(true);
+                                                            }}
+                                                            className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition inline-flex items-center gap-1"
+                                                            title="Upload Documentation"
+                                                        >
+                                                            <Upload size={12} />
+                                                            Upload
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-gray-400">-</span>
+                                            )}
                                         </td>
                                         <td className="px-3 py-2">
                                             <div className="flex gap-1">
@@ -325,6 +400,26 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                     </table>
                 </div>
             </div>
+
+            {/* Warranty Documentation Modal */}
+            {showWarrantyModal && selectedItemIndex !== null && (
+                <WarrantyDocumentationModal
+                    open={showWarrantyModal}
+                    onClose={() => {
+                        setShowWarrantyModal(false);
+                        setSelectedItemIndex(null);
+                    }}
+                    itemDescription={form.part2Items[selectedItemIndex]?.partName || ""}
+                    initialData={warrantyDocuments[selectedItemIndex]}
+                    onSave={(data) => {
+                        setWarrantyDocuments(prev => ({
+                            ...prev,
+                            [selectedItemIndex]: data
+                        }));
+                    }}
+                    mode={warrantyModalMode}
+                />
+            )}
         </div>
     );
 };

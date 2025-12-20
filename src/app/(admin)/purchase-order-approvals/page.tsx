@@ -11,7 +11,7 @@ import Link from "next/link";
 
 export default function PurchaseOrderApprovalsPage() {
   const { userInfo, userRole } = useRole();
-  const isAdmin = userRole === "admin" || userRole === "super_admin";
+  const isAdmin = userRole === "admin";
   const [pendingOrders, setPendingOrders] = useState<PurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
@@ -112,13 +112,12 @@ export default function PurchaseOrderApprovalsPage() {
     return (
       <Card
         key={order.id}
-        className={`border-l-4 ${
-          order.status === "approved"
+        className={`border-l-4 ${order.status === "approved"
             ? "border-l-green-500"
             : order.status === "rejected"
-            ? "border-l-red-500"
-            : "border-l-yellow-500"
-        }`}
+              ? "border-l-red-500"
+              : "border-l-yellow-500"
+          }`}
       >
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -163,13 +162,12 @@ export default function PurchaseOrderApprovalsPage() {
           <div className="mb-4 flex gap-3">
             <button
               disabled
-              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${
-                order.status === "approved"
+              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${order.status === "approved"
                   ? "bg-green-500 text-white"
                   : order.status === "rejected"
-                  ? "bg-red-500 text-white"
-                  : "bg-yellow-500 text-white"
-              }`}
+                    ? "bg-red-500 text-white"
+                    : "bg-yellow-500 text-white"
+                }`}
             >
               {order.status === "approved" ? (
                 <CheckCircle size={16} />
@@ -236,13 +234,12 @@ export default function PurchaseOrderApprovalsPage() {
                     </p>
                     {item.status && (
                       <Badge
-                        className={`mt-1 ${
-                          item.status === "approved"
+                        className={`mt-1 ${item.status === "approved"
                             ? "bg-green-100 text-green-800"
                             : item.status === "rejected"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                        }`}
+                              ? "bg-red-100 text-red-800"
+                              : "bg-yellow-100 text-yellow-800"
+                          }`}
                       >
                         {item.status}
                       </Badge>

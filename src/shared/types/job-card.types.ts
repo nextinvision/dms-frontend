@@ -35,20 +35,20 @@ export interface JobCardPart1 {
   variantBatteryCapacity: string;
   warrantyStatus: string;
   estimatedDeliveryDate: string;
-  
+
   // RIGHT SIDE
   customerAddress: string;
-  
+
   // TOP RIGHT
   jobCardNumber: string;
-  
+
   // BELOW DETAILS (Text Blocks)
   customerFeedback: string; // Customer Feedback / Concerns
   technicianObservation: string;
   insuranceStartDate: string;
   insuranceEndDate: string;
   insuranceCompanyName: string;
-  
+
   // MANDATORY SERIAL DATA (only if applicable)
   batterySerialNumber: string;
   mcuSerialNumber: string;
@@ -61,7 +61,7 @@ export interface JobCardPart1 {
  */
 export interface JobCardPart2Item {
   srNo: number; // Auto-generate starting from 1
-  partWarrantyTag: string; // Job Card Line Name
+  partWarrantyTag: boolean; // Warranty status (true = under warranty, false = not under warranty)
   partName: string; // Clean name from description
   partCode: string; // First alphanumeric block from description
   qty: number; // Quantity
@@ -163,18 +163,18 @@ export interface JobCard {
   isTemporary?: boolean;
   customerArrivalTimestamp?: string;
   draftIntake?: Record<string, any>;
-  
+
   // Service Advisor submission to manager
   submittedToManager?: boolean;
   submittedAt?: string;
-  
+
   // Invoice workflow
   invoiceNumber?: string;
   invoiceCreatedAt?: string;
   invoiceSentToAdvisor?: boolean;
   invoiceSentToCustomer?: boolean;
   invoiceSentAt?: string;
-  
+
   // Additional appointment data fields
   customerWhatsappNumber?: string;
   customerAlternateMobile?: string;
@@ -200,7 +200,7 @@ export interface JobCard {
   checkInSlipNumber?: string;
   checkInDate?: string;
   checkInTime?: string;
-  
+
   // NEW STRUCTURED DATA (PART 1, PART 2, PART 2A, PART 3)
   part1?: JobCardPart1; // Customer & Vehicle Information
   part2?: JobCardPart2Item[]; // Parts & Work Items List
@@ -213,4 +213,7 @@ export interface KanbanColumn {
   title: string;
   status: JobCardStatus;
 }
+
+export type ViewType = "kanban" | "list";
+export type FilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
 

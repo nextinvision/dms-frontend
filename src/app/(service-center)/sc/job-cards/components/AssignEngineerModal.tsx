@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { X, Loader2, UserCheck } from 'lucide-react';
-import { Engineer } from '@/__mocks__/data/job-cards.mock';
+import { Engineer } from '@/shared/types/workshop.types';
 
 interface AssignEngineerModalProps {
     open: boolean;
@@ -45,7 +45,7 @@ const AssignEngineerModal: React.FC<AssignEngineerModalProps> = ({
                             {engineers.map((engineer) => (
                                 <label
                                     key={engineer.id}
-                                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition ${selectedEngineer === engineer.id
+                                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition ${selectedEngineer === String(engineer.id)
                                         ? "border-blue-500 bg-blue-50"
                                         : "border-gray-300 hover:bg-gray-50"
                                         }`}
@@ -53,8 +53,8 @@ const AssignEngineerModal: React.FC<AssignEngineerModalProps> = ({
                                     <input
                                         type="radio"
                                         name="engineer"
-                                        value={engineer.id}
-                                        checked={selectedEngineer === engineer.id}
+                                        value={String(engineer.id)}
+                                        checked={selectedEngineer === String(engineer.id)}
                                         onChange={(e) => onSelectEngineer(e.target.value)}
                                         className="w-4 h-4 text-blue-600"
                                     />

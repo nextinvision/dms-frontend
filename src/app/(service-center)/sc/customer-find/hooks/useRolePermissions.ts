@@ -16,7 +16,7 @@ export function useRolePermissions() {
   const isServiceManager = userRole === "sc_manager";
   const isTechnician = userRole === "service_engineer";
   const isInventoryManager = userRole === "inventory_manager";
-  const isAdminRole = userRole === "admin" || userRole === "super_admin";
+  const isAdminRole = userRole === "admin";
 
   const hasRoleAccess = (roles: UserRole[]): boolean => {
     return isAdminRole || roles.includes(userRole);

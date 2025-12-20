@@ -12,6 +12,7 @@ import {
     unauthorizedResponseInterceptor
 } from './interceptors';
 import { handleApiError } from './error-handler';
+import { ApiError } from './errors';
 
 import { API_CONFIG } from '@/config/api.config';
 
@@ -21,6 +22,7 @@ const API_BASE_URL = API_CONFIG.BASE_URL;
 class ApiClient {
     private baseURL: string;
     private cache = new Map<string, { data: any; expiry: number }>();
+    private defaultTimeout = API_CONFIG.TIMEOUT || 30000;
 
     constructor(baseURL: string = API_BASE_URL) {
         this.baseURL = baseURL;
@@ -71,6 +73,29 @@ class ApiClient {
     }
 
     /**
+     * Execute fetch with timeout
+     */
+    private async requestWithTimeout(url: string, options: RequestInit, timeout: number): Promise<Response> {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: options.signal || controller.signal,
+            });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (error instanceof Error && error.name === 'AbortError') {
+                throw new Error('Request timeout');
+            }
+            throw error;
+        }
+    }
+
+    /**
      * Core request method with retry and caching
      */
     private async request<T = any>(
@@ -108,7 +133,6 @@ class ApiClient {
                         'Content-Type': 'application/json',
                         ...config?.headers,
                     },
-                    signal: config?.signal,
                 };
 
                 // Add body for non-GET requests
@@ -119,14 +143,50 @@ class ApiClient {
                 // Apply request interceptors
                 requestConfig = await this.applyRequestInterceptors(requestConfig, url);
 
-                // Make request
-                let response = await fetch(url, requestConfig);
+                // Make request with timeout
+                let response = await this.requestWithTimeout(
+                    url,
+                    requestConfig,
+                    config?.timeout ?? this.defaultTimeout
+                );
 
                 // Apply response interceptors
                 response = await this.applyResponseInterceptors(response);
 
-                // Parse response
-                const responseData = await response.json();
+                // Check content type
+                const contentType = response.headers.get('content-type');
+                let responseData: any;
+
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        responseData = await response.json();
+                    } catch (e) {
+                        // JSON parsing failed even with correct header
+                        throw new Error('Invalid JSON response');
+                    }
+                } else {
+                    // Handle non-JSON response (likely an error page)
+                    const text = await response.text();
+
+                    // If response is not ok, throw error with text content
+                    if (!response.ok) {
+                        throw {
+                            response: {
+                                status: response.status,
+                                data: { message: text.substring(0, 500) } // Truncate long HTML
+                            }
+                        };
+                    }
+
+                    // If it is 200 OK but text/html, it might be an issue or just text response
+                    try {
+                        // Try parsing as JSON anyway just in case header is missing/wrong
+                        responseData = JSON.parse(text);
+                    } catch {
+                        // Fallback to text
+                        responseData = { message: text };
+                    }
+                }
 
                 const result = {
                     data: responseData.data || responseData,
@@ -148,8 +208,8 @@ class ApiClient {
                 attempts++;
 
                 // Retry logic for 5xx errors or network errors
-                const isRetryable = error.status >= 500 || !error.status;
-                if (attempts <= maxRetries && isRetryable) {
+                const isRetryable = (error.status >= 500 || !error.status) && attempts <= maxRetries;
+                if (isRetryable) {
                     const delay = API_CONFIG.RETRY_DELAY * Math.pow(2, attempts - 1);
                     if (process.env.NODE_ENV === 'development') {
                         console.warn(`[API Retry] Attempt ${attempts} failed for ${url}. Retrying in ${delay}ms...`);
@@ -166,8 +226,8 @@ class ApiClient {
                 }
 
                 // Parse and throw error
-                const apiError = handleApiError(error);
-                throw apiError;
+                const errorInfo = handleApiError(error);
+                throw new ApiError(errorInfo.message, errorInfo.status, errorInfo.code, errorInfo.errors);
             }
         }
 

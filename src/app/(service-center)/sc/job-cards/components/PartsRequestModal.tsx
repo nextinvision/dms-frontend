@@ -108,7 +108,7 @@ const PartsRequestModal: React.FC<PartsRequestModalProps> = ({
 
         const newItem: JobCardPart2Item = {
             srNo: part2ItemsList.length + 1,
-            partWarrantyTag: newItemForm.partWarrantyTag,
+            partWarrantyTag: newItemForm.isWarranty, // Boolean: is this part under warranty?
             partName: newItemForm.partName,
             partCode: newItemForm.partCode || (newItemForm.partName.match(/^([A-Z0-9_-]+)/i)?.[1] || ""),
             qty: newItemForm.qty || 1,

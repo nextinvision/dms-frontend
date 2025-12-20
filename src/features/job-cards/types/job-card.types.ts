@@ -61,7 +61,7 @@ export interface JobCardPart1 {
  */
 export interface JobCardPart2Item {
   srNo: number; // Auto-generate starting from 1
-  partWarrantyTag: string; // Job Card Line Name
+  partWarrantyTag: boolean; // Warranty status (true = under warranty, false = not under warranty)
   partName: string; // Clean name from description
   partCode: string; // First alphanumeric block from description
   qty: number; // Quantity
@@ -232,6 +232,11 @@ export type CreateJobCardForm = {
   alternateMobile?: string;
   email?: string;
 
+  // Customer Address Components
+  customerState?: string;
+  customerCity?: string;
+  customerPincode?: string;
+
   // Additional Vehicle Details
   vehicleYear?: number;
   motorNumber?: string;
@@ -272,4 +277,7 @@ export type CreateJobCardForm = {
   symptom: string;
   defectPart: string;
 };
+
+export type ViewType = "kanban" | "list";
+export type FilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
 
