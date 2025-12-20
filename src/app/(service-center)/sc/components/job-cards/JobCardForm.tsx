@@ -202,7 +202,7 @@ export default function JobCardForm({
                 savedJobCard = await jobCardService.update(jobCardId, { ...jobCardData, id: jobCardId });
                 alert("Job card updated successfully!");
             } else {
-                savedJobCard = await jobCardService.create(jobCardData);
+                savedJobCard = await jobCardService.create({ ...jobCardData, id: `temp_${Date.now()}` });
                 await createPartsRequestFromJobCard(savedJobCard);
                 alert("Job card created successfully!");
             }
