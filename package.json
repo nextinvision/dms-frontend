@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:clean": "rm -rf .next && next build",
+    "clean": "rm -rf .next || rmdir /s /q .next 2>nul || true",
+    "build:clean": "npm run clean && npm run build",
     "start": "next start",
     "lint": "eslint"
   },
