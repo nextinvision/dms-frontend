@@ -1,12 +1,11 @@
 /**
  * User roles in the system
  */
-export type UserRole = 
-  | "admin" 
-  | "super_admin" 
-  | "sc_manager" 
-  | "service_engineer" 
-  | "service_advisor" 
+export type UserRole =
+  | "admin"
+  | "sc_manager"
+  | "service_engineer"
+  | "service_advisor"
   | "call_center"
   | "inventory_manager"
   | "central_inventory_manager";

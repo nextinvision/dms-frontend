@@ -37,7 +37,7 @@ export function Navbar({ open, setOpen, isLoggedIn = true }: NavbarProps) {
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   const dashboardTitle = useMemo(() => {
-    if (userRole === "admin" || userRole === "super_admin") {
+    if (userRole === "admin") {
       return "Admin Dashboard";
     } else if (userRole === "call_center") {
       return "Call Center Panel";
@@ -84,7 +84,7 @@ export function Navbar({ open, setOpen, isLoggedIn = true }: NavbarProps) {
     if (typeof window !== "undefined") {
       const storedCenters = safeStorage.getItem<Record<string, ServiceCenter>>("serviceCenters", {});
       const allCenters = [...staticServiceCenters];
-      
+
       Object.values(storedCenters).forEach((center) => {
         if (!allCenters.find((c) => c.id === center.id)) {
           allCenters.push({ id: center.id, name: center.name, location: center.location || "" });
@@ -314,14 +314,14 @@ export function Navbar({ open, setOpen, isLoggedIn = true }: NavbarProps) {
               className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-600 to-indigo-700 text-white flex items-center justify-center font-semibold hover:from-indigo-700 hover:to-indigo-800 transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
               title="User menu"
             >
-              {userRole === "admin" || userRole === "super_admin" ? "R" : "SC"}
+              {userRole === "admin" ? "R" : "SC"}
             </button>
-            
+
             {showUserDropdown && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl z-50 backdrop-blur-sm overflow-hidden">
                 <div className="p-4 bg-gradient-to-br from-gray-50 to-white">
                   <p className="text-sm font-semibold text-gray-900">
-                    {userInfo?.name || (userRole === "admin" || userRole === "super_admin" ? "Admin User" : "Service Center User")}
+                    {userInfo?.name || (userRole === "admin" ? "Admin User" : "Service Center User")}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {userInfo?.email || ""}

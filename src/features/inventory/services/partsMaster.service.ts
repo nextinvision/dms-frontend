@@ -76,7 +76,7 @@ function mapPartFormDataToPart(data: PartFormData, id: string): Part {
     // Optional
     ...(data.centerId && { centerId: data.centerId }),
   };
-  
+
   return part;
 }
 
@@ -98,23 +98,23 @@ class PartsMasterService {
     if (!data.partName?.trim()) {
       throw new Error("Part Name is required to save a part");
     }
-    
+
     const parts = await this.getAll();
-    
+
     // Generate partId if not provided
     const partId = data.partId?.trim() || generatePartId();
     const partNumber = data.partNumber?.trim() || "";
-    
+
     // Check for duplicate partId
     if (parts.some(p => p.partId === partId)) {
       throw new Error(`Part with ID "${partId}" already exists`);
     }
-    
+
     // Check for duplicate partNumber only if provided
     if (partNumber && parts.some(p => p.partNumber === partNumber)) {
       throw new Error(`Part with Number "${partNumber}" already exists`);
     }
-    
+
     const newPart = mapPartFormDataToPart(data, generateInternalId());
     parts.push(newPart);
     safeStorage.setItem(this.storageKey, parts);
@@ -170,7 +170,7 @@ class PartsMasterService {
     const existingParts = await this.getAll();
     const existingPartIds = new Set(existingParts.map((p) => p.partId));
     const existingPartNumbers = new Set(existingParts.map((p) => p.partNumber));
-    
+
     let success = 0;
     let failed = 0;
     const errors: string[] = [];
@@ -219,6 +219,19 @@ class PartsMasterService {
     }
 
     return { success, failed, errors };
+  }
+
+  async searchParts(query: string): Promise<Part[]> {
+    const parts = await this.getAll();
+    const normalizedQuery = query.toLowerCase().trim();
+    if (!normalizedQuery) return [];
+
+    return parts.filter(
+      (p) =>
+        p.partName.toLowerCase().includes(normalizedQuery) ||
+        p.partId.toLowerCase().includes(normalizedQuery) ||
+        p.partNumber?.toLowerCase().includes(normalizedQuery)
+    );
   }
 }
 

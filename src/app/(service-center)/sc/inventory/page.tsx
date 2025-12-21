@@ -15,7 +15,7 @@ import {
   CheckCircle,
   X,
 } from "lucide-react";
-import type { InventoryItem, StockStatus, FilterType as InventoryFilterType, StockIndicator } from "@/shared/types";
+import type { InventoryItem, StockStatus, FilterType, StockIndicator } from "@/shared/types/inventory.types";
 import { getDefaultServiceCenterInventory, initializeInventoryMockData } from "@/__mocks__/data/inventory.mock";
 
 interface RequestItem {
@@ -29,7 +29,7 @@ interface RequestItem {
 }
 
 export default function SCInventory() {
-  const [filter, setFilter] = useState<InventoryFilterType>("all");
+  const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPart, setSelectedPart] = useState<InventoryItem | null>(null);
   const [showRequestModal, setShowRequestModal] = useState<boolean>(false);
@@ -310,21 +310,20 @@ export default function SCInventory() {
               />
             </div>
             <div className="flex gap-2">
-              {(["all", "low_stock", "out_of_stock"] as InventoryFilterType[]).map((f) => (
+              {(["all", "low_stock", "out_of_stock"] as FilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                    filter === f
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${filter === f
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                 >
                   {f === "all"
                     ? "All"
                     : f === "low_stock"
-                    ? "Low Stock"
-                    : "Out of Stock"}
+                      ? "Low Stock"
+                      : "Out of Stock"}
                 </button>
               ))}
             </div>
@@ -400,9 +399,8 @@ export default function SCInventory() {
                             <div
                               className={`h-2 rounded-full ${stockIndicator.color}`}
                               style={{
-                                width: `${
-                                  (item.currentQty / (item.minStock * 3)) * 100
-                                }%`,
+                                width: `${(item.currentQty / (item.minStock * 3)) * 100
+                                  }%`,
                               }}
                             ></div>
                           </div>

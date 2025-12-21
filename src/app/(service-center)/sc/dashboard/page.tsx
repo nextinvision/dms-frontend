@@ -63,7 +63,7 @@ export default function SCDashboard() {
 
         const today = new Date().toISOString().split("T")[0];
         const todayAppointments = appointments.filter((apt) => apt.date === today);
-        
+
         // Defer state update to avoid synchronous setState in effect
         requestAnimationFrame(() => {
           setTodayAppointmentsCount(todayAppointments.length);
@@ -88,7 +88,7 @@ export default function SCDashboard() {
         }>>("appointments", []);
         const today = new Date().toISOString().split("T")[0];
         const todayApts = updatedAppointments.filter((apt) => apt.date === today);
-        
+
         // Defer state update to avoid synchronous setState in callback
         requestAnimationFrame(() => {
           setTodayAppointmentsCount(todayApts.length);
@@ -374,11 +374,6 @@ export default function SCDashboard() {
         ],
       },
       admin: {
-        cards: [],
-        alerts: [],
-        quickActions: [],
-      },
-      super_admin: {
         cards: [],
         alerts: [],
         quickActions: [],

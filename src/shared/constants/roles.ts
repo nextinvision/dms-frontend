@@ -5,7 +5,6 @@ import type { UserRole } from '../types/auth.types';
  */
 export const USER_ROLES: UserRole[] = [
   "admin",
-  "super_admin",
   "sc_manager",
   "service_engineer",
   "service_advisor",
@@ -17,7 +16,7 @@ export const USER_ROLES: UserRole[] = [
 /**
  * Admin roles
  */
-export const ADMIN_ROLES: UserRole[] = ["admin", "super_admin"];
+export const ADMIN_ROLES: UserRole[] = ["admin"];
 
 /**
  * Service Center roles
@@ -44,7 +43,6 @@ export const CENTRAL_INVENTORY_ROLES: UserRole[] = ["central_inventory_manager"]
  */
 export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   admin: "Admin",
-  super_admin: "Super Admin",
   sc_manager: "SC Manager",
   service_engineer: "Service Engineer",
   service_advisor: "Service Advisor",
@@ -59,7 +57,6 @@ export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
  */
 export const ROLES_CAN_CREATE_CUSTOMER: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
 ];
@@ -77,7 +74,6 @@ export function canCreateCustomer(role: UserRole): boolean {
  */
 export const ROLES_CAN_CREATE_APPOINTMENT: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
 ];
@@ -95,7 +91,6 @@ export function canCreateAppointment(role: UserRole): boolean {
  */
 export const ROLES_CAN_EDIT_CUSTOMER_INFO: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
 ];
@@ -113,7 +108,6 @@ export function canEditCustomerInfo(role: UserRole): boolean {
  */
 export const ROLES_CAN_EDIT_VEHICLE_INFO: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
 ];
@@ -131,7 +125,6 @@ export function canEditVehicleInfo(role: UserRole): boolean {
  */
 export const ROLES_CAN_EDIT_SERVICE_DETAILS: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
   "sc_manager",
@@ -150,7 +143,6 @@ export function canEditServiceDetails(role: UserRole): boolean {
  */
 export const ROLES_CAN_EDIT_DOCUMENTATION: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
   "sc_manager",
@@ -169,7 +161,6 @@ export function canEditDocumentation(role: UserRole): boolean {
  */
 export const ROLES_CAN_EDIT_OPERATIONAL_DETAILS: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
   "sc_manager",
@@ -188,7 +179,6 @@ export function canEditOperationalDetails(role: UserRole): boolean {
  */
 export const ROLES_CAN_EDIT_BILLING_PAYMENT: UserRole[] = [
   "admin",
-  "super_admin",
   "service_advisor",
   "sc_manager",
 ];
@@ -206,7 +196,6 @@ export function canEditBillingPayment(role: UserRole): boolean {
  */
 export const ROLES_CAN_EDIT_POST_SERVICE: UserRole[] = [
   "admin",
-  "super_admin",
   "call_center",
   "service_advisor",
   "sc_manager",

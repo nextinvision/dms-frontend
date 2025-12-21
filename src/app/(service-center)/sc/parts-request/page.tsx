@@ -85,7 +85,7 @@ export default function PartsRequest() {
 
     const loadJobCards = () => {
       const storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
-      
+
       if (storedJobCards.length > 0) {
         // Merge service engineer job cards with stored cards, avoiding duplicates
         const existingIds = new Set(storedJobCards.map((j) => j.id));
@@ -116,14 +116,14 @@ export default function PartsRequest() {
   // Filter visible job cards for service engineer
   const visibleJobCards = useMemo(() => {
     let filtered = filterByServiceCenter(jobCards, serviceCenterContext);
-    
+
     if (isTechnician) {
       const engineerName = userInfo?.name || "Service Engineer";
       filtered = filtered.filter(
         (job) => job.assignedEngineer === engineerName || job.assignedEngineer === "Service Engineer"
       );
     }
-    
+
     return filtered;
   }, [jobCards, serviceCenterContext, isTechnician, userInfo]);
 
@@ -140,7 +140,7 @@ export default function PartsRequest() {
   // Filtered active job cards based on search
   const filteredActiveJobCards = useMemo(() => {
     if (!searchQuery.trim()) return activeJobCards;
-    
+
     const query = searchQuery.toLowerCase();
     return activeJobCards.filter(
       (job) =>
@@ -160,7 +160,7 @@ export default function PartsRequest() {
       try {
         const allRequests = await jobCardPartsRequestService.getAll();
         const requestsMap: Record<string, JobCardPartsRequest> = {};
-        
+
         allRequests.forEach((request) => {
           const matchingJob = activeJobCards.find(
             (job) => job.id === request.jobCardId || job.jobCardNumber === request.jobCardId
@@ -173,7 +173,7 @@ export default function PartsRequest() {
             requestsMap[request.jobCardId] = request;
           }
         });
-        
+
         setPartsRequestsData(requestsMap);
       } catch (error) {
         console.error("Failed to load parts requests:", error);
@@ -241,7 +241,7 @@ export default function PartsRequest() {
         partCode = codeMatch[1];
       }
     }
-    
+
     let warrantyTag = "";
     if (part.partId) {
       warrantyTag = part.partId;
@@ -250,7 +250,7 @@ export default function PartsRequest() {
     } else {
       warrantyTag = `RQL${Date.now().toString().slice(-12)}`;
     }
-    
+
     setNewItemForm({
       partWarrantyTag: warrantyTag,
       partName: part.partName || "",
@@ -278,9 +278,10 @@ export default function PartsRequest() {
       return;
     }
 
+
     const newItem: JobCardPart2Item = {
       srNo: part2ItemsList.length + 1,
-      partWarrantyTag: newItemForm.partWarrantyTag,
+      partWarrantyTag: newItemForm.isWarranty, // Boolean: is this part under warranty?
       partName: newItemForm.partName,
       partCode: newItemForm.partCode || (newItemForm.partName.match(/^([A-Z0-9_-]+)/i)?.[1] || ""),
       qty: newItemForm.qty || 1,
@@ -295,7 +296,7 @@ export default function PartsRequest() {
     };
 
     setPart2ItemsList([...part2ItemsList, newItem]);
-    
+
     // Reset form
     setNewItemForm({
       partWarrantyTag: "",
@@ -331,7 +332,7 @@ export default function PartsRequest() {
 
     try {
       setLoading(true);
-      
+
       const partsWithDetails = part2ItemsList.map((item) => ({
         partId: item.partCode || `unknown-${item.partName.replace(/\s+/g, "-").toLowerCase()}`,
         partName: item.partName,
@@ -341,7 +342,7 @@ export default function PartsRequest() {
       }));
 
       const requestedBy = userInfo?.name || "Service Engineer";
-      
+
       const request = await jobCardPartsRequestService.createRequestFromJobCard(
         selectedJobCard,
         partsWithDetails,
@@ -356,7 +357,7 @@ export default function PartsRequest() {
         if (request.jobCardId) updated[request.jobCardId] = request;
         return updated;
       });
-      
+
       // Reset form
       setPart2ItemsList([]);
       setNewItemForm({
@@ -373,7 +374,7 @@ export default function PartsRequest() {
       });
       setShowPartDropdown(false);
       setPartSearchResults([]);
-      
+
       alert(`Part request submitted successfully for Job Card: ${selectedJobCard.jobCardNumber || selectedJobCard.id}\nItems: ${partsWithDetails.length}\nRequest sent to SC Manager and Inventory Manager.`);
     } catch (error) {
       console.error("Failed to submit parts request:", error);
@@ -426,8 +427,8 @@ export default function PartsRequest() {
       <div className="pt-6 pb-10 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-blue-600 mb-2">Parts Request</h1>
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-blue-600 mb-2">Parts Request</h1>
             <p className="text-gray-500">Request parts for your active job cards</p>
           </div>
 
@@ -436,7 +437,7 @@ export default function PartsRequest() {
             <div className="lg:col-span-1">
               <div className="bg-white rounded-2xl shadow-md p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4">Active Job Cards</h2>
-                
+
                 {/* Search */}
                 <div className="mb-4 relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -460,16 +461,15 @@ export default function PartsRequest() {
                     filteredActiveJobCards.map((job) => {
                       const request = getRequestStatus(job);
                       const isSelected = selectedJobCard?.id === job.id;
-                      
+
                       return (
                         <div
                           key={job.id}
                           onClick={() => handleSelectJobCard(job)}
-                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                            isSelected
+                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${isSelected
                               ? "border-blue-500 bg-blue-50"
                               : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
-                          }`}
+                            }`}
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
@@ -488,28 +488,26 @@ export default function PartsRequest() {
                               </div>
                             )}
                           </div>
-                          
+
                           <div className="flex items-center gap-2 text-xs text-gray-600 mt-2">
                             <Car size={14} />
                             <span>{job.vehicle} ({job.registration})</span>
-        </div>
+                          </div>
 
                           <div className="mt-2 flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              job.status === "Assigned"
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${job.status === "Assigned"
                                 ? "bg-blue-100 text-blue-700"
                                 : job.status === "In Progress"
-                                ? "bg-yellow-100 text-yellow-700"
-                                : "bg-orange-100 text-orange-700"
-                            }`}>
+                                  ? "bg-yellow-100 text-yellow-700"
+                                  : "bg-orange-100 text-orange-700"
+                              }`}>
                               {job.status}
                             </span>
                             {request && (
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                request.status === "approved"
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${request.status === "approved"
                                   ? "bg-green-100 text-green-700"
                                   : "bg-gray-100 text-gray-700"
-                              }`}>
+                                }`}>
                                 {request.status === "approved" ? "Parts Approved" : "Request Pending"}
                               </span>
                             )}
@@ -525,7 +523,7 @@ export default function PartsRequest() {
             {/* Right Column: Parts Request Form */}
             <div className="lg:col-span-2">
               {selectedJobCard ? (
-        <div className="bg-white rounded-2xl shadow-md p-6">
+                <div className="bg-white rounded-2xl shadow-md p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       <h2 className="text-xl font-bold text-gray-800">Request Parts</h2>
@@ -808,7 +806,7 @@ export default function PartsRequest() {
                   {(() => {
                     const request = getRequestStatus(selectedJobCard);
                     if (!request) return null;
-                    
+
                     return (
                       <div className="mt-6 pt-6 border-t border-gray-200">
                         <h4 className="text-sm font-semibold text-gray-800 mb-3">Parts Request Status</h4>
@@ -830,11 +828,10 @@ export default function PartsRequest() {
 
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium text-gray-700 min-w-[120px]">SC Manager:</span>
-                            <span className={`px-3 py-1.5 rounded text-xs font-semibold ${
-                              request.scManagerApproved
+                            <span className={`px-3 py-1.5 rounded text-xs font-semibold ${request.scManagerApproved
                                 ? "bg-green-500 text-white"
                                 : "bg-red-500 text-white"
-                            }`}>
+                              }`}>
                               {request.scManagerApproved ? "✓ Approved" : "Pending"}
                             </span>
                             {request.scManagerApproved && request.scManagerApprovedBy && (
@@ -846,18 +843,17 @@ export default function PartsRequest() {
 
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium text-gray-700 min-w-[120px]">Inventory Manager:</span>
-                            <span className={`px-3 py-1.5 rounded text-xs font-semibold ${
-                              request.inventoryManagerAssigned
+                            <span className={`px-3 py-1.5 rounded text-xs font-semibold ${request.inventoryManagerAssigned
                                 ? "bg-green-500 text-white"
                                 : request.scManagerApproved
-                                ? "bg-yellow-500 text-white"
-                                : "bg-gray-400 text-white"
-                            }`}>
+                                  ? "bg-yellow-500 text-white"
+                                  : "bg-gray-400 text-white"
+                              }`}>
                               {request.inventoryManagerAssigned
                                 ? "✓ Parts Assigned"
                                 : request.scManagerApproved
-                                ? "Pending"
-                                : "Waiting for SC Approval"}
+                                  ? "Pending"
+                                  : "Waiting for SC Approval"}
                             </span>
                           </div>
                         </div>

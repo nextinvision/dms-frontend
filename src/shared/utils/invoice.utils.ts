@@ -239,7 +239,7 @@ export function populateInvoiceFromJobCard(
     const gst = calculateGST(taxableAmount, gstRate, placeOfSupply, serviceCenter.state);
 
     return {
-      name: item.partName || item.partWarrantyTag || `Item ${index + 1}`,
+      name: item.partName || (item.partWarrantyTag ? "Warranty Item" : `Item ${index + 1}`) || `Item ${index + 1}`,
       hsnSacCode: item.partCode || "",
       unitPrice: item.amount || 0,
       quantity: item.qty || 1,
@@ -364,4 +364,6 @@ export function validateInvoiceData(
     errors,
   };
 }
+
+
 

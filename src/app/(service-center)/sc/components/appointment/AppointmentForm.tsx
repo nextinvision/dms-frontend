@@ -49,7 +49,6 @@ export interface AppointmentFormProps {
   onCustomerArrived?: (form: AppointmentFormType) => void;
   appointmentStatus?: string;
   customerArrived?: boolean;
-  onCreateQuotation?: (form: AppointmentFormType) => void;
 }
 
 export const AppointmentForm = ({
@@ -68,7 +67,6 @@ export const AppointmentForm = ({
   onCustomerArrived,
   appointmentStatus,
   customerArrived,
-  onCreateQuotation,
 }: AppointmentFormProps) => {
   const { userRole, userInfo } = useRole();
   const isCallCenter = userRole === "call_center";
@@ -76,7 +74,7 @@ export const AppointmentForm = ({
   const isServiceManager = userRole === "sc_manager";
   const isTechnician = userRole === "service_engineer";
   const isInventoryManager = userRole === "inventory_manager";
-  const isAdminRole = userRole === "admin" || userRole === "super_admin";
+  const isAdminRole = userRole === "admin";
 
   const hasRoleAccess = (roles: string[]): boolean => {
     return isAdminRole || roles.includes(userRole);
@@ -122,19 +120,19 @@ export const AppointmentForm = ({
   const selectedVehicle = useMemo(() => {
     // If vehicleInfo is explicitly provided, use it
     if (vehicleInfo) return vehicleInfo;
-    
+
     // If form has a vehicle selected, find it in customer's vehicles
     if (selectedCustomer && formData.vehicle) {
       return selectedCustomer.vehicles?.find(
         (v) => formatVehicleString(v) === formData.vehicle
       ) || null;
     }
-    
+
     // If no vehicle selected but customer has vehicles, use first one
     if (selectedCustomer && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 0) {
       return selectedCustomer.vehicles[0];
     }
-    
+
     return null;
   }, [selectedCustomer, formData.vehicle, vehicleInfo]);
 
@@ -163,7 +161,7 @@ export const AppointmentForm = ({
         ...prev,
         ...initialData,
       }));
-      
+
       // Initialize pickup/drop state and city from initialData
       if (initialData.pickupState) {
         setPickupState(initialData.pickupState);
@@ -182,11 +180,11 @@ export const AppointmentForm = ({
         setPickupAddressDifferent(true);
       }
       // Initialize dropSameAsPickup if drop address matches pickup
-      if (initialData.dropAddress && 
-          initialData.dropAddress === initialData.pickupAddress &&
-          initialData.dropState === initialData.pickupState &&
-          initialData.dropCity === initialData.pickupCity &&
-          initialData.dropPincode === initialData.pickupPincode) {
+      if (initialData.dropAddress &&
+        initialData.dropAddress === initialData.pickupAddress &&
+        initialData.dropState === initialData.pickupState &&
+        initialData.dropCity === initialData.pickupCity &&
+        initialData.dropPincode === initialData.pickupPincode) {
         setDropSameAsPickup(true);
       }
     }
@@ -209,7 +207,7 @@ export const AppointmentForm = ({
         pincode: prev.pincode || customerData.pincode || "",
         customerType: prev.customerType || customerData.customerType || undefined,
       }));
-      
+
       // Auto-select first vehicle if none selected and customer has vehicles
       if (!formData.vehicle && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 0) {
         const firstVehicle = selectedCustomer.vehicles[0];
@@ -233,7 +231,7 @@ export const AppointmentForm = ({
       }
     }
   }, [selectedCustomer, selectedVehicle, formData.vehicle, onVehicleChange]);
-  
+
   // Update parent when form vehicle changes (for external vehicle selection)
   useEffect(() => {
     if (formData.vehicle && selectedCustomer && onVehicleChange) {
@@ -294,7 +292,7 @@ export const AppointmentForm = ({
       dropState: dropState || formData.dropState,
       dropCity: dropCity || formData.dropCity,
     };
-    
+
     const errors: Record<string, string> = {};
     const missingFields: string[] = [];
 
@@ -470,7 +468,7 @@ export const AppointmentForm = ({
             onChange={(e) => {
               const selectedVehicleValue = e.target.value;
               updateFormData({ vehicle: selectedVehicleValue });
-              
+
               // Find and notify parent about vehicle change
               if (selectedCustomer && onVehicleChange) {
                 const vehicle = selectedCustomer.vehicles?.find(
@@ -491,7 +489,7 @@ export const AppointmentForm = ({
             label="Vehicle"
             required
             value={formData.vehicle}
-            onChange={() => {}}
+            onChange={() => { }}
             readOnly
             error={fieldErrors.vehicle}
           />
@@ -503,8 +501,8 @@ export const AppointmentForm = ({
           </p>
         )}
       </div>
-  {/* Vehicle Information Section */}
-  <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
+      {/* Vehicle Information Section */}
+      <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
         <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
           <span className="w-1 h-6 bg-green-600 rounded"></span>
           Vehicle Information
@@ -691,11 +689,10 @@ export const AppointmentForm = ({
                 onChange={(e) => updateFormData({ customerComplaintIssue: e.target.value })}
                 rows={3}
                 placeholder="Describe the customer complaint or issue..."
-                className={`w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 resize-none ${
-                  fieldErrors.customerComplaintIssue
-                    ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
-                    : "border border-gray-200 focus:ring-purple-500/20 focus:border-purple-500 bg-gray-50/50 focus:bg-white"
-                }`}
+                className={`w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 resize-none ${fieldErrors.customerComplaintIssue
+                  ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
+                  : "border border-gray-200 focus:ring-purple-500/20 focus:border-purple-500 bg-gray-50/50 focus:bg-white"
+                  }`}
                 required={isCallCenter}
               />
               {fieldErrors.customerComplaintIssue && (
@@ -795,8 +792,8 @@ export const AppointmentForm = ({
                           <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                             <FileText className="text-indigo-600 shrink-0" size={18} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                              <p className="text-sm font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
+                              <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
                             </div>
                             <button
                               onClick={() => handleRemoveDocument("customerIdProof", index)}
@@ -849,8 +846,8 @@ export const AppointmentForm = ({
                           <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                             <FileText className="text-indigo-600 shrink-0" size={18} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                              <p className="text-sm font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
+                              <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
                             </div>
                             <button
                               onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
@@ -903,8 +900,8 @@ export const AppointmentForm = ({
                           <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                             <FileText className="text-indigo-600 shrink-0" size={18} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                              <p className="text-sm font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
+                              <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
                             </div>
                             <button
                               onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
@@ -956,7 +953,7 @@ export const AppointmentForm = ({
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                       {formData.photosVideos.files.map((file, index) => (
                         <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                          {file.type.startsWith("image/") ? (
+                          {file?.type?.startsWith("image/") ? (
                             <Image
                               src={formData.photosVideos?.urls[index] || ""}
                               alt={file.name}
@@ -980,8 +977,8 @@ export const AppointmentForm = ({
                             </button>
                           </div>
                           <div className="p-2 bg-white">
-                            <p className="text-xs font-medium text-gray-800 truncate">{file.name}</p>
-                            <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            <p className="text-xs font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
+                            <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
                           </div>
                         </div>
                       ))}
@@ -1006,7 +1003,7 @@ export const AppointmentForm = ({
         />
       )}
 
-    
+
 
       {/* Date and Time */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1096,15 +1093,15 @@ export const AppointmentForm = ({
                       ...(checked
                         ? {}
                         : {
-                            pickupAddress: undefined,
-                            pickupState: undefined,
-                            pickupCity: undefined,
-                            pickupPincode: undefined,
-                            dropAddress: undefined,
-                            dropState: undefined,
-                            dropCity: undefined,
-                            dropPincode: undefined,
-                          }),
+                          pickupAddress: undefined,
+                          pickupState: undefined,
+                          pickupCity: undefined,
+                          pickupPincode: undefined,
+                          dropAddress: undefined,
+                          dropState: undefined,
+                          dropCity: undefined,
+                          dropPincode: undefined,
+                        }),
                     });
                     if (!checked) {
                       setPickupAddressDifferent(false);
@@ -1179,9 +1176,9 @@ export const AppointmentForm = ({
                                 pickupCity: undefined,
                                 ...(dropSameAsPickup
                                   ? {
-                                      dropState: newState,
-                                      dropCity: undefined,
-                                    }
+                                    dropState: newState,
+                                    dropCity: undefined,
+                                  }
                                   : {}),
                               });
                               if (dropSameAsPickup) {
@@ -1356,7 +1353,7 @@ export const AppointmentForm = ({
             <FormInput
               label="Estimated Cost"
               value={formData.estimatedCost ? `₹${formData.estimatedCost}` : ""}
-              onChange={() => {}}
+              onChange={() => { }}
               readOnly
               placeholder="Cost will be determined during service"
             />
@@ -1380,50 +1377,50 @@ export const AppointmentForm = ({
       )}
 
       {/* Customer Arrival Section (Service Advisor Only) */}
-      {isServiceAdvisor && 
-       onCustomerArrived && 
-       appointmentStatus && 
-       appointmentStatus !== "In Progress" && 
-       appointmentStatus !== "Sent to Manager" && (
-        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <CheckCircle size={20} className="text-blue-600" />
-            Customer Arrival
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Mark customer arrival status. This will update the appointment status when you save.
-          </p>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (onCustomerArrived) {
-                  // Ensure all state values are synced to formData
-                  const finalFormData: AppointmentFormType = {
-                    ...formData,
-                    pickupState: pickupState || formData.pickupState,
-                    pickupCity: pickupCity || formData.pickupCity,
-                    dropState: dropState || formData.dropState,
-                    dropCity: dropCity || formData.dropCity,
-                  };
-                  onCustomerArrived(finalFormData);
-                }
-              }}
-              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
-            >
-              <CheckCircle size={18} />
-              Customer Arrived
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
-            >
-              Customer Not Arrived
-            </button>
+      {isServiceAdvisor &&
+        onCustomerArrived &&
+        appointmentStatus &&
+        appointmentStatus !== "In Progress" &&
+        appointmentStatus !== "Sent to Manager" && (
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <CheckCircle size={20} className="text-blue-600" />
+              Customer Arrival
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Mark customer arrival status. This will update the appointment status when you save.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onCustomerArrived) {
+                    // Ensure all state values are synced to formData
+                    const finalFormData: AppointmentFormType = {
+                      ...formData,
+                      pickupState: pickupState || formData.pickupState,
+                      pickupCity: pickupCity || formData.pickupCity,
+                      dropState: dropState || formData.dropState,
+                      dropCity: dropCity || formData.dropCity,
+                    };
+                    onCustomerArrived(finalFormData);
+                  }
+                }}
+                className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
+              >
+                <CheckCircle size={18} />
+                Customer Arrived
+              </button>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                Customer Not Arrived
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Action Buttons */}
       <div className="flex gap-3 pt-4 border-t border-gray-200">
@@ -1433,33 +1430,13 @@ export const AppointmentForm = ({
         >
           Cancel
         </button>
-        {customerArrived && onCreateQuotation ? (
+        {(
           <button
-            onClick={() => {
-              if (onCreateQuotation) {
-                // Ensure all state values are synced to formData
-                const finalFormData: AppointmentFormType = {
-                  ...formData,
-                  pickupState: pickupState || formData.pickupState,
-                  pickupCity: pickupCity || formData.pickupCity,
-                  dropState: dropState || formData.dropState,
-                  dropCity: dropCity || formData.dropCity,
-                };
-                onCreateQuotation(finalFormData);
-              }
-            }}
-            className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition flex items-center justify-center gap-2"
+            onClick={handleSubmit}
+            className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
           >
-            <FileText size={18} />
-            Create Quotation
+            {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
           </button>
-        ) : (
-        <button
-          onClick={handleSubmit}
-          className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
-        >
-          {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
-        </button>
         )}
       </div>
 

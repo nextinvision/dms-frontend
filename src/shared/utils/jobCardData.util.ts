@@ -40,20 +40,20 @@ export function populateJobCardPart1(
     variantBatteryCapacity: additionalData?.variantBatteryCapacity || "",
     warrantyStatus: additionalData?.warrantyStatus || "",
     estimatedDeliveryDate: additionalData?.estimatedDeliveryDate || "",
-    
+
     // RIGHT SIDE
     customerAddress: customer.address || "",
-    
+
     // TOP RIGHT
     jobCardNumber: jobCardNumber || "",
-    
+
     // BELOW DETAILS (Text Blocks)
     customerFeedback: additionalData?.customerFeedback || "",
     technicianObservation: additionalData?.technicianObservation || "",
     insuranceStartDate: additionalData?.insuranceStartDate || "",
     insuranceEndDate: additionalData?.insuranceEndDate || "",
     insuranceCompanyName: additionalData?.insuranceCompanyName || "",
-    
+
     // MANDATORY SERIAL DATA (only if applicable)
     batterySerialNumber: additionalData?.batterySerialNumber || "",
     mcuSerialNumber: additionalData?.mcuSerialNumber || "",
@@ -139,11 +139,11 @@ export function convertPartsToPart2Items(
   parts: string[],
   startSrNo: number = 1
 ): JobCardPart2Item[] {
-  return parts.map((part, index) => ({
+  return parts.map((item, index) => ({
     srNo: startSrNo + index,
-    partWarrantyTag: part,
-    partName: part,
-    partCode: extractPartCode(part),
+    partWarrantyTag: false,
+    partName: item,
+    partCode: extractPartCode(item),
     qty: 1,
     amount: 0,
     technician: "",
@@ -183,45 +183,45 @@ export function parseJobCardLinesToPart2(
 ): JobCardPart2Item[] {
   return jobCardLines.map((line, index) => {
     const srNo = index + 1;
-    
+
     // PART WARRANTY TAG: Use Job Card Line Name if available
     const partWarrantyTag = line.name || "";
-    
+
     // PART CODE: Extract alphanumeric part code from description prefix
     // Example: "2W0000000027_011-FRONT FENDER" → "2W0000000027_011"
     const partCodeMatch = line.description.match(/^([A-Z0-9_-]+)/i);
     const partCode = partCodeMatch ? partCodeMatch[1] : "";
-    
+
     // PART NAME: Extract from Item Description before dash or comma, clean formatting
     // Example: "2W0000000027_011-FRONT FENDER, BODY JET BLACK" → "Front Fender"
     let partName = line.description;
-    
+
     // Remove part code prefix if present
     if (partCode) {
       partName = partName.replace(new RegExp(`^${partCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[-_\\s]*`, "i"), "");
     }
-    
+
     // Extract name before dash or comma
     const nameMatch = partName.match(/^([^-,\n]+)/);
     if (nameMatch) {
       partName = nameMatch[1].trim();
     }
-    
+
     // Clean formatting: Convert to title case, remove extra spaces
     partName = partName
       .split(/\s+/)
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(" ");
-    
+
     // QTY: Use quantity from line
     const qty = line.quantity || 1;
-    
+
     // AMOUNT: Use service cost if available, otherwise 0
     const amount = line.amount || 0;
-    
+
     // TECHNICIAN: Use provided technician or leave blank
     const technician = line.technician || "";
-    
+
     // LABOUR CODE: Auto-select based on item type
     let labourCode = "";
     if (line.itemType === "Work Item") {
@@ -237,10 +237,10 @@ export function parseJobCardLinesToPart2(
       // For Parts, set to "Auto Select With Part"
       labourCode = "Auto Select With Part";
     }
-    
+
     return {
       srNo,
-      partWarrantyTag,
+      partWarrantyTag: false, // This function doesn't have warranty info; default to false
       partName,
       partCode,
       qty,
@@ -298,7 +298,7 @@ export function jobCardPart1ToJSON(part1: JobCardPart1): Record<string, string> 
 export function jobCardPart2ToJSON(part2: JobCardPart2Item[]): Array<Record<string, string>> {
   return part2.map((item) => ({
     sr_no: String(item.srNo),
-    part_warranty_tag: item.partWarrantyTag || "",
+    part_warranty_tag: item.partWarrantyTag ? "true" : "false",
     part_name: item.partName || "",
     part_code: item.partCode || "",
     qty: String(item.qty || 0),

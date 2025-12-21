@@ -663,7 +663,7 @@ export default function Approvals() {
             part2: [
               {
                 srNo: 1,
-                partWarrantyTag: "Engine Oil Change",
+                partWarrantyTag: false,
                 partName: "Engine Oil",
                 partCode: "EO-001",
                 qty: 1,
@@ -674,7 +674,7 @@ export default function Approvals() {
               },
               {
                 srNo: 2,
-                partWarrantyTag: "Air Filter Replacement",
+                partWarrantyTag: false,
                 partName: "Air Filter",
                 partCode: "AF-002",
                 qty: 1,
@@ -737,7 +737,7 @@ export default function Approvals() {
             part2: [
               {
                 srNo: 1,
-                partWarrantyTag: "Front Brake Pads",
+                partWarrantyTag: false,
                 partName: "Brake Pads Front",
                 partCode: "BP-F-001",
                 qty: 1,
@@ -748,7 +748,7 @@ export default function Approvals() {
               },
               {
                 srNo: 2,
-                partWarrantyTag: "Rear Brake Pads",
+                partWarrantyTag: false,
                 partName: "Brake Pads Rear",
                 partCode: "BP-R-001",
                 qty: 1,
@@ -759,7 +759,7 @@ export default function Approvals() {
               },
               {
                 srNo: 3,
-                partWarrantyTag: "Brake Fluid",
+                partWarrantyTag: false,
                 partName: "Brake Fluid",
                 partCode: "BF-001",
                 qty: 1,
@@ -1791,4 +1791,5 @@ export default function Approvals() {
     </div>
   );
 }
+
 

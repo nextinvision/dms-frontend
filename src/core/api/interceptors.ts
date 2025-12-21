@@ -3,6 +3,8 @@
  * Handles authentication, logging, and error transformation
  */
 
+import Cookies from 'js-cookie';
+import { safeStorage } from '@/shared/lib/localStorage';
 import { ApiErrorHandler, parseApiError } from './error-handler';
 
 export interface RequestInterceptor {
@@ -19,10 +21,10 @@ export interface ResponseInterceptor {
  * Add authentication token to request headers
  */
 export function authRequestInterceptor(config: RequestInit, url: string): RequestInit {
-    // Get token from localStorage or context
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+    // Get token from cookies (primary) or localStorage (fallback)
+    const token = Cookies.get('auth_token') || safeStorage.getItem<string | null>('authToken', null);
 
-    if (token) {
+    if (token && token !== 'mock_token') {
         const headers = new Headers(config.headers);
         headers.set('Authorization', `Bearer ${token}`);
 
@@ -50,11 +52,17 @@ export function loggingRequestInterceptor(config: RequestInit, url: string): Req
  */
 export async function errorResponseInterceptor(response: Response): Promise<Response> {
     if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
+        let errorData = {};
+        try {
+            errorData = await response.clone().json();
+        } catch (e) {
+            // response might be text or empty
+        }
+
         throw new ApiErrorHandler(parseApiError({
             response: {
                 status: response.status,
-                data: error,
+                data: errorData,
             },
         }));
     }

@@ -62,7 +62,6 @@ export const SC_MENU_ITEMS: Record<UserRole, MenuItem[]> = {
     { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
   ],
   admin: [],
-  super_admin: [],
   inventory_manager: [],
   central_inventory_manager: [],
 };

@@ -316,7 +316,7 @@ export const mockJobCard1: JobCard = {
   part1: jobCard1Part1,
   part2: mockQuotation2.items.map((item, index) => ({
     srNo: index + 1,
-    partWarrantyTag: "",
+    partWarrantyTag: false,
     partName: item.partName,
     partCode: item.partNumber || "",
     qty: item.quantity,
@@ -356,7 +356,7 @@ export const initializeWorkflowMockData = () => {
     localStorage.getItem("appointments") || "[]"
   );
   const appointmentIds = new Set(existingAppointments.map((apt: any) => apt.id));
-  
+
   if (!appointmentIds.has(mockAppointment1.id)) {
     existingAppointments.push(mockAppointment1);
   }
@@ -370,7 +370,7 @@ export const initializeWorkflowMockData = () => {
     localStorage.getItem("quotations") || "[]"
   );
   const quotationIds = new Set(existingQuotations.map((qtn: any) => qtn.id));
-  
+
   if (!quotationIds.has(mockQuotation1.id)) {
     existingQuotations.push(mockQuotation1);
   }
@@ -384,7 +384,7 @@ export const initializeWorkflowMockData = () => {
     localStorage.getItem("jobCards") || "[]"
   );
   const jobCardIds = new Set(existingJobCards.map((jc: any) => jc.id));
-  
+
   if (!jobCardIds.has(mockJobCard1.id)) {
     existingJobCards.push(mockJobCard1);
   }
@@ -395,7 +395,7 @@ export const initializeWorkflowMockData = () => {
     localStorage.getItem("pickupDropCharges") || "[]"
   );
   const chargeIds = new Set(existingCharges.map((ch: any) => ch.id));
-  
+
   if (!chargeIds.has(mockPickupDropCharges1.id)) {
     existingCharges.push(mockPickupDropCharges1);
   }
