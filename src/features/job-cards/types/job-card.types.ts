@@ -4,6 +4,7 @@
  */
 
 import type { ServiceLocation, Priority } from '@/shared/types/common.types';
+import type { DocumentationFiles } from '@/shared/types/documentation.types';
 
 export type JobCardStatus =
   | "arrival_pending"
@@ -188,10 +189,9 @@ export interface KanbanColumn {
   status: JobCardStatus;
 }
 
-export interface DocumentationFiles {
-  files: File[];
-  urls: string[];
-}
+// Re-export from shared types to maintain backward compatibility
+export type { DocumentationFiles } from '@/shared/types/documentation.types';
+export { INITIAL_DOCUMENTATION_FILES } from '@/shared/types/documentation.types';
 
 export type CreateJobCardForm = {
   // Basic fields
@@ -268,6 +268,7 @@ export type CreateJobCardForm = {
   checkInTime?: string;
 
   // PART 2A fields (Warranty/Insurance Case Details)
+  // Import DocumentationFiles type
   videoEvidence: DocumentationFiles;
   vinImage: DocumentationFiles;
   odoImage: DocumentationFiles;

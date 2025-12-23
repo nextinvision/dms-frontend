@@ -1,4 +1,5 @@
 import type { ServiceIntakeForm } from "./types";
+import { INITIAL_DOCUMENTATION_FILES } from "@/shared/types/documentation.types";
 
 export const SERVICE_CENTER_CODE_MAP: Record<string, string> = {
   "1": "SC001",
@@ -21,11 +22,6 @@ export const STATUS_CONFIG: Record<string, { bg: string; text: string }> = {
 export const TOAST_DURATION = 3000;
 export const DEFAULT_MAX_APPOINTMENTS_PER_DAY = 20; // Default limit if not configured
 export const JOB_CARD_STORAGE_KEY = "jobCards";
-
-const INITIAL_DOCUMENTATION_FILES = {
-  files: [],
-  urls: [],
-};
 
 export const INITIAL_SERVICE_INTAKE_FORM: ServiceIntakeForm = {
   // Documentation

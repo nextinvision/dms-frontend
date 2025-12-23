@@ -18,6 +18,7 @@ import { CustomerWithVehicles, Vehicle } from "@/shared/types/vehicle.types";
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
 import { jobCardAdapter } from "@/features/job-cards/utils/jobCardAdapter";
 import { useHydratedJobCard } from "@/shared/hooks/useHydratedJobCard";
+import { useRole } from "@/shared/hooks";
 import { CustomerVehicleSection } from "./sections/CustomerVehicleSection";
 import { Part2ItemsSection } from "./sections/Part2ItemsSection";
 import { CheckInSection } from "./sections/CheckInSection";
@@ -332,6 +333,8 @@ export default function JobCardFormModal({
               form={form}
               updateField={updateFormField}
               onError={onError}
+              jobCardId={jobCardId}
+              userId={undefined}
             />
 
             <CheckInSection

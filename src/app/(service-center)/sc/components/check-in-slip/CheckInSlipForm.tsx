@@ -96,7 +96,12 @@ export function CheckInSlipForm({
         appointmentData={appointmentData}
       />
 
-      <VehicleConditionSection formData={formData} onUpdate={onUpdate} />
+      <VehicleConditionSection 
+        formData={formData} 
+        onUpdate={onUpdate}
+        vehicleId={vehicle?.id?.toString()}
+        userId={undefined} // Can be passed from parent if needed
+      />
 
       <MirrorLooseItemsSection formData={formData} onUpdate={onUpdate} />
 

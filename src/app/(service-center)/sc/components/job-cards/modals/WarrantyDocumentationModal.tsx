@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Upload, Video, Image as ImageIcon, FileText, Trash2, Eye, CheckCircle2, AlertCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X, Upload, Video, Image as ImageIcon, FileText, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
+import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
+import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
+import { saveFileMetadata } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 interface WarrantyDocumentationData {
     videoEvidence: string[];
@@ -21,6 +26,9 @@ interface WarrantyDocumentationModalProps {
     initialData?: WarrantyDocumentationData;
     onSave: (data: WarrantyDocumentationData) => void;
     mode?: "upload" | "view";
+    jobCardId?: string; // For Cloudinary folder organization
+    itemIndex?: number; // For folder organization
+    userId?: string; // User ID for file metadata
 }
 
 export default function WarrantyDocumentationModal({
@@ -30,7 +38,11 @@ export default function WarrantyDocumentationModal({
     initialData,
     onSave,
     mode = "upload",
+    jobCardId = "temp",
+    itemIndex = 0,
+    userId,
 }: WarrantyDocumentationModalProps) {
+    const { uploadMultiple } = useCloudinaryUpload();
     const [formData, setFormData] = useState<WarrantyDocumentationData>({
         videoEvidence: [],
         vinImage: [],
@@ -48,22 +60,89 @@ export default function WarrantyDocumentationModal({
         }
     }, [initialData]);
 
-    const handleFileUpload = (
+    const handleFileUpload = useCallback(
+        async (
         field: keyof Pick<WarrantyDocumentationData, "videoEvidence" | "vinImage" | "odoImage" | "damageImages">,
         files: FileList | null
     ) => {
         if (!files) return;
 
         const fileArray = Array.from(files);
-        const fileUrls = fileArray.map((file) => URL.createObjectURL(file));
+            
+            // Determine folder based on field type
+            let folder: string;
+            switch (field) {
+                case 'videoEvidence':
+                    folder = CLOUDINARY_FOLDERS.warrantyVideo(jobCardId, itemIndex);
+                    break;
+                case 'vinImage':
+                    folder = CLOUDINARY_FOLDERS.warrantyVIN(jobCardId, itemIndex);
+                    break;
+                case 'odoImage':
+                    folder = CLOUDINARY_FOLDERS.warrantyODO(jobCardId, itemIndex);
+                    break;
+                case 'damageImages':
+                    folder = CLOUDINARY_FOLDERS.warrantyDamage(jobCardId, itemIndex);
+                    break;
+                default:
+                    folder = CLOUDINARY_FOLDERS.jobCardWarranty(jobCardId);
+            }
 
+            try {
+                // Upload files to Cloudinary
+                const uploadResults = await uploadMultiple(fileArray, folder, {
+                    tags: [field, 'warranty', 'job-card'],
+                    context: {
+                        field,
+                        jobCardId,
+                        itemIndex: itemIndex.toString(),
+                        itemDescription,
+                    },
+                });
+
+                // Store Cloudinary URLs
+                const newUrls = uploadResults.map(result => result.secureUrl);
         setFormData((prev) => ({
             ...prev,
-            [field]: [...prev[field], ...fileUrls],
-        }));
-    };
+                    [field]: [...prev[field], ...newUrls],
+                }));
 
-    const handleRemoveFile = (
+                // Save file metadata to backend if job card ID exists
+                if (jobCardId && jobCardId !== "temp") {
+                    const categoryMap: Record<string, FileCategory> = {
+                        videoEvidence: FileCategory.WARRANTY_VIDEO,
+                        vinImage: FileCategory.WARRANTY_VIN,
+                        odoImage: FileCategory.WARRANTY_ODO,
+                        damageImages: FileCategory.WARRANTY_DAMAGE,
+                    };
+
+                    const authToken = safeStorage.getItem<string | null>('authToken', null);
+
+                    // Save metadata to backend (non-blocking)
+                    saveFileMetadata(
+                        uploadResults,
+                        fileArray,
+                        {
+                            category: categoryMap[field],
+                            relatedEntityId: jobCardId,
+                            relatedEntityType: RelatedEntityType.JOB_CARD,
+                            uploadedBy: userId,
+                        },
+                        authToken || undefined
+                    ).catch(err => {
+                        console.error('Failed to save file metadata to backend:', err);
+                    });
+                }
+            } catch (err) {
+                console.error('Upload failed:', err);
+                alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            }
+        },
+        [jobCardId, itemIndex, itemDescription, uploadMultiple, userId]
+    );
+
+    const handleRemoveFile = useCallback(
+        (
         field: keyof Pick<WarrantyDocumentationData, "videoEvidence" | "vinImage" | "odoImage" | "damageImages">,
         index: number
     ) => {
@@ -71,7 +150,12 @@ export default function WarrantyDocumentationModal({
             ...prev,
             [field]: prev[field].filter((_, i) => i !== index),
         }));
-    };
+            
+            // Note: Deletion from Cloudinary should be handled by backend API
+            // Frontend can request deletion via API endpoint if needed
+        },
+        []
+    );
 
     const handleSave = () => {
         onSave(formData);
@@ -93,7 +177,7 @@ export default function WarrantyDocumentationModal({
             borderColor: "border-blue-300",
             hoverBg: "hover:bg-blue-100",
             iconColor: "text-blue-600",
-            description: "Upload videos showing the issue (MP4, AVI, MOV)"
+            description: "Upload videos showing the issue (MP4, AVI, MOV, Max 15MB)"
         },
         {
             field: "vinImage" as const,
@@ -105,7 +189,7 @@ export default function WarrantyDocumentationModal({
             borderColor: "border-green-300",
             hoverBg: "hover:bg-green-100",
             iconColor: "text-green-600",
-            description: "Clear image of VIN/Chassis number"
+            description: "Clear image of VIN/Chassis number (JPG, PNG, Max 4MB)"
         },
         {
             field: "odoImage" as const,
@@ -117,7 +201,7 @@ export default function WarrantyDocumentationModal({
             borderColor: "border-purple-300",
             hoverBg: "hover:bg-purple-100",
             iconColor: "text-purple-600",
-            description: "Current odometer/kilometer reading"
+            description: "Current odometer/kilometer reading (JPG, PNG, Max 4MB)"
         },
         {
             field: "damageImages" as const,
@@ -129,7 +213,7 @@ export default function WarrantyDocumentationModal({
             borderColor: "border-orange-300",
             hoverBg: "hover:bg-orange-100",
             iconColor: "text-orange-600",
-            description: "Multiple angles of the damaged part"
+            description: "Multiple angles of the damaged part (JPG, PNG, Max 4MB)"
         }
     ];
 

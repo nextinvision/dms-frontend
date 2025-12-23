@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import {
   Search,
   Car,
@@ -22,13 +22,19 @@ import {
   Receipt,
 } from "lucide-react";
 import Link from "next/link";
-import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import type { SearchType, Vehicle, ServiceHistoryItem, NewVehicleForm, CustomerWithVehicles } from "@/shared/types";
 import { defaultVehicles, defaultVehicleServiceHistory, vehiclesData, type VehicleData } from "@/__mocks__/data/vehicles.mock";
 import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/components/check-in-slip/CheckInSlip";
 import { InfoCard, CustomerInfoCard } from "../components/shared/InfoComponents";
+import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
+import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
+import { saveFileMetadata } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+import { useRole } from "@/shared/hooks";
 
 export default function VehicleSearch() {
+  const { userInfo } = useRole();
   const [searchType, setSearchType] = useState<SearchType>("phone");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Vehicle | null>(null);
@@ -37,8 +43,8 @@ export default function VehicleSearch() {
   const [showAddVehicleForm, setShowAddVehicleForm] = useState<boolean>(false);
   const [validationError, setValidationError] = useState<string>("");
   const [vehiclePhotos, setVehiclePhotos] = useState<File[]>([]);
-  const [uploadingPhotos, setUploadingPhotos] = useState<boolean>(false);
   const [uploadedPhotoUrls, setUploadedPhotoUrls] = useState<string[]>([]);
+  const { uploadMultiple, isUploading: uploadingPhotos } = useCloudinaryUpload();
   const [showCheckInSlip, setShowCheckInSlip] = useState<boolean>(false);
   const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
   
@@ -508,41 +514,62 @@ export default function VehicleSearch() {
                             setVehiclePhotos([...vehiclePhotos, ...files]);
                           }}
                         />
+                        <span className="text-xs text-gray-500 mt-1 block">JPG, PNG (Max 4MB per image)</span>
                       </label>
                       <button
                         type="button"
                         onClick={async () => {
-                          // Upload photos
+                          // Upload photos to Cloudinary
                           if (vehiclePhotos.length === 0) {
                             alert("Please select photos to upload");
                             return;
                           }
                           
-                          setUploadingPhotos(true);
                           try {
-                            const token = safeStorage.getItem<string | null>("authToken", null);
-                            const formData = new FormData();
+                            const vehicleId = searchResults?.id?.toString() || "temp";
+                            const folder = CLOUDINARY_FOLDERS.vehiclePhotos(vehicleId);
                             
-                            vehiclePhotos.forEach((photo) => {
-                              formData.append("files", photo);
+                            // Upload files to Cloudinary
+                            const uploadResults = await uploadMultiple(vehiclePhotos, folder, {
+                              tags: ['vehicle-photos', 'vehicle-search'],
+                              context: {
+                                vehicleId: vehicleId.toString(),
+                                uploadedFrom: 'vehicle-search',
+                              },
                             });
                             
-                            // Note: This is a simplified version. In production, you'd need to:
-                            // 1. Upload to storage (Supabase/local)
-                            // 2. Get URLs back
-                            // 3. Create VehiclePhoto records via API
+                            // Store Cloudinary URLs
+                            const photoCount = vehiclePhotos.length;
+                            const newUrls = uploadResults.map(result => result.secureUrl);
+                            setUploadedPhotoUrls([...uploadedPhotoUrls, ...newUrls]);
                             
-                            // For now, simulate upload
-                            await new Promise((resolve) => setTimeout(resolve, 1000));
+                            // Save file metadata to backend
+                            if (vehicleId && vehicleId !== "temp") {
+                              const authToken = safeStorage.getItem<string | null>('authToken', null);
+                              
+                              try {
+                                await saveFileMetadata(
+                                  uploadResults,
+                                  vehiclePhotos,
+                                  {
+                                    category: FileCategory.VEHICLE_PHOTOS,
+                                    relatedEntityId: vehicleId.toString(),
+                                    relatedEntityType: RelatedEntityType.VEHICLE,
+                                    uploadedBy: userInfo?.id,
+                                  },
+                                  authToken || undefined
+                                );
+                              } catch (err) {
+                                console.error('Failed to save file metadata:', err);
+                                // Don't block user - metadata save failed but upload succeeded
+                              }
+                            }
                             
-                            alert(`${vehiclePhotos.length} photo(s) uploaded successfully!`);
                             setVehiclePhotos([]);
-                            setUploadedPhotoUrls([...uploadedPhotoUrls, ...vehiclePhotos.map((_, i) => URL.createObjectURL(vehiclePhotos[i]))]);
+                            alert(`${photoCount} photo(s) uploaded successfully!`);
                           } catch (error) {
                             console.error("Error uploading photos:", error);
-                            alert("Failed to upload photos. Please try again.");
-                          } finally {
-                            setUploadingPhotos(false);
+                            alert(`Failed to upload photos: ${error instanceof Error ? error.message : 'Unknown error'}`);
                           }
                         }}
                         disabled={vehiclePhotos.length === 0 || uploadingPhotos}

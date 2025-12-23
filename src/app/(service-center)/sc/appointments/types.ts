@@ -1,3 +1,6 @@
+// Import DocumentationFiles type before using it
+import type { DocumentationFiles } from '@/shared/types/documentation.types';
+
 export interface AppointmentRecord {
   id: number;
   customerName: string;
@@ -83,10 +86,9 @@ export interface AppointmentRecord {
   photosVideos?: DocumentationFiles;
 }
 
-export interface DocumentationFiles {
-  files: File[];
-  urls: string[]; // For preview URLs
-}
+// Re-export from shared types
+export type { DocumentationFiles };
+export { INITIAL_DOCUMENTATION_FILES } from '@/shared/types/documentation.types';
 
 export interface ServiceIntakeForm {
   // Documentation

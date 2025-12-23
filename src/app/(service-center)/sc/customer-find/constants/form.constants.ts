@@ -3,12 +3,11 @@
  */
 
 import type { NewCustomerForm, NewVehicleForm } from "@/shared/types";
+import type { DocumentationFiles } from "@/shared/types/documentation.types";
+import { INITIAL_DOCUMENTATION_FILES } from "@/shared/types/documentation.types";
 
-// Documentation Files interface
-export interface DocumentationFiles {
-  files: File[];
-  urls: string[]; // For preview URLs
-}
+// Re-export for convenience
+export type { DocumentationFiles };
 
 // Initial form states (constants for reuse)
 export const initialCustomerForm: NewCustomerForm = {
@@ -41,8 +40,6 @@ export const initialVehicleForm: Partial<NewVehicleForm> = {
   insuranceCompanyName: "",
 };
 
-export const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
-  files: [],
-  urls: [],
-};
+// Use shared initial value
+export { INITIAL_DOCUMENTATION_FILES };
 

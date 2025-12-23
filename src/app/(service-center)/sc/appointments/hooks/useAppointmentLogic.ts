@@ -19,6 +19,8 @@ import type { AppointmentForm as AppointmentFormType } from "../../components/ap
 import { useCustomerSearch } from "@/app/(service-center)/sc/components/customers";
 import { type CheckInSlipData, generateCheckInSlipNumber } from "@/components/check-in-slip/CheckInSlip";
 import { migrateAllJobCards } from "@/features/job-cards/utils/migrateJobCards.util";
+import { saveFileMetadataFromArray } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
 
 export const useAppointmentLogic = () => {
     // Router
@@ -280,10 +282,10 @@ export const useAppointmentLogic = () => {
             dropPincode: form.dropPincode,
             preferredCommunicationMode: form.preferredCommunicationMode,
             documentationFiles: {
-                customerIdProof: form.customerIdProof?.files.length || 0,
-                vehicleRCCopy: form.vehicleRCCopy?.files.length || 0,
-                warrantyCardServiceBook: form.warrantyCardServiceBook?.files.length || 0,
-                photosVideos: form.photosVideos?.files.length || 0,
+                customerIdProof: form.customerIdProof?.urls?.length || 0,
+                vehicleRCCopy: form.vehicleRCCopy?.urls?.length || 0,
+                warrantyCardServiceBook: form.warrantyCardServiceBook?.urls?.length || 0,
+                photosVideos: form.photosVideos?.urls?.length || 0,
             },
             vehicleBrand: form.vehicleBrand,
             vehicleModel: form.vehicleModel,
@@ -341,13 +343,94 @@ export const useAppointmentLogic = () => {
             showToast(`Appointment scheduled successfully! Customer: ${form.customerName} | Vehicle: ${form.vehicle} | Service: ${form.serviceType} | Date: ${form.date} | Time: ${formatTime(form.time)}`, "success");
         }
 
+        // Save file metadata to backend after appointment is created/updated
+        const appointmentId = selectedAppointment?.id?.toString() || 
+            (existingAppointments.length > 0
+                ? Math.max(...existingAppointments.map((a: any) => a.id)) + 1
+                : 1).toString();
+        
+        const authToken = safeStorage.getItem<string | null>('authToken', null);
+        const userId = userInfo?.id;
+
+        // Save file metadata for each field
+        const saveMetadataPromises: Promise<void>[] = [];
+
+        if (form.customerIdProof?.metadata && form.customerIdProof.metadata.length > 0) {
+            saveMetadataPromises.push(
+                saveFileMetadataFromArray(
+                    form.customerIdProof.metadata,
+                    form.customerIdProof.metadata.map((_: any, i: number) => `customer_id_proof_${i}`),
+                    {
+                        category: FileCategory.CUSTOMER_ID_PROOF,
+                        relatedEntityId: appointmentId,
+                        relatedEntityType: RelatedEntityType.APPOINTMENT,
+                        uploadedBy: userId,
+                    },
+                    authToken || undefined
+                )
+            );
+        }
+
+        if (form.vehicleRCCopy?.metadata && form.vehicleRCCopy.metadata.length > 0) {
+            saveMetadataPromises.push(
+                saveFileMetadataFromArray(
+                    form.vehicleRCCopy.metadata,
+                    form.vehicleRCCopy.metadata.map((_: any, i: number) => `vehicle_rc_${i}`),
+                    {
+                        category: FileCategory.VEHICLE_RC,
+                        relatedEntityId: appointmentId,
+                        relatedEntityType: RelatedEntityType.APPOINTMENT,
+                        uploadedBy: userId,
+                    },
+                    authToken || undefined
+                )
+            );
+        }
+
+        if (form.warrantyCardServiceBook?.metadata && form.warrantyCardServiceBook.metadata.length > 0) {
+            saveMetadataPromises.push(
+                saveFileMetadataFromArray(
+                    form.warrantyCardServiceBook.metadata,
+                    form.warrantyCardServiceBook.metadata.map((_: any, i: number) => `warranty_card_${i}`),
+                    {
+                        category: FileCategory.WARRANTY_CARD,
+                        relatedEntityId: appointmentId,
+                        relatedEntityType: RelatedEntityType.APPOINTMENT,
+                        uploadedBy: userId,
+                    },
+                    authToken || undefined
+                )
+            );
+        }
+
+        if (form.photosVideos?.metadata && form.photosVideos.metadata.length > 0) {
+            saveMetadataPromises.push(
+                saveFileMetadataFromArray(
+                    form.photosVideos.metadata,
+                    form.photosVideos.metadata.map((_: any, i: number) => `photos_videos_${i}`),
+                    {
+                        category: FileCategory.PHOTOS_VIDEOS,
+                        relatedEntityId: appointmentId,
+                        relatedEntityType: RelatedEntityType.APPOINTMENT,
+                        uploadedBy: userId,
+                    },
+                    authToken || undefined
+                )
+            );
+        }
+
+        // Save metadata in background (non-blocking)
+        Promise.all(saveMetadataPromises).catch(err => {
+            console.error('Failed to save some file metadata:', err);
+        });
+
         if (form.customerIdProof?.urls) form.customerIdProof.urls.forEach((url: string) => URL.revokeObjectURL(url));
         if (form.vehicleRCCopy?.urls) form.vehicleRCCopy.urls.forEach((url: string) => URL.revokeObjectURL(url));
         if (form.warrantyCardServiceBook?.urls) form.warrantyCardServiceBook.urls.forEach((url: string) => URL.revokeObjectURL(url));
         if (form.photosVideos?.urls) form.photosVideos.urls.forEach((url: string) => URL.revokeObjectURL(url));
 
         handleCloseAppointmentForm();
-    }, [selectedAppointment, selectedAppointmentCustomer, isCallCenter, isServiceAdvisor, showToast, handleCloseAppointmentForm]);
+    }, [selectedAppointment, selectedAppointmentCustomer, isCallCenter, isServiceAdvisor, showToast, handleCloseAppointmentForm, userInfo]);
 
     const handleCustomerArrivedFromForm = useCallback((form: AppointmentFormType) => {
         if (!selectedAppointment) return;

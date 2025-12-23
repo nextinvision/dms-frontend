@@ -1,5 +1,6 @@
 "use client";
-import { Calendar, Clock, User, Car, Phone, CheckCircle, AlertCircle, MapPin, Building2, FileText, UserCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Calendar, Clock, User, Car, Phone, CheckCircle, AlertCircle, MapPin, Building2, FileText, UserCheck, Image as ImageIcon, Video, Download, Eye } from "lucide-react";
 import { Modal, CustomerInfoCard } from "../shared";
 import { StatusBadge } from "./StatusBadge";
 import type { AppointmentRecord } from "../../appointments/types";
@@ -9,6 +10,8 @@ import type { CustomerArrivalStatus, ServiceIntakeForm } from "../../appointment
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { defaultServiceCenters } from "@/__mocks__/data/service-centers.mock";
 import { INITIAL_SERVICE_INTAKE_FORM } from "../../appointments/constants";
+import { getFilesForEntity } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
 
 interface AppointmentDetailModalProps {
   isOpen: boolean;
@@ -56,6 +59,132 @@ export function AppointmentDetailModal({
   currentJobCardId,
 }: AppointmentDetailModalProps) {
   if (!appointment) return null;
+
+  // State for fetched files
+  const [appointmentFiles, setAppointmentFiles] = useState<{
+    customerIdProof: any[];
+    vehicleRCCopy: any[];
+    warrantyCardServiceBook: any[];
+    photosVideos: any[];
+  }>({
+    customerIdProof: [],
+    vehicleRCCopy: [],
+    warrantyCardServiceBook: [],
+    photosVideos: [],
+  });
+  const [loadingFiles, setLoadingFiles] = useState(false);
+
+  // Fetch files when appointment modal is opened
+  useEffect(() => {
+    if (isOpen && appointment?.id) {
+      const fetchFiles = async () => {
+        setLoadingFiles(true);
+        try {
+          const authToken = safeStorage.getItem<string | null>('authToken', null);
+          const files = await getFilesForEntity(
+            RelatedEntityType.APPOINTMENT,
+            appointment.id.toString(),
+            undefined,
+            authToken || undefined
+          );
+
+          // Group files by category
+          const groupedFiles = {
+            customerIdProof: files.filter(f => f.category === FileCategory.CUSTOMER_ID_PROOF),
+            vehicleRCCopy: files.filter(f => f.category === FileCategory.VEHICLE_RC),
+            warrantyCardServiceBook: files.filter(f => f.category === FileCategory.WARRANTY_CARD),
+            photosVideos: files.filter(f => f.category === FileCategory.PHOTOS_VIDEOS),
+          };
+
+          setAppointmentFiles(groupedFiles);
+        } catch (error) {
+          console.error('Failed to fetch appointment files:', error);
+          // Don't show error to user - just log it
+        } finally {
+          setLoadingFiles(false);
+        }
+      };
+
+      fetchFiles();
+    } else {
+      // Reset files when modal closes
+      setAppointmentFiles({
+        customerIdProof: [],
+        vehicleRCCopy: [],
+        warrantyCardServiceBook: [],
+        photosVideos: [],
+      });
+    }
+  }, [isOpen, appointment?.id]);
+
+  // Helper function to render file preview
+  const renderFilePreview = (file: any, index: number) => {
+    const isImage = file.format && ['jpg', 'jpeg', 'png', 'webp'].includes(file.format.toLowerCase());
+    const isVideo = file.format && ['mp4', 'mov', 'avi', 'webm'].includes(file.format.toLowerCase());
+    const isPDF = file.format && file.format.toLowerCase() === 'pdf';
+
+    return (
+      <div key={file.id || index} className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-300 transition">
+        <div className="flex items-start gap-3">
+          {isImage ? (
+            <div className="relative w-16 h-16 rounded overflow-hidden bg-gray-100 flex-shrink-0">
+              <img 
+                src={file.url} 
+                alt={file.filename}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ) : isVideo ? (
+            <div className="w-16 h-16 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+              <Video className="text-gray-400" size={24} />
+            </div>
+          ) : (
+            <div className="w-16 h-16 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+              <FileText className="text-gray-400" size={24} />
+            </div>
+          )}
+          
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-800 truncate">{file.filename}</p>
+            <p className="text-xs text-gray-500">
+              {file.bytes ? (file.bytes / 1024).toFixed(2) : '0.00'} KB
+              {file.format && ` • ${file.format.toUpperCase()}`}
+            </p>
+            {detailCustomer && (
+              <p className="text-xs text-gray-400 mt-1">
+                Customer: {detailCustomer.name || appointment.customerName}
+              </p>
+            )}
+            {appointment.vehicle && (
+              <p className="text-xs text-gray-400">
+                Vehicle: {appointment.vehicle}
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-2 flex-shrink-0">
+            <a
+              href={file.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 text-blue-600 hover:bg-blue-50 rounded transition"
+              title="View file"
+            >
+              <Eye size={16} />
+            </a>
+            <a
+              href={file.url}
+              download={file.filename}
+              className="p-2 text-green-600 hover:bg-green-50 rounded transition"
+              title="Download file"
+            >
+              <Download size={16} />
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleCustomerArrived = () => {
     try {
@@ -293,7 +422,13 @@ export function AppointmentDetailModal({
                   <p className="font-medium text-gray-800">{appointment.assignedTechnician}</p>
                 </div>
               )}
-              {appointment.documentationFiles && (
+              {/* Documentation Files Count (backward compatibility) */}
+              {appointment.documentationFiles && 
+               !loadingFiles &&
+               appointmentFiles.customerIdProof.length === 0 &&
+               appointmentFiles.vehicleRCCopy.length === 0 &&
+               appointmentFiles.warrantyCardServiceBook.length === 0 &&
+               appointmentFiles.photosVideos.length === 0 && (
                 <div className="md:col-span-2">
                   <p className="text-sm text-gray-500 mb-1">Documentation Files</p>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
@@ -359,6 +494,83 @@ export function AppointmentDetailModal({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Uploaded Documentation Files Section */}
+        {(appointmentFiles.customerIdProof.length > 0 ||
+          appointmentFiles.vehicleRCCopy.length > 0 ||
+          appointmentFiles.warrantyCardServiceBook.length > 0 ||
+          appointmentFiles.photosVideos.length > 0 ||
+          loadingFiles) && (
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <FileText size={20} className="text-blue-600" />
+              Uploaded Documentation Files
+              {detailCustomer && (
+                <span className="text-sm font-normal text-gray-600">
+                  • Customer: {detailCustomer.name || appointment.customerName}
+                </span>
+              )}
+              {appointment.vehicle && (
+                <span className="text-sm font-normal text-gray-600">
+                  • Vehicle: {appointment.vehicle}
+                </span>
+              )}
+            </h3>
+
+            {loadingFiles ? (
+              <div className="text-center py-4">
+                <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <p className="text-sm text-gray-500 mt-2">Loading files...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {appointmentFiles.customerIdProof.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Customer ID Proof ({appointmentFiles.customerIdProof.length})
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {appointmentFiles.customerIdProof.map((file, index) => renderFilePreview(file, index))}
+                    </div>
+                  </div>
+                )}
+
+                {appointmentFiles.vehicleRCCopy.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Vehicle RC Copy ({appointmentFiles.vehicleRCCopy.length})
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {appointmentFiles.vehicleRCCopy.map((file, index) => renderFilePreview(file, index))}
+                    </div>
+                  </div>
+                )}
+
+                {appointmentFiles.warrantyCardServiceBook.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Warranty Card / Service Book ({appointmentFiles.warrantyCardServiceBook.length})
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {appointmentFiles.warrantyCardServiceBook.map((file, index) => renderFilePreview(file, index))}
+                    </div>
+                  </div>
+                )}
+
+                {appointmentFiles.photosVideos.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Photos & Videos ({appointmentFiles.photosVideos.length})
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {appointmentFiles.photosVideos.map((file, index) => renderFilePreview(file, index))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

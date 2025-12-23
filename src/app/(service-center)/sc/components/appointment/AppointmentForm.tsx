@@ -16,6 +16,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
+import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
 import { defaultServiceCenters } from "../service-center";
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 import { INDIAN_STATES, getCitiesByState } from "@/shared/constants/indian-states-cities";
@@ -24,6 +25,7 @@ import { findNearestServiceCenter } from "./types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { AppointmentForm as AppointmentFormType } from "./types";
 import { INITIAL_APPOINTMENT_FORM } from "./types";
+import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
 import {
   getCurrentTime,
   getCurrentDate,
@@ -32,6 +34,9 @@ import {
 } from "@/shared/utils/date";
 import { validatePhone } from "@/shared/utils/validation";
 import { getInitialAppointmentForm, mapVehicleToFormData, mapCustomerToFormData } from "./utils";
+import { saveFileMetadata, saveFileMetadataFromArray } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 export interface AppointmentFormProps {
   initialData?: Partial<AppointmentFormType>;
@@ -366,49 +371,139 @@ export const AppointmentForm = ({
     }
   }, [fieldErrors]);
 
-  // Document handlers
+  // Document handlers with Cloudinary
+  const { uploadMultiple, uploadFile, isUploading: isUploadingFiles } = useCloudinaryUpload();
   const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
 
   const handleDocumentUpload = useCallback(
-    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
+    async (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
       if (!files || files.length === 0) return;
 
       const fileArray = Array.from(files);
-      const existingFiles = formData[field]?.files || [];
-      const existingUrls = formData[field]?.urls || [];
+      
+      // Determine folder based on field and entity IDs
+      let folder: string;
+      const customerId = formData.customerName || 'temp';
+      const vehicleId = formData.vehicle || 'temp';
+      const appointmentId = formData.date || 'temp'; // Use date as temporary ID if no appointment ID
+      
+      switch (field) {
+        case 'customerIdProof':
+          folder = CLOUDINARY_FOLDERS.customerIdProof(customerId);
+          break;
+        case 'vehicleRCCopy':
+          folder = CLOUDINARY_FOLDERS.vehicleRC(vehicleId);
+          break;
+        case 'photosVideos':
+          folder = CLOUDINARY_FOLDERS.vehiclePhotos(vehicleId);
+          break;
+        case 'warrantyCardServiceBook':
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          break;
+        default:
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+      }
 
-      const newUrls = fileArray.map((file) => URL.createObjectURL(file));
+      try {
+        // Upload files to Cloudinary
+        const uploadResults = await uploadMultiple(fileArray, folder, {
+          tags: [field, 'appointment'],
+          context: {
+            field,
+            customerId: customerId,
+            vehicleId: vehicleId,
+          },
+        });
+
+        // Store Cloudinary URLs and public IDs
+        const newUrls = uploadResults.map(result => result.secureUrl);
+        const newPublicIds = uploadResults.map(result => result.publicId);
+        const existingUrls = formData[field]?.urls || [];
+        const existingPublicIds = formData[field]?.publicIds || [];
 
       updateFormData({
         [field]: {
-          files: [...existingFiles, ...fileArray],
           urls: [...existingUrls, ...newUrls],
+            publicIds: [...existingPublicIds, ...newPublicIds],
+            metadata: [
+              ...(formData[field]?.metadata || []),
+              ...uploadResults.map(result => ({
+                publicId: result.publicId,
+                url: result.secureUrl,
+                format: result.format,
+                bytes: result.bytes,
+                uploadedAt: new Date().toISOString(),
+              })),
+            ],
         },
       });
+
+        // Save file metadata to backend if appointment ID exists
+        if (mode === 'edit') {
+          const categoryMap: Record<string, FileCategory> = {
+            customerIdProof: FileCategory.CUSTOMER_ID_PROOF,
+            vehicleRCCopy: FileCategory.VEHICLE_RC,
+            warrantyCardServiceBook: FileCategory.WARRANTY_CARD,
+            photosVideos: FileCategory.PHOTOS_VIDEOS,
+          };
+
+          // Note: Appointment ID should be passed separately or retrieved from form submission
+          // For now, we'll skip saving metadata here and let it be saved during form submission
+          const appointmentId = 'temp'; // Will be replaced with actual ID during submission
+          const authToken = safeStorage.getItem<string | null>('authToken', null);
+
+          // Save metadata to backend (non-blocking)
+          saveFileMetadata(
+            uploadResults,
+            fileArray,
+            {
+              category: categoryMap[field],
+              relatedEntityId: appointmentId,
+              relatedEntityType: RelatedEntityType.APPOINTMENT,
+              uploadedBy: userInfo?.id,
+            },
+            authToken || undefined
+          ).catch(err => {
+            console.error('Failed to save file metadata to backend:', err);
+            // Don't block user - metadata can be saved later
+          });
+        }
+      } catch (err) {
+        console.error('Upload failed:', err);
+        alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
     },
-    [formData, updateFormData]
+    [formData, uploadMultiple, updateFormData, initialData, mode, userInfo]
   );
 
   const handleRemoveDocument = useCallback(
     (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
-      const existingFiles = formData[field]?.files || [];
       const existingUrls = formData[field]?.urls || [];
+      const existingPublicIds = formData[field]?.publicIds || [];
+      const publicId = existingPublicIds[index];
 
-      // Revoke URL to free memory
-      if (existingUrls[index]) {
-        URL.revokeObjectURL(existingUrls[index]);
-      }
-
-      const newFiles = existingFiles.filter((_, i) => i !== index);
-      const newUrls = existingUrls.filter((_, i) => i !== index);
+      // Remove from state immediately (optimistic update)
+      const newUrls = existingUrls.filter((_: string, i: number) => i !== index);
+      const newPublicIds = existingPublicIds.filter((_: string, i: number) => i !== index);
+      const newMetadata = (formData[field]?.metadata || []).filter((_: any, i: number) => i !== index);
 
       updateFormData({
         [field]: {
-          files: newFiles,
           urls: newUrls,
+          publicIds: newPublicIds,
+          metadata: newMetadata,
         },
       });
+
+      // Optionally delete from Cloudinary via backend API
+      if (publicId) {
+        // Note: Deletion should be handled by backend for security
+        // Frontend can request deletion via API endpoint
+        fetch(`/api/files/${publicId}`, { method: 'DELETE' }).catch((err) => {
+          console.error('Failed to delete from Cloudinary:', err);
+        });
+      }
     },
     [formData, updateFormData]
   );
@@ -422,24 +517,73 @@ export const AppointmentForm = ({
   );
 
   const handleCameraCapture = useCallback(
-    (file: File) => {
+    async (file: File) => {
       if (!cameraDocumentType) return;
 
-      const newUrl = URL.createObjectURL(file);
-      const existingFiles = formData[cameraDocumentType]?.files || [];
+      // Determine folder
+      let folder: string;
+      const customerId = formData.customerName || 'temp';
+      const vehicleId = formData.vehicle || 'temp';
+      const appointmentId = formData.date || 'temp';
+      
+      switch (cameraDocumentType) {
+        case 'customerIdProof':
+          folder = CLOUDINARY_FOLDERS.customerIdProof(customerId);
+          break;
+        case 'vehicleRCCopy':
+          folder = CLOUDINARY_FOLDERS.vehicleRC(vehicleId);
+          break;
+        case 'photosVideos':
+          folder = CLOUDINARY_FOLDERS.vehiclePhotos(vehicleId);
+          break;
+        case 'warrantyCardServiceBook':
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          break;
+        default:
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+      }
+
+      try {
+        // Upload immediately to Cloudinary
+        const result = await uploadFile(file, folder, {
+          tags: [cameraDocumentType, 'appointment', 'camera'],
+          context: {
+            field: cameraDocumentType,
+            customerId: customerId,
+            vehicleId: vehicleId,
+            source: 'camera',
+          },
+        });
+
+        // Store in form data
       const existingUrls = formData[cameraDocumentType]?.urls || [];
+        const existingPublicIds = formData[cameraDocumentType]?.publicIds || [];
 
       updateFormData({
         [cameraDocumentType]: {
-          files: [...existingFiles, file],
-          urls: [...existingUrls, newUrl],
+            urls: [...existingUrls, result.secureUrl],
+            publicIds: [...existingPublicIds, result.publicId],
+            metadata: [
+              ...(formData[cameraDocumentType]?.metadata || []),
+              {
+                publicId: result.publicId,
+                url: result.secureUrl,
+                format: result.format,
+                bytes: result.bytes,
+                uploadedAt: new Date().toISOString(),
+              },
+            ],
         },
       });
 
       setCameraModalOpen(false);
       setCameraDocumentType(null);
+      } catch (err) {
+        console.error('Camera capture upload failed:', err);
+        alert(`Failed to upload: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
     },
-    [cameraDocumentType, formData, updateFormData]
+    [cameraDocumentType, formData, uploadFile, updateFormData]
   );
 
   return (
@@ -766,7 +910,7 @@ export const AppointmentForm = ({
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="text-indigo-600" size={24} />
                           <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
                         </div>
                         <input
                           type="file"
@@ -786,15 +930,30 @@ export const AppointmentForm = ({
                         <span className="text-xs font-medium">Camera</span>
                       </button>
                     </div>
-                    {formData.customerIdProof?.files && formData.customerIdProof.files.length > 0 && (
+                    {formData.customerIdProof?.urls && formData.customerIdProof.urls.length > 0 && (
                       <div className="space-y-2">
-                        {formData.customerIdProof.files.map((file, index) => (
+                        {formData.customerIdProof.urls.map((url: string, index: number) => {
+                          const metadata = formData.customerIdProof?.metadata?.[index];
+                          return (
                           <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                             <FileText className="text-indigo-600 shrink-0" size={18} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
-                              <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                                </p>
                             </div>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                                title="View file"
+                              >
+                                <ImageIcon size={16} />
+                              </a>
                             <button
                               onClick={() => handleRemoveDocument("customerIdProof", index)}
                               className="text-red-600 hover:text-red-700 p-1 rounded transition"
@@ -803,7 +962,8 @@ export const AppointmentForm = ({
                               <Trash2 size={16} />
                             </button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -820,7 +980,7 @@ export const AppointmentForm = ({
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="text-indigo-600" size={24} />
                           <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
                         </div>
                         <input
                           type="file"
@@ -840,15 +1000,30 @@ export const AppointmentForm = ({
                         <span className="text-xs font-medium">Camera</span>
                       </button>
                     </div>
-                    {formData.vehicleRCCopy?.files && formData.vehicleRCCopy.files.length > 0 && (
+                    {formData.vehicleRCCopy?.urls && formData.vehicleRCCopy.urls.length > 0 && (
                       <div className="space-y-2">
-                        {formData.vehicleRCCopy.files.map((file, index) => (
+                        {formData.vehicleRCCopy.urls.map((url: string, index: number) => {
+                          const metadata = formData.vehicleRCCopy?.metadata?.[index];
+                          return (
                           <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                             <FileText className="text-indigo-600 shrink-0" size={18} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
-                              <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                                </p>
                             </div>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                                title="View file"
+                              >
+                                <ImageIcon size={16} />
+                              </a>
                             <button
                               onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
                               className="text-red-600 hover:text-red-700 p-1 rounded transition"
@@ -857,7 +1032,8 @@ export const AppointmentForm = ({
                               <Trash2 size={16} />
                             </button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -874,7 +1050,7 @@ export const AppointmentForm = ({
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="text-indigo-600" size={24} />
                           <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
                         </div>
                         <input
                           type="file"
@@ -894,15 +1070,30 @@ export const AppointmentForm = ({
                         <span className="text-xs font-medium">Camera</span>
                       </button>
                     </div>
-                    {formData.warrantyCardServiceBook?.files && formData.warrantyCardServiceBook.files.length > 0 && (
+                    {formData.warrantyCardServiceBook?.urls && formData.warrantyCardServiceBook.urls.length > 0 && (
                       <div className="space-y-2">
-                        {formData.warrantyCardServiceBook.files.map((file, index) => (
+                        {formData.warrantyCardServiceBook.urls.map((url: string, index: number) => {
+                          const metadata = formData.warrantyCardServiceBook?.metadata?.[index];
+                          return (
                           <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                             <FileText className="text-indigo-600 shrink-0" size={18} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
-                              <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                                </p>
                             </div>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                                title="View file"
+                              >
+                                <ImageIcon size={16} />
+                              </a>
                             <button
                               onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
                               className="text-red-600 hover:text-red-700 p-1 rounded transition"
@@ -911,7 +1102,8 @@ export const AppointmentForm = ({
                               <Trash2 size={16} />
                             </button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -929,7 +1121,7 @@ export const AppointmentForm = ({
                       <div className="flex flex-col items-center gap-2">
                         <ImageIcon className="text-indigo-600" size={24} />
                         <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                        <span className="text-xs text-gray-500">JPG, PNG, MP4, MOV (Max 50MB)</span>
+                        <span className="text-xs text-gray-500">Images (Max 4MB), Videos (Max 15MB)</span>
                       </div>
                       <input
                         type="file"
@@ -949,14 +1141,17 @@ export const AppointmentForm = ({
                       <span className="text-xs font-medium">Camera</span>
                     </button>
                   </div>
-                  {formData.photosVideos?.files && formData.photosVideos.files.length > 0 && (
+                  {formData.photosVideos?.urls && formData.photosVideos.urls.length > 0 && (
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {formData.photosVideos.files.map((file, index) => (
+                      {formData.photosVideos.urls.map((url: string, index: number) => {
+                        const metadata = formData.photosVideos?.metadata?.[index];
+                        const isImage = metadata?.format && ['jpg', 'jpeg', 'png', 'webp'].includes(metadata.format.toLowerCase());
+                        return (
                         <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                          {file?.type?.startsWith("image/") ? (
+                            {isImage ? (
                             <Image
-                              src={formData.photosVideos?.urls[index] || ""}
-                              alt={file.name}
+                                src={url}
+                                alt={`Upload ${index + 1}`}
                               width={128}
                               height={128}
                               className="w-full h-32 object-cover"
@@ -968,6 +1163,15 @@ export const AppointmentForm = ({
                             </div>
                           )}
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-white hover:text-blue-300 p-2 rounded transition mr-2"
+                                title="View file"
+                              >
+                                <ImageIcon size={20} />
+                              </a>
                             <button
                               onClick={() => handleRemoveDocument("photosVideos", index)}
                               className="text-white hover:text-red-300 p-2 rounded transition"
@@ -977,11 +1181,16 @@ export const AppointmentForm = ({
                             </button>
                           </div>
                           <div className="p-2 bg-white">
-                            <p className="text-xs font-medium text-gray-800 truncate">{file?.name || "Unknown File"}</p>
-                            <p className="text-xs text-gray-500">{file?.size ? (file.size / 1024).toFixed(2) : "0.00"} KB</p>
+                              <p className="text-xs font-medium text-gray-800 truncate">
+                                {metadata?.format ? `File.${metadata.format.toUpperCase()}` : "Uploaded File"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                              </p>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

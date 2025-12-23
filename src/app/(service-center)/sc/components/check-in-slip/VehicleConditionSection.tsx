@@ -1,16 +1,25 @@
 "use client";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Upload, X, Image as ImageIcon } from "lucide-react";
 import type { CheckInSlipFormData } from "@/shared/types/check-in-slip.types";
+import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
+import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
+import { saveFileMetadata } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 interface VehicleConditionSectionProps {
   formData: CheckInSlipFormData;
   onUpdate: (updates: Partial<CheckInSlipFormData>) => void;
+  vehicleId?: string;
+  userId?: string;
 }
 
 export function VehicleConditionSection({
   formData,
   onUpdate,
+  vehicleId: propVehicleId,
+  userId,
 }: VehicleConditionSectionProps) {
   const [imagePreviews, setImagePreviews] = useState<{
     front?: string;
@@ -22,40 +31,105 @@ export function VehicleConditionSection({
     damages: [],
   });
 
-  const handleImageUpload = (
+  const { uploadFile } = useCloudinaryUpload();
+  const vehicleId = propVehicleId || 'temp';
+
+  const handleImageUpload = useCallback(
+    async (
     field: "vehicleImageFront" | "vehicleImageRear" | "vehicleImageRight" | "vehicleImageLeft",
     file: File | null
   ) => {
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      onUpdate({ [field]: result });
-      setImagePreviews((prev) => ({ ...prev, [field.replace("vehicleImage", "").toLowerCase()]: result }));
-    };
-    reader.readAsDataURL(file);
-  };
+      try {
+        const folder = CLOUDINARY_FOLDERS.vehicleCondition(vehicleId);
+        const result = await uploadFile(file, folder, {
+          tags: ['vehicle-condition', field],
+          context: {
+            field,
+            vehicleId,
+          },
+        });
 
-  const handleDamageImageUpload = (file: File | null) => {
+        onUpdate({ [field]: result.secureUrl });
+        setImagePreviews((prev) => ({ ...prev, [field.replace("vehicleImage", "").toLowerCase()]: result.secureUrl }));
+
+        // Save file metadata to backend if vehicle ID exists
+        if (vehicleId && vehicleId !== 'temp') {
+          const authToken = safeStorage.getItem<string | null>('authToken', null);
+          
+          saveFileMetadata(
+            [result],
+            [file],
+            {
+              category: FileCategory.VEHICLE_CONDITION,
+              relatedEntityId: vehicleId,
+              relatedEntityType: RelatedEntityType.VEHICLE,
+              uploadedBy: userId,
+            },
+            authToken || undefined
+          ).catch(err => {
+            console.error('Failed to save file metadata to backend:', err);
+          });
+        }
+      } catch (err) {
+        console.error('Upload failed:', err);
+        alert(`Failed to upload image: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    },
+    [vehicleId, uploadFile, onUpdate, userId]
+  );
+
+  const handleDamageImageUpload = useCallback(
+    async (file: File | null) => {
     if (!file) return;
     if ((formData.vehicleImageDamages?.length || 0) >= 5) {
       alert("Maximum 5 damage images allowed");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
+      try {
+        const folder = CLOUDINARY_FOLDERS.vehicleCondition(vehicleId);
+        const result = await uploadFile(file, folder, {
+          tags: ['vehicle-condition', 'damage'],
+          context: {
+            field: 'damage',
+            vehicleId,
+          },
+        });
+
       const currentDamages = formData.vehicleImageDamages || [];
-      onUpdate({ vehicleImageDamages: [...currentDamages, result] });
+        onUpdate({ vehicleImageDamages: [...currentDamages, result.secureUrl] });
       setImagePreviews((prev) => ({
         ...prev,
-        damages: [...(prev.damages || []), result],
+          damages: [...(prev.damages || []), result.secureUrl],
       }));
-    };
-    reader.readAsDataURL(file);
-  };
+
+        // Save file metadata to backend if vehicle ID exists
+        if (vehicleId && vehicleId !== 'temp') {
+          const authToken = safeStorage.getItem<string | null>('authToken', null);
+          
+          saveFileMetadata(
+            [result],
+            [file],
+            {
+              category: FileCategory.VEHICLE_CONDITION,
+              relatedEntityId: vehicleId,
+              relatedEntityType: RelatedEntityType.VEHICLE,
+              uploadedBy: userId,
+            },
+            authToken || undefined
+          ).catch(err => {
+            console.error('Failed to save file metadata to backend:', err);
+          });
+        }
+      } catch (err) {
+        console.error('Upload failed:', err);
+        alert(`Failed to upload image: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    },
+    [vehicleId, formData.vehicleImageDamages, uploadFile, onUpdate, userId]
+  );
 
   const removeDamageImage = (index: number) => {
     const currentDamages = formData.vehicleImageDamages || [];

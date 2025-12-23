@@ -758,10 +758,10 @@ export default function CustomerFind() {
               dropPincode: (form as any).dropPincode,
               preferredCommunicationMode: form.preferredCommunicationMode,
               documentationFiles: {
-                customerIdProof: form.customerIdProof?.files.length || 0,
-                vehicleRCCopy: form.vehicleRCCopy?.files.length || 0,
-                warrantyCardServiceBook: form.warrantyCardServiceBook?.files.length || 0,
-                photosVideos: form.photosVideos?.files.length || 0,
+                customerIdProof: form.customerIdProof?.urls?.length || 0,
+                vehicleRCCopy: form.vehicleRCCopy?.urls?.length || 0,
+                warrantyCardServiceBook: form.warrantyCardServiceBook?.urls?.length || 0,
+                photosVideos: form.photosVideos?.urls?.length || 0,
               },
             };
 

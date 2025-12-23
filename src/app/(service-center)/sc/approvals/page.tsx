@@ -7,10 +7,8 @@ import type { JobCard } from "@/shared/types/job-card.types";
 import { getServiceCenterContext, filterByServiceCenter, shouldFilterByServiceCenter } from "@/shared/lib/serviceCenter";
 
 // Service Intake Request types (matching appointments page)
-interface DocumentationFiles {
-  files: File[];
-  urls: string[];
-}
+// Import from shared types
+import type { DocumentationFiles } from '@/shared/types/documentation.types';
 
 interface ServiceIntakeForm {
   customerIdProof: DocumentationFiles;
@@ -442,10 +440,10 @@ export default function Approvals() {
               status: "confirmed",
             },
             serviceIntakeForm: {
-              customerIdProof: { files: [], urls: [] },
-              vehicleRCCopy: { files: [], urls: [] },
-              warrantyCardServiceBook: { files: [], urls: [] },
-              photosVideos: { files: [], urls: [] },
+              customerIdProof: { urls: [], publicIds: [], metadata: [] },
+              vehicleRCCopy: { urls: [], publicIds: [], metadata: [] },
+              warrantyCardServiceBook: { urls: [], publicIds: [], metadata: [] },
+              photosVideos: { urls: [], publicIds: [], metadata: [] },
               vehicleBrand: "Mahindra",
               vehicleModel: "XUV400",
               registrationNumber: "DL-01-AB-5678",
@@ -500,10 +498,10 @@ export default function Approvals() {
               status: "confirmed",
             },
             serviceIntakeForm: {
-              customerIdProof: { files: [], urls: [] },
-              vehicleRCCopy: { files: [], urls: [] },
-              warrantyCardServiceBook: { files: [], urls: [] },
-              photosVideos: { files: [], urls: [] },
+              customerIdProof: { urls: [], publicIds: [], metadata: [] },
+              vehicleRCCopy: { urls: [], publicIds: [], metadata: [] },
+              warrantyCardServiceBook: { urls: [], publicIds: [], metadata: [] },
+              photosVideos: { urls: [], publicIds: [], metadata: [] },
               vehicleBrand: "Tata",
               vehicleModel: "Tigor EV",
               registrationNumber: "KA-03-CD-9012",
@@ -1519,32 +1517,32 @@ export default function Approvals() {
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Customer ID Proof</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.customerIdProof?.files?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.customerIdProof.files.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.customerIdProof?.urls?.length > 0 
+                          ? `${selectedRequest.serviceIntakeForm.customerIdProof.urls.length} file(s)` 
                           : "Not provided"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Vehicle RC Copy</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.vehicleRCCopy?.files?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.vehicleRCCopy.files.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.vehicleRCCopy?.urls?.length > 0 
+                          ? `${selectedRequest.serviceIntakeForm.vehicleRCCopy.urls.length} file(s)` 
                           : "Not provided"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Warranty Card/Service Book</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.warrantyCardServiceBook?.files?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.warrantyCardServiceBook.files.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.warrantyCardServiceBook?.urls?.length > 0 
+                          ? `${selectedRequest.serviceIntakeForm.warrantyCardServiceBook.urls.length} file(s)` 
                           : "Not provided"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Photos/Videos</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.photosVideos?.files?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.photosVideos.files.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.photosVideos?.urls?.length > 0 
+                          ? `${selectedRequest.serviceIntakeForm.photosVideos.urls.length} file(s)` 
                           : "Not provided"}
                       </p>
                     </div>

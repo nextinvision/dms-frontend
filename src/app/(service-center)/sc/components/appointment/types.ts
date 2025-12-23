@@ -43,10 +43,10 @@ export interface Appointment {
   feedbackRating?: number; // Customer feedback rating (1-5 stars)
 }
 
-export interface DocumentationFiles {
-  files: File[];
-  urls: string[];
-}
+// Import and re-export from shared types
+import type { DocumentationFiles } from '@/shared/types/documentation.types';
+export type { DocumentationFiles };
+export { INITIAL_DOCUMENTATION_FILES } from '@/shared/types/documentation.types';
 
 export interface AppointmentForm {
   customerName: string;
@@ -120,11 +120,6 @@ export interface AppointmentForm {
   checkInDate?: string;
   checkInTime?: string;
 }
-
-export const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
-  files: [],
-  urls: [],
-};
 
 export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   customerName: "",

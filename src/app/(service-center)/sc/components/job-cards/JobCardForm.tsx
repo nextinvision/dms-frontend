@@ -19,6 +19,7 @@ import { CustomerWithVehicles, Vehicle } from "@/shared/types/vehicle.types";
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
 import { jobCardAdapter } from "@/features/job-cards/utils/jobCardAdapter";
 import { useHydratedJobCard } from "@/shared/hooks/useHydratedJobCard";
+import { useRole } from "@/shared/hooks";
 import { CustomerVehicleSection } from "./sections/CustomerVehicleSection";
 import { Part2ItemsSection } from "./sections/Part2ItemsSection";
 import { CheckInSection } from "./sections/CheckInSection";
@@ -36,6 +37,7 @@ export default function JobCardForm({
     mode = "create",
 }: JobCardFormProps) {
     const router = useRouter();
+    const { userInfo } = useRole();
     const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
     const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
     const serviceCenterCode = getServiceCenterCode(serviceCenterId);
@@ -357,6 +359,8 @@ export default function JobCardForm({
                         form={form}
                         updateField={updateFormField}
                         onError={(message) => alert(message)}
+                        jobCardId={jobCardId || existingJobCard?.id}
+                        userId={userInfo?.id}
                     />
 
                     <CheckInSection

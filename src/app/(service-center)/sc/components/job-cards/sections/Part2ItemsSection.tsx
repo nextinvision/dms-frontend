@@ -1,8 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Plus, Edit2, Trash2, Upload, Eye } from 'lucide-react';
 import { CreateJobCardForm, JobCardPart2Item } from "@/features/job-cards/types/job-card.types";
 import { extractPartCode, extractPartName, extractLabourCode, generateSrNoForPart2Items } from "@/features/job-cards/utils/jobCardUtils";
 import WarrantyDocumentationModal from "../modals/WarrantyDocumentationModal";
+import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
+import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
+import { saveFileMetadata } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 interface WarrantyDocumentationData {
     videoEvidence: string[];
@@ -19,12 +24,16 @@ interface Part2ItemsSectionProps {
     form: CreateJobCardForm;
     updateField: <K extends keyof CreateJobCardForm>(field: K, value: CreateJobCardForm[K]) => void;
     onError?: (message: string) => void;
+    jobCardId?: string;
+    userId?: string;
 }
 
 export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
     form,
     updateField,
     onError,
+    jobCardId: propJobCardId,
+    userId,
 }) => {
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [newItem, setNewItem] = useState<Partial<JobCardPart2Item>>({
@@ -45,15 +54,97 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
 
     // Store warranty documentation for each item by index
     const [warrantyDocuments, setWarrantyDocuments] = useState<Record<number, WarrantyDocumentationData>>({});
+    const { uploadMultiple } = useCloudinaryUpload();
+    const jobCardId = propJobCardId || form.vehicleId || "temp";
 
-    const handleFileUpload = (field: 'videoEvidence' | 'vinImage' | 'odoImage' | 'damageImages', files: FileList | null) => {
+    const handleFileUpload = useCallback(
+        async (field: 'videoEvidence' | 'vinImage' | 'odoImage' | 'damageImages', files: FileList | null) => {
         if (!files) return;
         const newFiles = Array.from(files);
+            
+            // Determine folder based on field type (using default item index 0)
+            let folder: string;
+            switch (field) {
+                case 'videoEvidence':
+                    folder = CLOUDINARY_FOLDERS.warrantyVideo(jobCardId, 0);
+                    break;
+                case 'vinImage':
+                    folder = CLOUDINARY_FOLDERS.warrantyVIN(jobCardId, 0);
+                    break;
+                case 'odoImage':
+                    folder = CLOUDINARY_FOLDERS.warrantyODO(jobCardId, 0);
+                    break;
+                case 'damageImages':
+                    folder = CLOUDINARY_FOLDERS.warrantyDamage(jobCardId, 0);
+                    break;
+                default:
+                    folder = CLOUDINARY_FOLDERS.jobCardWarranty(jobCardId);
+            }
+
+            try {
+                // Upload files to Cloudinary
+                const uploadResults = await uploadMultiple(newFiles, folder, {
+                    tags: [field, 'warranty', 'job-card'],
+                    context: {
+                        field,
+                        jobCardId,
+                    },
+                });
+
+                // Store Cloudinary URLs and public IDs
+                const newUrls = uploadResults.map(result => result.secureUrl);
+                const newPublicIds = uploadResults.map(result => result.publicId);
+                const existingUrls = form[field]?.urls || [];
+                const existingPublicIds = form[field]?.publicIds || [];
+
         updateField(field, {
-            files: [...form[field].files, ...newFiles],
-            urls: form[field].urls,
+                    urls: [...existingUrls, ...newUrls],
+                    publicIds: [...existingPublicIds, ...newPublicIds],
+                    metadata: [
+                        ...(form[field]?.metadata || []),
+                        ...uploadResults.map(result => ({
+                            publicId: result.publicId,
+                            url: result.secureUrl,
+                            format: result.format,
+                            bytes: result.bytes,
+                            uploadedAt: new Date().toISOString(),
+                        })),
+                    ],
+                });
+
+                // Save file metadata to backend if job card ID exists
+                if (jobCardId && jobCardId !== "temp") {
+                    const categoryMap: Record<string, FileCategory> = {
+                        videoEvidence: FileCategory.WARRANTY_VIDEO,
+                        vinImage: FileCategory.WARRANTY_VIN,
+                        odoImage: FileCategory.WARRANTY_ODO,
+                        damageImages: FileCategory.WARRANTY_DAMAGE,
+                    };
+
+                    const authToken = safeStorage.getItem<string | null>('authToken', null);
+
+                    // Save metadata to backend (non-blocking)
+                    saveFileMetadata(
+                        uploadResults,
+                        newFiles,
+                        {
+                            category: categoryMap[field],
+                            relatedEntityId: jobCardId,
+                            relatedEntityType: RelatedEntityType.JOB_CARD,
+                            uploadedBy: userId,
+                        },
+                        authToken || undefined
+                    ).catch(err => {
+                        console.error('Failed to save file metadata to backend:', err);
         });
-    };
+                }
+            } catch (err) {
+                console.error('Upload failed:', err);
+                onError?.(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            }
+        },
+        [jobCardId, uploadMultiple, form, updateField, onError, userId]
+    );
 
 
 
@@ -418,6 +509,9 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                         }));
                     }}
                     mode={warrantyModalMode}
+                    jobCardId={propJobCardId || form.vehicleId || "temp"}
+                    itemIndex={selectedItemIndex}
+                    userId={userId}
                 />
             )}
         </div>

@@ -5,22 +5,14 @@
 
 import type { JobCard } from "@/shared/types/job-card.types";
 import type { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
-
-interface DocumentationFiles {
-  files: File[];
-  urls: string[];
-}
-
-const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
-  files: [],
-  urls: [],
-};
+import type { DocumentationFiles } from "@/shared/types/documentation.types";
+import { INITIAL_DOCUMENTATION_FILES } from "@/shared/types/documentation.types";
 
 /**
  * Convert PART 2A field (Yes/No string) to DocumentationFiles format
  */
 function convertPart2AFieldToDocFiles(value: "Yes" | "No" | "" | undefined): DocumentationFiles {
-  // If value is "Yes", we assume files exist but can't restore actual files
+  // If value is "Yes", we assume files exist but can't restore actual URLs
   // User will need to re-upload if needed
   if (value === "Yes") {
     return { ...INITIAL_DOCUMENTATION_FILES };
