@@ -221,7 +221,7 @@ export const useAppointmentLogic = () => {
     }, [appointments, serviceCenterContext, shouldFilterAppointments]);
 
     const availableServiceCenters = useMemo(() => {
-        return defaultServiceCenters.filter((sc) => sc.status === "Active");
+        return staticServiceCenters.filter((sc) => sc.status === "Active");
     }, []);
 
     // Actions
@@ -493,7 +493,7 @@ export const useAppointmentLogic = () => {
 
         const serviceCenterId = selectedAppointment.serviceCenterId?.toString() || serviceCenterContext.serviceCenterId?.toString() || "sc-001";
         const serviceCenterCode = SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
-        const serviceCenter = defaultServiceCenters.find(
+        const serviceCenter = staticServiceCenters.find(
             (sc) => (sc as any).serviceCenterId === serviceCenterId || sc.id?.toString() === serviceCenterId
         );
 

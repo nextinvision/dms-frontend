@@ -72,3 +72,8 @@ export interface CreateServiceCenterDTO {
 }
 
 export interface UpdateServiceCenterDTO extends Partial<CreateServiceCenterDTO> { }
+
+// Default/Static service centers for backward compatibility
+// In production, these should be fetched from the API
+export const staticServiceCenters: ServiceCenter[] = [];
+export const defaultServiceCenters: ServiceCenter[] = staticServiceCenters;

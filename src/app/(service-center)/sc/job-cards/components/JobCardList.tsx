@@ -126,7 +126,11 @@ const JobCardList = React.memo<JobCardListProps>(({
                             <div className="flex flex-col xs:flex-row xs:items-center gap-2 md:gap-4 text-xs md:text-sm">
                                 {job.assignedEngineer && (
                                     <span className="text-gray-500 truncate">
-                                        Engineer: <span className="font-medium text-gray-700">{job.assignedEngineer}</span>
+                                        Engineer: <span className="font-medium text-gray-700">
+                                            {typeof job.assignedEngineer === 'object' && job.assignedEngineer !== null
+                                                ? (job.assignedEngineer as any).name || 'Unassigned'
+                                                : job.assignedEngineer}
+                                        </span>
                                     </span>
                                 )}
                                 <span className="text-gray-500">

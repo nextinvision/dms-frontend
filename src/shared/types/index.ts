@@ -48,3 +48,6 @@ export * from './quotation.types';
 // Appointment types
 export * from './appointment.types';
 
+// Service Center types
+export * from './service-center.types';
+
