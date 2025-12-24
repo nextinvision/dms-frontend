@@ -23,7 +23,7 @@ const fetchJobCard = (id: string): JobCard | undefined => {
       // Migrate existing job cards before fetching
       const { migrateAllJobCards } = require("../utils/migrateJobCards.util");
       const stored = migrateAllJobCards();
-      const merged = [...stored, ...defaultJobCards];
+      const merged = stored;
 
       // Debug logging (remove in production)
       if (process.env.NODE_ENV === "development") {
@@ -48,11 +48,10 @@ const fetchJobCard = (id: string): JobCard | undefined => {
       return found;
     } catch (error) {
       console.error("Error fetching job card:", error);
-      // Fallback to default job cards
-      return defaultJobCards.find((card) => card.id === id || card.jobCardNumber === id);
+      return undefined;
     }
   }
-  return defaultJobCards.find((card) => card.id === id || card.jobCardNumber === id);
+  return undefined;
 };
 
 export default function AdvisorJobCardDetailPage({ params, searchParams }: AdvisorJobCardPageProps) {

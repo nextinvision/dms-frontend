@@ -64,12 +64,24 @@ export function useJobCardView() {
             // Search filter
             if (searchQuery) {
                 const query = searchQuery.toLowerCase();
+
+                // Helper to get vehicle string
+                const getVehicleString = (vehicle: any): string => {
+                    if (typeof vehicle === 'string') return vehicle;
+                    if (typeof vehicle === 'object' && vehicle !== null) {
+                        return `${vehicle.vehicleModel || ''} ${vehicle.registration || ''}`.trim();
+                    }
+                    return '';
+                };
+
+                const vehicleStr = getVehicleString(job.vehicle);
+
                 return (
                     (job.id && job.id.toLowerCase().includes(query)) ||
                     (job.jobCardNumber && job.jobCardNumber.toLowerCase().includes(query)) ||
                     (job.customerName && job.customerName.toLowerCase().includes(query)) ||
                     (job.registration && job.registration.toLowerCase().includes(query)) ||
-                    (job.vehicle && job.vehicle.toLowerCase().includes(query)) ||
+                    (vehicleStr && vehicleStr.toLowerCase().includes(query)) ||
                     (job.serviceType && job.serviceType.toLowerCase().includes(query))
                 );
             }
