@@ -85,7 +85,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                             </p>
                             {job.location && (
                                 <p className="text-xs md:text-sm text-gray-700 mt-2 break-words">
-                                    <strong>Location:</strong> {job.location}
+                                    <strong>Location:</strong> {job.location === 'DOORSTEP' ? 'Home Service' : 'Station'}
                                 </p>
                             )}
                         </div>

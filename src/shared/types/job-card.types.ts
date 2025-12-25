@@ -215,7 +215,7 @@ export interface KanbanColumn {
 }
 
 // ViewType is exported from common.types.ts
-// Job cards only support list and kanban views
-export type JobCardViewType = "kanban" | "list";
+// Job cards support list, kanban, and table views
+export type JobCardViewType = "kanban" | "list" | "table";
 export type JobCardFilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
 

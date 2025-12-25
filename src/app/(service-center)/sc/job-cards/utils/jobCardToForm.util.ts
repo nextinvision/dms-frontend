@@ -26,45 +26,21 @@ function convertPart2AFieldToDocFiles(value: "Yes" | "No" | "" | undefined): Doc
  * Includes comprehensive fallbacks and diagnostic logging
  */
 export function jobCardToFormInitialValues(jobCard: JobCard): Partial<CreateJobCardForm> {
-  // Diagnostic logging to track field mapping
+  // Get related data from backend relations (single source of truth)
+  const customer = (jobCard as any).customer;
+  const vehicle = (jobCard as any).vehicle;
+  const appointment = (jobCard as any).appointment;
+
+  // Diagnostic logging
   if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
     console.group(`[JobCardToForm] Mapping JobCard ${jobCard.id || jobCard.jobCardNumber}`);
-    console.log("JobCard source appointment ID:", jobCard.sourceAppointmentId);
-    console.log("JobCard part1 exists:", !!jobCard.part1);
-    console.log("JobCard legacy fields:", {
-      customerName: jobCard.customerName,
-      registration: jobCard.registration,
-      vehicleMake: jobCard.vehicleMake,
-      vehicleModel: jobCard.vehicleModel,
-      customerWhatsappNumber: jobCard.customerWhatsappNumber,
-      customerAlternateMobile: jobCard.customerAlternateMobile,
-      customerEmail: jobCard.customerEmail,
-      vehicleYear: jobCard.vehicleYear,
-      motorNumber: jobCard.motorNumber,
-      chargerSerialNumber: jobCard.chargerSerialNumber,
-      dateOfPurchase: jobCard.dateOfPurchase,
-      vehicleColor: jobCard.vehicleColor,
-      previousServiceHistory: jobCard.previousServiceHistory,
-      odometerReading: jobCard.odometerReading,
-    });
-    if (jobCard.part1) {
-      console.log("JobCard part1 fields:", {
-        fullName: jobCard.part1.fullName,
-        mobilePrimary: jobCard.part1.mobilePrimary,
-        customerType: jobCard.part1.customerType,
-        vehicleBrand: jobCard.part1.vehicleBrand,
-        vehicleModel: jobCard.part1.vehicleModel,
-        registrationNumber: jobCard.part1.registrationNumber,
-        vinChassisNumber: jobCard.part1.vinChassisNumber,
-        variantBatteryCapacity: jobCard.part1.variantBatteryCapacity,
-        warrantyStatus: jobCard.part1.warrantyStatus,
-        customerAddress: jobCard.part1.customerAddress,
-      });
-    }
+    console.log("Has customer relation:", !!customer);
+    console.log("Has vehicle relation:", !!vehicle);
+    console.log("Has appointment relation:", !!appointment);
     console.groupEnd();
   }
 
-  // Helper to safely get value with multiple fallbacks
+  // Helper to safely get value
   const getValue = <T>(defaultValue: T, ...sources: (T | undefined | null | string)[]): T => {
     for (const source of sources) {
       if (source !== undefined && source !== null && source !== "") {
@@ -75,132 +51,81 @@ export function jobCardToFormInitialValues(jobCard: JobCard): Partial<CreateJobC
   };
 
   const formValues: Partial<CreateJobCardForm> = {
-    // Basic fields with fallbacks
+    // IDs
     vehicleId: jobCard.vehicleId || "",
     customerId: jobCard.customerId || "",
-    customerName: getValue("", jobCard.part1?.fullName, jobCard.customerName),
-    vehicleRegistration: getValue(
-      "",
-      jobCard.part1?.registrationNumber,
-      jobCard.registration
-    ),
-    vehicleMake: getValue(
-      "",
-      jobCard.part1?.vehicleBrand,
-      jobCard.vehicleMake
-    ),
-    vehicleModel: getValue(
-      "",
-      jobCard.part1?.vehicleModel,
-      jobCard.vehicleModel
-    ),
-    description: getValue(
-      "",
-      jobCard.part1?.customerFeedback,
-      jobCard.description
-    ),
+
+    // Customer data from customer relation
+    customerName: getValue("", customer?.name, jobCard.customerName),
+    fullName: getValue("", customer?.name),
+    mobilePrimary: getValue("", customer?.phone),
+    whatsappNumber: getValue("", customer?.whatsappNumber),
+    alternateNumber: getValue("", customer?.alternateNumber),
+    email: getValue("", customer?.email),
+    customerAddress: getValue("", customer?.address),
+    customerType: (getValue("", customer?.customerType, jobCard.customerType) as "B2C" | "B2B" | ""),
+
+    // Vehicle data from vehicle relation
+    vehicleRegistration: getValue("", vehicle?.registration, jobCard.registration),
+    vehicleMake: getValue("", vehicle?.vehicleMake, jobCard.vehicleMake),
+    vehicleModel: getValue("", vehicle?.vehicleModel, jobCard.vehicleModel),
+    vehicleBrand: getValue("", vehicle?.vehicleMake),
+    vehicleYear: vehicle?.vehicleYear || jobCard.vehicleYear,
+    vinChassisNumber: getValue("", vehicle?.vin),
+    variantBatteryCapacity: getValue("", vehicle?.variant),
+    motorNumber: getValue("", vehicle?.motorNumber, jobCard.motorNumber),
+    chargerSerialNumber: getValue("", vehicle?.chargerSerialNumber, jobCard.chargerSerialNumber),
+    dateOfPurchase: getValue("", vehicle?.purchaseDate, jobCard.dateOfPurchase),
+    vehicleColor: getValue("", vehicle?.vehicleColor, jobCard.vehicleColor),
+    warrantyStatus: getValue("", vehicle?.warrantyStatus, jobCard.warrantyStatus),
+    insuranceStartDate: getValue("", vehicle?.insuranceStartDate),
+    insuranceEndDate: getValue("", vehicle?.insuranceEndDate),
+    insuranceCompanyName: getValue("", vehicle?.insuranceCompanyName),
+
+    // Service details from appointment relation
+    description: getValue("", appointment?.customerComplaintIssue, jobCard.description),
+    customerFeedback: getValue("", appointment?.customerComplaintIssue),
+    technicianObservation: getValue("", appointment?.technicianObservation),
+    previousServiceHistory: getValue("", appointment?.previousServiceHistory, jobCard.previousServiceHistory),
+    odometerReading: getValue("", appointment?.odometerReading, jobCard.odometerReading),
+    estimatedDeliveryDate: getValue("", appointment?.estimatedDeliveryDate),
+
+    // Pickup/Drop from appointment relation
+    pickupDropRequired: appointment?.pickupDropRequired ?? jobCard.pickupDropRequired ?? false,
+    pickupAddress: getValue("", appointment?.pickupAddress, jobCard.pickupAddress),
+    pickupState: getValue("", appointment?.pickupState, jobCard.pickupState),
+    pickupCity: getValue("", appointment?.pickupCity, jobCard.pickupCity),
+    pickupPincode: getValue("", appointment?.pickupPincode, jobCard.pickupPincode),
+    dropAddress: getValue("", appointment?.dropAddress, jobCard.dropAddress),
+    dropState: getValue("", appointment?.dropState, jobCard.dropState),
+    dropCity: getValue("", appointment?.dropCity, jobCard.dropCity),
+    dropPincode: getValue("", appointment?.dropPincode, jobCard.dropPincode),
+    preferredCommunicationMode: appointment?.preferredCommunicationMode || jobCard.preferredCommunicationMode,
+
+    // Check-in from appointment relation
+    arrivalMode: appointment?.arrivalMode || jobCard.arrivalMode,
+    checkInNotes: getValue("", appointment?.checkInNotes, jobCard.checkInNotes),
+    checkInSlipNumber: getValue("", appointment?.checkInSlipNumber, jobCard.checkInSlipNumber),
+    checkInDate: getValue("", appointment?.checkInDate, jobCard.checkInDate),
+    checkInTime: getValue("", appointment?.checkInTime, jobCard.checkInTime),
+
+    // Parts
     selectedParts: jobCard.parts || [],
     part2Items: jobCard.part2 || [],
 
-    // PART 1 fields with comprehensive fallbacks
-    fullName: getValue("", jobCard.part1?.fullName, jobCard.customerName),
-    // mobilePrimary: Try part1 first, then check if we can extract from other sources
-    mobilePrimary: getValue("", jobCard.part1?.mobilePrimary),
-    customerType: (getValue(
-      "",
-      jobCard.part1?.customerType,
-      jobCard.customerType
-    ) as "B2C" | "B2B" | ""),
-    vehicleBrand: getValue(
-      "",
-      jobCard.part1?.vehicleBrand,
-      jobCard.vehicleMake
-    ),
-    vinChassisNumber: getValue("", jobCard.part1?.vinChassisNumber),
-    variantBatteryCapacity: getValue("", jobCard.part1?.variantBatteryCapacity),
-    warrantyStatus: getValue(
-      "",
-      jobCard.part1?.warrantyStatus,
-      jobCard.warrantyStatus
-    ),
-    estimatedDeliveryDate: getValue("", jobCard.part1?.estimatedDeliveryDate),
-    customerAddress: getValue("", jobCard.part1?.customerAddress),
-    customerFeedback: getValue(
-      "",
-      jobCard.part1?.customerFeedback,
-      jobCard.description
-    ),
-    technicianObservation: getValue("", jobCard.part1?.technicianObservation),
-    insuranceStartDate: getValue("", jobCard.part1?.insuranceStartDate),
-    insuranceEndDate: getValue("", jobCard.part1?.insuranceEndDate),
-    insuranceCompanyName: getValue("", jobCard.part1?.insuranceCompanyName),
-    batterySerialNumber: getValue("", jobCard.part1?.batterySerialNumber),
-    mcuSerialNumber: getValue("", jobCard.part1?.mcuSerialNumber),
-    vcuSerialNumber: getValue("", jobCard.part1?.vcuSerialNumber),
-    otherPartSerialNumber: getValue("", jobCard.part1?.otherPartSerialNumber),
-
-    // Additional Customer Contact Fields - direct from JobCard
-    whatsappNumber: jobCard.customerWhatsappNumber || "",
-    alternateNumber: jobCard.customerAlternateMobile || "",
-    email: jobCard.customerEmail || "",
-
-    // Additional Vehicle Details - direct from JobCard
-    vehicleYear: jobCard.vehicleYear,
-    motorNumber: jobCard.motorNumber || "",
-    chargerSerialNumber: jobCard.chargerSerialNumber || "",
-    dateOfPurchase: jobCard.dateOfPurchase || "",
-    vehicleColor: jobCard.vehicleColor || "",
-
-    // Additional Service Details - direct from JobCard
-    previousServiceHistory: jobCard.previousServiceHistory || "",
-    odometerReading: jobCard.odometerReading || "",
-
-    // Operational Fields - Use nullish coalescing for boolean to handle false values correctly
-    pickupDropRequired: jobCard.pickupDropRequired ?? false,
-    pickupAddress: jobCard.pickupAddress || "",
-    pickupState: jobCard.pickupState || "",
-    pickupCity: jobCard.pickupCity || "",
-    pickupPincode: jobCard.pickupPincode || "",
-    dropAddress: jobCard.dropAddress || "",
-    dropState: jobCard.dropState || "",
-    dropCity: jobCard.dropCity || "",
-    dropPincode: jobCard.dropPincode || "",
-    preferredCommunicationMode: jobCard.preferredCommunicationMode,
-
-    // Check-in Fields - direct from JobCard
-    arrivalMode: jobCard.arrivalMode,
-    checkInNotes: jobCard.checkInNotes || "",
-    checkInSlipNumber: jobCard.checkInSlipNumber || "",
-    checkInDate: jobCard.checkInDate || "",
-    checkInTime: jobCard.checkInTime || "",
-
-    // PART 2A fields from jobCard.part2A
+    // Part 2A (warranty docs)
     videoEvidence: convertPart2AFieldToDocFiles(jobCard.part2A?.videoEvidence),
     vinImage: convertPart2AFieldToDocFiles(jobCard.part2A?.vinImage),
     odoImage: convertPart2AFieldToDocFiles(jobCard.part2A?.odoImage),
     damageImages: convertPart2AFieldToDocFiles(jobCard.part2A?.damageImages),
     issueDescription: jobCard.part2A?.issueDescription || "",
     numberOfObservations: jobCard.part2A?.numberOfObservations || "",
-    symptom: getValue(
-      "",
-      jobCard.part2A?.symptom,
-      jobCard.previousServiceHistory
-    ),
+    symptom: getValue("", jobCard.part2A?.symptom, jobCard.previousServiceHistory),
     defectPart: jobCard.part2A?.defectPart || "",
   };
 
-  // Log missing critical fields in development
   if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-    const missingFields: string[] = [];
-    if (!formValues.mobilePrimary) missingFields.push("mobilePrimary");
-    if (!formValues.whatsappNumber && !formValues.mobilePrimary) missingFields.push("whatsappNumber/mobilePrimary");
-    if (!formValues.email) missingFields.push("email");
-    if (!formValues.vehicleRegistration) missingFields.push("vehicleRegistration");
-    if (!formValues.vehicleYear) missingFields.push("vehicleYear");
-
-    if (missingFields.length > 0) {
-      console.warn(`[JobCardToForm] Missing fields in JobCard ${jobCard.id || jobCard.jobCardNumber}:`, missingFields);
-    }
+    console.log("[JobCardToForm] Mapped form values:", formValues);
   }
 
   return formValues;

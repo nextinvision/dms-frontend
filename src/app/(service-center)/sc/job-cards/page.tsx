@@ -32,6 +32,11 @@ const StatusUpdateModal = dynamic(() => import("./components/StatusUpdateModal")
 
 const SERVICE_TYPES = SERVICE_TYPE_OPTIONS;
 
+// Import JobCardTable component
+const JobCardTable = dynamic(() => import("./components/JobCardTable"), {
+  loading: () => <p>Loading table...</p>
+});
+
 const getStatusColor = (status: JobCardStatus): string => {
   const colors: Record<JobCardStatus, string> = {
     arrival_pending: "bg-gray-100 text-gray-700 border-gray-300",
@@ -388,6 +393,15 @@ export default function JobCards() {
               >
                 List
               </button>
+              <button
+                onClick={() => setView("table")}
+                className={`px-3 py-1 sm:px-4 sm:py-2 rounded text-xs sm:text-sm font-medium transition ${view === "table"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+                  }`}
+              >
+                Table
+              </button>
             </div>
             {/* Only Service Advisor can create job cards from this page */}
             {isServiceAdvisor && (
@@ -511,6 +525,51 @@ export default function JobCards() {
             }}
           />
         )}
+
+        {/* Table View */}
+        {view === "table" && (
+          <JobCardTable
+            currentJobs={filteredJobs}
+            partsRequestsData={partsRequestsData}
+            getStatusColor={getStatusColor}
+            getPriorityColor={getPriorityColor}
+            onJobClick={(job) => router.push(`/sc/job-cards/${job.id}`)}
+            isServiceAdvisor={isServiceAdvisor}
+            isServiceManager={isServiceManager}
+            onView={(jobId) => router.push(`/sc/job-cards/${jobId}`)}
+            onEdit={(jobId) => router.push(`/sc/job-cards/${jobId}/edit`)}
+            onEditDraft={handleEditDraft}
+            onAssignEngineer={(jobId) => {
+              setAssigningJobId(jobId);
+              setShowAssignEngineerModal(true);
+            }}
+            onUpdateStatus={(jobId, initialStatus) => {
+              setUpdatingStatusJobId(jobId);
+              setNewStatus(getNextStatus(initialStatus)[0]);
+              setShowStatusUpdateModal(true);
+            }}
+            getNextStatus={getNextStatus}
+            hasQuotation={(jobId) => {
+              if (typeof window === "undefined") return false;
+              const quotations = safeStorage.getItem<any[]>("quotations", []);
+              return quotations.some((q) => q.jobCardId === jobId);
+            }}
+            onCreateQuotation={(job) => {
+              safeStorage.setItem("pendingQuotationFromJobCard", {
+                jobCardId: job.id,
+                jobCardNumber: job.jobCardNumber,
+                customerName: job.customerName,
+                customerId: job.customerId,
+                vehicleId: job.vehicleId,
+                serviceCenterId: job.serviceCenterId,
+                serviceCenterName: job.serviceCenterName,
+                jobCardData: job,
+              });
+              router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
+            }}
+          />
+        )}
+
 
         {filteredJobs.length === 0 && (
           <div className="bg-white rounded-xl md:rounded-2xl shadow-md p-6 md:p-12 text-center">

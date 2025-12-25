@@ -17,41 +17,43 @@ interface AdvisorJobCardPageProps {
   }>;
 }
 
-const fetchJobCard = (id: string): JobCard | undefined => {
-  if (typeof window !== "undefined") {
-    try {
-      // Migrate existing job cards before fetching
-      const { migrateAllJobCards } = require("../utils/migrateJobCards.util");
-      const stored = migrateAllJobCards();
-      const merged = stored;
+const fetchJobCard = async (id: string): Promise<JobCard | undefined> => {
+  if (typeof window === "undefined") return undefined;
 
-      // Debug logging (remove in production)
-      if (process.env.NODE_ENV === "development") {
-        console.log("Looking for job card with ID:", id);
-        console.log("Stored job cards:", stored.length);
-        console.log("Available IDs:", merged.map(c => ({ id: c.id, jobCardNumber: c.jobCardNumber })));
-      }
+  try {
+    // Import the job card service
+    const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
 
-      // Try multiple lookup strategies
-      const found = merged.find((card) => {
-        // Exact match on id
-        if (card.id === id) return true;
-        // Exact match on jobCardNumber
-        if (card.jobCardNumber === id) return true;
-        return false;
-      });
+    // Fetch all job cards from API
+    const allJobCards = await jobCardService.getAll();
 
-      if (found && process.env.NODE_ENV === "development") {
-        console.log("Found job card:", found);
-      }
+    // Find the one we need
+    const jobCard = allJobCards.find((card) =>
+      card.id === id || card.jobCardNumber === id
+    );
 
-      return found;
-    } catch (error) {
-      console.error("Error fetching job card:", error);
-      return undefined;
+    if (jobCard) {
+      console.log("Found job card from API:", jobCard);
+      return jobCard;
     }
+
+    // Fallback to localStorage if not found in API
+    const { migrateAllJobCards } = require("../utils/migrateJobCards.util");
+    const stored = migrateAllJobCards();
+
+    const found = stored.find((card: JobCard) =>
+      card.id === id || card.jobCardNumber === id
+    );
+
+    if (found) {
+      console.log("Found job card from localStorage:", found);
+    }
+
+    return found;
+  } catch (error) {
+    console.error("Error fetching job card:", error);
+    return undefined;
   }
-  return undefined;
 };
 
 export default function AdvisorJobCardDetailPage({ params, searchParams }: AdvisorJobCardPageProps) {
@@ -64,14 +66,17 @@ export default function AdvisorJobCardDetailPage({ params, searchParams }: Advis
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const found = fetchJobCard(resolvedParams.id);
-      setJobCard(found);
-      setLoading(false);
+      // Use async IIFE to handle the promise
+      (async () => {
+        const found = await fetchJobCard(resolvedParams.id);
+        setJobCard(found);
+        setLoading(false);
+      })();
 
       // Also listen for storage changes in case job card is updated in another tab
-      const handleStorageChange = (e: StorageEvent) => {
+      const handleStorageChange = async (e: StorageEvent) => {
         if (e.key === "jobCards") {
-          const updated = fetchJobCard(resolvedParams.id);
+          const updated = await fetchJobCard(resolvedParams.id);
           setJobCard(updated);
         }
       };

@@ -13,8 +13,14 @@ export abstract class BaseRepository<T> implements IBaseRepository<T> {
     protected abstract endpoint: string;
 
     async getAll(params?: Record<string, unknown>): Promise<T[]> {
-        const response = await apiClient.get<T[]>(this.endpoint, { params });
-        return response.data;
+        const response = await apiClient.get<T[] | { data: T[]; pagination?: any }>(this.endpoint, { params });
+        // Handle both direct array response and paginated response {data: [], pagination: {}}
+        if (Array.isArray(response.data)) {
+            return response.data;
+        } else if (response.data && typeof response.data === 'object' && 'data' in response.data) {
+            return response.data.data;
+        }
+        return [];
     }
 
     async getById(id: string): Promise<T> {

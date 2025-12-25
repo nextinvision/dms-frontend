@@ -214,10 +214,14 @@ export const useAppointmentLogic = () => {
 
     // Derived
     const visibleAppointments = useMemo(() => {
-        if (shouldFilterAppointments) {
-            return filterByServiceCenter(appointments, serviceCenterContext);
-        }
-        return appointments;
+        let filtered = shouldFilterAppointments
+            ? filterByServiceCenter(appointments, serviceCenterContext)
+            : appointments;
+
+        // Hide appointments that are IN_PROGRESS (they should appear in job cards instead)
+        filtered = filtered.filter(apt => apt.status !== "IN_PROGRESS" && apt.status !== "IN PROGRESS");
+
+        return filtered;
     }, [appointments, serviceCenterContext, shouldFilterAppointments]);
 
     const availableServiceCenters = useMemo(() => {
@@ -445,6 +449,7 @@ export const useAppointmentLogic = () => {
         if (!selectedAppointment) return;
 
         try {
+            // Step 1: Update appointment status
             const updatePayload: any = {
                 status: "IN_PROGRESS", // Update status to backend Enum value
                 customerArrived: true, // Mark customer as arrived
@@ -452,12 +457,50 @@ export const useAppointmentLogic = () => {
 
             await appointmentsService.update(selectedAppointment.id.toString(), updatePayload);
 
-            showToast("Customer arrival recorded. Appointment status updated to 'In Progress'.", "success");
+            // Step 2: Create Job Card in Database
+            try {
+                const customerId = (selectedAppointment.customerExternalId || selectedAppointmentCustomer?.id)?.toString();
+                const vehicleId = (selectedAppointment.vehicleExternalId || selectedAppointmentVehicle?.id)?.toString();
+                const serviceCenterId = (selectedAppointment.serviceCenterId || serviceCenterContext.serviceCenterId)?.toString();
+
+                if (!customerId || !vehicleId || !serviceCenterId) {
+                    throw new Error("Missing required customer, vehicle, or service center information");
+                }
+
+                // Create job card with just IDs - backend will fetch related data via relations
+                // This follows proper database normalization - no data duplication
+                const jobCardPayload = {
+                    appointmentId: selectedAppointment.id.toString(),
+                    customerId,
+                    vehicleId,
+                    serviceCenterId,
+                    serviceType: selectedAppointment.serviceType,
+                    priority: "MEDIUM",
+                };
+
+                // Create job card via API
+                const createdJobCard = await jobCardService.create(jobCardPayload as any);
+
+                if (createdJobCard) {
+                    console.log("✅ Job Card Created Successfully:", createdJobCard);
+                    console.log("Job Card ID:", createdJobCard.id);
+                    console.log("Job Card Number:", createdJobCard.jobCardNumber);
+                    showToast(`Job card ${createdJobCard.jobCardNumber} created successfully!`, "success");
+                } else {
+                    showToast("Customer arrival recorded. Appointment status updated.", "success");
+                }
+            } catch (jobCardError: any) {
+                console.error("Error creating job card:", jobCardError);
+                const errorMsg = jobCardError?.message || jobCardError?.response?.data?.message || "Unknown error";
+                console.error("Error details:", errorMsg);
+                // Don't fail the whole operation if job card creation fails
+                showToast(`Customer arrival recorded. Job card creation failed: ${errorMsg}`, "error");
+            }
 
             // Refresh list
             loadAppointments();
 
-            // Update local state without closing immediately if workflow continues
+            // Update local state
             setSelectedAppointment({
                 ...selectedAppointment,
                 status: "IN_PROGRESS"
@@ -468,7 +511,7 @@ export const useAppointmentLogic = () => {
             const msg = error?.response?.data?.message || error?.message || "Failed to update status.";
             showToast(msg, "error");
         }
-    }, [selectedAppointment, showToast, loadAppointments]);
+    }, [selectedAppointment, selectedAppointmentCustomer, selectedAppointmentVehicle, serviceCenterContext, showToast, loadAppointments]);
 
     const handleOpenJobCard = useCallback((appointmentId: number | string) => {
         try {
@@ -512,11 +555,11 @@ export const useAppointmentLogic = () => {
 
         const customerEmail = selectedAppointmentCustomer?.email || selectedAppointment.email || undefined;
 
-        const locationParts = serviceCenter?.location?.split(",") || [];
-        const serviceCenterAddress = locationParts[0]?.trim() || serviceCenter?.location || "";
-        const serviceCenterCity = locationParts[1]?.trim() || "";
-        const serviceCenterState = locationParts[2]?.trim() || "";
-        const serviceCenterPincode = "";
+        // Use the proper ServiceCenter properties (address, city, state, pinCode)
+        const serviceCenterAddress = serviceCenter?.address || "";
+        const serviceCenterCity = serviceCenter?.city || "";
+        const serviceCenterState = serviceCenter?.state || "";
+        const serviceCenterPincode = serviceCenter?.pinCode || "";
 
         return {
             slipNumber,
@@ -560,16 +603,8 @@ export const useAppointmentLogic = () => {
         }
     }, [selectedAppointment, currentJobCardId, generateCheckInSlipData, showToast]);
 
-    // Job Card & Quotation Conversion Helpers
-    const updateStoredJobCard = useCallback(
-        (jobId: string, updater: (card: JobCard) => JobCard) => {
-            const stored = safeStorage.getItem<JobCard[]>("jobCards", []);
-            const updated = stored.map((card) => (card.id === jobId ? updater(card) : card));
-            safeStorage.setItem("jobCards", updated);
-            return updated.find((card) => card.id === jobId) ?? null;
-        },
-        []
-    );
+    // NOTE: Job cards are now managed entirely through backend API
+    // No localStorage usage for job card creation or updates
 
     const convertAppointmentToJobCard = useCallback(async (appointment: AppointmentRecord): Promise<JobCard> => {
         // (Logic from page.tsx lines 377-668 - Simplified for brevity or copied fully?)
@@ -648,7 +683,7 @@ export const useAppointmentLogic = () => {
         appointmentsState: { appointments, setAppointments },
         serviceCenterContext,
         loadAppointments,
-        updateStoredJobCard, // Expose for page.tsx usage
+        // updateStoredJobCard removed - using backend API only
         detailCustomer,
         appointmentCustomerSearchResults,
         appointmentCustomerSearchLoadingState,

@@ -79,7 +79,7 @@ function AppointmentsContent() {
     searchAppointmentCustomer,
     clearAppointmentCustomerSearch,
     detailCustomer,
-    updateStoredJobCard,
+    // updateStoredJobCard removed - backend API only
     appointmentsState: { setAppointments },
     setCheckInSlipData,
   } = useAppointmentLogic();
@@ -121,97 +121,72 @@ function AppointmentsContent() {
 
   // Temporary local helper until moved to hook fully
   const convertAppointmentToJobCard = useCallback(async (appointment: AppointmentRecord): Promise<JobCard> => {
-    const serviceCenterId = serviceCenterContext.serviceCenterId?.toString() || appointment.serviceCenterId?.toString() || "sc-001";
-    const serviceCenterCode = SERVICE_CENTER_CODE_MAP[serviceCenterId] || "SC001";
+    try {
+      // Validate required IDs (must be UUIDs from backend)
+      if (!appointment.customerExternalId) {
+        throw new Error("Customer ID is required to create job card");
+      }
+      if (!appointment.vehicleExternalId) {
+        throw new Error("Vehicle ID is required to create job card");
+      }
+      if (!appointment.serviceCenterId) {
+        throw new Error("Service Center ID is required to create job card");
+      }
 
-    const existingJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
-    const jobCardNumber = generateJobCardNumber(serviceCenterId, existingJobCards);
+      // Fetch customer and vehicle data for part1 form
+      let customerData: CustomerWithVehicles | null = null;
+      let vehicleData: Vehicle | null = null;
 
-    const vehicleParts = appointment.vehicle.match(/^(.+?)\s+(.+?)\s+\((\d+)\)$/);
-    const vehicleMake = vehicleParts ? vehicleParts[1] : appointment.vehicle.split(" ")[0] || "";
-    const vehicleModel = vehicleParts ? vehicleParts[2] : appointment.vehicle.split(" ").slice(1, -1).join(" ") || "";
-
-    let customerData: CustomerWithVehicles | null = null;
-    let vehicleData: Vehicle | null = null;
-
-    if (appointment.customerExternalId) {
       try {
         customerData = await customerService.getById(appointment.customerExternalId);
         if (customerData.vehicles) {
-          vehicleData = customerData.vehicles.find((v) => {
-            const vehicleString = formatVehicleString(v);
-            return vehicleString === appointment.vehicle ||
-              v.vehicleMake === vehicleMake ||
-              v.registration === appointment.vehicle;
-          }) || customerData.vehicles[0] || null;
+          vehicleData = customerData.vehicles.find((v) => v.id === appointment.vehicleExternalId) || customerData.vehicles[0] || null;
         }
       } catch (err) {
         console.warn("Could not fetch customer data for job card:", err);
       }
+
+      // Prepare DTO for backend (matches CreateJobCardDto)
+      const createJobCardDto = {
+        serviceCenterId: appointment.serviceCenterId.toString(),
+        customerId: appointment.customerExternalId.toString(),
+        vehicleId: appointment.vehicleExternalId.toString(),
+        appointmentId: appointment.id?.toString(), // Link to appointment
+        serviceType: appointment.serviceType,
+        priority: "MEDIUM" as const, // Backend enum: LOW, MEDIUM, HIGH, URGENT
+        location: "STATION" as const, // Backend enum: STATION, DOORSTEP
+        part1Data: customerData && vehicleData ? {
+          customerName: appointment.customerName || customerData.name,
+          phone: appointment.phone || customerData.phone,
+          vehicleMake: vehicleData.vehicleMake,
+          vehicleModel: vehicleData.vehicleModel,
+          registration: vehicleData.registration,
+          customerComplaint: appointment.customerComplaintIssue,
+          estimatedDeliveryDate: appointment.estimatedDeliveryDate,
+          warrantyStatus: appointment.warrantyStatus,
+          technicianObservation: appointment.technicianObservation,
+          // Add other part1 fields as needed
+        } : undefined,
+        uploadedBy: userInfo?.id, // Current user creating the job card
+      };
+
+      // Create job card via backend API
+      // Note: DTO structure differs from frontend JobCard type, backend will handle conversion
+      const createdJobCard = await jobCardService.create(createJobCardDto as any);
+
+      // Set current job card ID for UI tracking
+      setCurrentJobCardId(createdJobCard.id);
+
+      showToast("Job card created successfully!", "success");
+      return createdJobCard as JobCard;
+
+    } catch (error: any) {
+      console.error("Error creating job card from appointment:", error);
+      const errorMessage = error?.response?.data?.message || error.message || "Failed to create job card";
+      showToast(errorMessage, "error");
+      throw error;
     }
-
-    const part1 = customerData && vehicleData
-      ? populateJobCardPart1(
-        customerData,
-        vehicleData,
-        jobCardNumber,
-        {
-          customerFeedback: appointment.customerComplaintIssue || "",
-          estimatedDeliveryDate: appointment.estimatedDeliveryDate || "",
-          warrantyStatus: appointment.warrantyStatus || "",
-          technicianObservation: appointment.technicianObservation || "",
-          insuranceStartDate: appointment.insuranceStartDate || "",
-          insuranceEndDate: appointment.insuranceEndDate || "",
-          insuranceCompanyName: appointment.insuranceCompanyName || "",
-          batterySerialNumber: appointment.batterySerialNumber || "",
-          mcuSerialNumber: appointment.mcuSerialNumber || "",
-          vcuSerialNumber: appointment.vcuSerialNumber || "",
-          otherPartSerialNumber: appointment.otherPartSerialNumber || "",
-          variantBatteryCapacity: appointment.variantBatteryCapacity || "",
-        }
-      )
-      : createEmptyJobCardPart1(jobCardNumber);
-
-    part1.fullName = appointment.customerName || part1.fullName;
-
-    // Minimal mapping for brevity - ideally use full mapping
-    part1.mobilePrimary = appointment.phone || part1.mobilePrimary;
-
-    const newJobCard: JobCard = {
-      id: `JC-${Date.now()}`,
-      jobCardNumber,
-      serviceCenterId: appointment.serviceCenterId?.toString() || serviceCenterContext.serviceCenterId?.toString() || "sc-001",
-      serviceCenterCode,
-      serviceCenterName: appointment.serviceCenterName || serviceCenterContext.serviceCenterName || undefined,
-      customerId: customerData?.id?.toString() || appointment.customerExternalId?.toString() || `customer-${appointment.id}`,
-      customerName: appointment.customerName,
-      vehicleId: vehicleData?.id?.toString() || appointment.vehicleExternalId?.toString(),
-      vehicle: appointment.vehicle,
-      registration: appointment.registrationNumber || vehicleData?.registration || part1.registrationNumber || "",
-      vehicleMake: appointment.vehicleBrand || vehicleMake || "",
-      vehicleModel: appointment.vehicleModel || vehicleModel || "",
-      customerType: appointment.customerType,
-      serviceType: appointment.serviceType,
-      description: appointment.customerComplaintIssue || `Service: ${appointment.serviceType}`,
-      status: "Awaiting Quotation Approval",
-      priority: "Normal",
-      assignedEngineer: appointment.assignedTechnician || null,
-      estimatedCost: appointment.estimatedCost ? `₹${appointment.estimatedCost}` : "₹0",
-      estimatedTime: appointment.estimatedServiceTime || "To be determined",
-      createdAt: new Date().toISOString(),
-      parts: [],
-      location: "Station",
-      sourceAppointmentId: appointment.id,
-      isTemporary: true,
-      customerArrivalTimestamp: new Date().toISOString(),
-      part1,
-      part2: [],
-    };
-
-    await jobCardService.create(newJobCard);
-    setCurrentJobCardId(newJobCard.id);
-    return newJobCard;
-  }, [serviceCenterContext, setCurrentJobCardId]);
+  }, [serviceCenterContext, setCurrentJobCardId, userInfo, showToast]);
 
   const handleConvertToQuotation = useCallback(async () => {
     if (!selectedAppointment) return;

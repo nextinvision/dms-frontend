@@ -5,7 +5,7 @@ import { useJobCards } from "@/features/job-cards/hooks/useJobCards";
 import type { JobCard, JobCardStatus, JobCardFilterType, KanbanColumn, JobCardViewType } from "@/shared/types/job-card.types";
 
 export function useJobCardView() {
-    const [view, setView] = useState<JobCardViewType>("list");
+    const [view, setView] = useState<JobCardViewType>("table"); // Default to table view
     const [filter, setFilter] = useState<JobCardFilterType>("all");
     const [searchQuery, setSearchQuery] = useState<string>("");
     const { userRole, userInfo, isLoading: isRoleLoading } = useRole();
