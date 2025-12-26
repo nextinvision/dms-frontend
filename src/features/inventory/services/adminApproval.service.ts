@@ -8,7 +8,7 @@
 
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { centralIssueService } from './centralIssue.service';
-import { centralInventoryRepository as _legacyRepo } from '@/core/repositories/central-inventory.repository';
+import { centralInventoryRepository } from '@/core/repositories/central-inventory.repository';
 import { serviceCenterRepository } from '@/core/repositories/service-center.repository';
 import type { PartsIssue, PartsIssueFormData } from "@/shared/types/central-inventory.types";
 
@@ -38,7 +38,7 @@ class AdminApprovalService {
     }, 0);
 
     // Get service center info
-    const serviceCenters = await centralInventoryRepository.getAllServiceCenters();
+    const serviceCenters = await serviceCenterRepository.getAll();
     const serviceCenter = serviceCenters.find((sc) => sc.id === formData.serviceCenterId);
     if (!serviceCenter) {
       throw new Error("Service center not found");
@@ -56,7 +56,7 @@ class AdminApprovalService {
         partId: item.partId,
         partName: stockItem.partName,
         partNumber: stockItem.partNumber,
-        hsnCode: stockItem.hsnCode,
+        hsnCode: stockItem.hsnCode || '',
         quantity: item.quantity,
         unitPrice: stockItem.unitPrice,
         totalPrice: stockItem.unitPrice * item.quantity,
