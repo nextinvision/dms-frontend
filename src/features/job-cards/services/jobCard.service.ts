@@ -39,13 +39,13 @@ class JobCardService {
         registration: "",
         serviceType: "",
         description: "",
-        status: "Created",
-        priority: "Normal",
+        status: "CREATED",
+        priority: "NORMAL",
         assignedEngineer: body.engineerId || null,
         estimatedCost: "0",
         estimatedTime: "0",
         parts: [],
-        location: "Station",
+        location: "STATION",
         quotationId,
         createdAt: new Date().toISOString(),
       };
@@ -69,13 +69,13 @@ class JobCardService {
         registration: "",
         serviceType: "",
         description: "",
-        status: "Assigned",
-        priority: "Normal",
+        status: "ASSIGNED",
+        priority: "NORMAL",
         assignedEngineer: body.engineerId,
         estimatedCost: "0",
         estimatedTime: "0",
         parts: [],
-        location: "Station",
+        location: "STATION",
         createdAt: new Date().toISOString(),
       };
     });
@@ -135,13 +135,13 @@ class JobCardService {
         registration: "",
         serviceType: "",
         description: "",
-        status: "Created",
-        priority: "Normal",
+        status: "CREATED",
+        priority: "NORMAL",
         assignedEngineer: engineerId || null,
         estimatedCost: "0",
         estimatedTime: "0",
         parts: [],
-        location: "Station",
+        location: "STATION",
         quotationId,
         createdAt: new Date().toISOString(),
       };
@@ -164,19 +164,46 @@ class JobCardService {
         registration: "",
         serviceType: "",
         description: "",
-        status: "Assigned",
-        priority: "Normal",
+        status: "ASSIGNED",
+        priority: "NORMAL",
         assignedEngineer: engineerId,
         estimatedCost: "0",
         estimatedTime: "0",
         parts: [],
-        location: "Station",
+        location: "STATION",
         createdAt: new Date().toISOString(),
       };
     }
     const response = await apiClient.post<JobCard>(`${API_ENDPOINTS.JOB_CARD(jobCardId)}/assign-engineer`, {
       engineerId,
     });
+    return response.data;
+  }
+
+  async passToManager(jobCardId: string, managerId: string): Promise<JobCard> {
+    const response = await apiClient.post<JobCard>(
+      `${API_ENDPOINTS.JOB_CARD(jobCardId)}/pass-to-manager`,
+      { managerId }
+    );
+    return response.data;
+  }
+
+  async managerReview(
+    jobCardId: string,
+    data: { status: "APPROVED" | "REJECTED"; notes?: string }
+  ): Promise<JobCard> {
+    const response = await apiClient.post<JobCard>(
+      `${API_ENDPOINTS.JOB_CARD(jobCardId)}/manager-review`,
+      data
+    );
+    return response.data;
+  }
+
+  async convertToActual(jobCardId: string): Promise<JobCard> {
+    const response = await apiClient.post<JobCard>(
+      `${API_ENDPOINTS.JOB_CARD(jobCardId)}/convert-to-actual`,
+      {}
+    );
     return response.data;
   }
 }

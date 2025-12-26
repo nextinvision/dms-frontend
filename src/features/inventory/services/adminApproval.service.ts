@@ -8,7 +8,7 @@
 
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { centralIssueService } from './centralIssue.service';
-import { centralInventoryRepository as _legacyRepo } from '@/core/repositories/central-inventory.repository';
+import { centralInventoryRepository } from '@/core/repositories/central-inventory.repository';
 import { serviceCenterRepository } from '@/core/repositories/service-center.repository';
 import type { PartsIssue, PartsIssueFormData } from "@/shared/types/central-inventory.types";
 
@@ -30,7 +30,7 @@ class AdminApprovalService {
     ).padStart(3, "0")}`;
 
     // Calculate total amount
-    const stock = await centralInventoryRepository.getAllStock();
+    const stock = await centralInventoryRepository.getAll();
     const totalAmount = formData.items.reduce((sum, item) => {
       const stockItem = stock.find((s) => s.id === item.fromStock);
       if (!stockItem) return sum;
@@ -38,7 +38,7 @@ class AdminApprovalService {
     }, 0);
 
     // Get service center info
-    const serviceCenters = await centralInventoryRepository.getAllServiceCenters();
+    const serviceCenters = await serviceCenterRepository.getAll();
     const serviceCenter = serviceCenters.find((sc) => sc.id === formData.serviceCenterId);
     if (!serviceCenter) {
       throw new Error("Service center not found");
@@ -56,7 +56,7 @@ class AdminApprovalService {
         partId: item.partId,
         partName: stockItem.partName,
         partNumber: stockItem.partNumber,
-        hsnCode: stockItem.hsnCode,
+        hsnCode: (stockItem as any).hsnCode || "",
         quantity: item.quantity,
         unitPrice: stockItem.unitPrice,
         totalPrice: stockItem.unitPrice * item.quantity,
@@ -136,7 +136,7 @@ class AdminApprovalService {
    */
   async getAllIssues(): Promise<PartsIssue[]> {
     const storageRequests = this.getAllRequests();
-    const repositoryIssues = await centralInventoryRepository.getAllPartsIssues();
+    const repositoryIssues = await centralIssueService.getAllPartsIssues();
 
     // Prioritize storage requests (pending approvals) over repository issues
     // Merge and deduplicate by ID, but storage requests take precedence
@@ -295,7 +295,7 @@ class AdminApprovalService {
     };
 
     // Issue parts (this will decrease stock)
-    const result = await centralInventoryRepository.createPartsIssue(
+    const result = await centralIssueService.createPartsIssue(
       formData,
       issuedBy
     );

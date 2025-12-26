@@ -8,6 +8,7 @@ import { API_CONFIG } from "@/config/api.config";
 import type { Quotation, CreateQuotationForm, QuotationStatus } from "@/shared/types/quotation.types";
 import type { Appointment } from "@/shared/types/appointment.types";
 import type { ApiRequestConfig } from "@/core/api/types";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 class QuotationsService {
   private useMock: boolean;
@@ -112,7 +113,7 @@ class QuotationsService {
         sgstAmount: 0,
         igstAmount: 0,
         totalAmount: 0,
-        notes: appointment.customerComplaintIssue || "",
+        notes: appointment.customerComplaint || "",
         customNotes: appointment.previousServiceHistory || "",
         status: "draft",
         passedToManager: false,
@@ -125,6 +126,40 @@ class QuotationsService {
       `${API_ENDPOINTS.QUOTATION(appointmentId)}/from-appointment`,
       appointment
     );
+    return response.data;
+  }
+
+  async getAll(): Promise<Quotation[]> {
+    if (this.useMock) {
+      return safeStorage.getItem<Quotation[]>("quotations", []);
+    }
+    const response = await apiClient.get<Quotation[]>(API_ENDPOINTS.QUOTATIONS);
+    return response.data;
+  }
+
+  async create(quotation: CreateQuotationForm): Promise<Quotation> {
+    if (this.useMock) {
+      const data = quotation;
+      return {
+        id: `qtn_${Date.now()}`,
+        quotationNumber: `QTN-${Date.now()}`,
+        ...data,
+        subtotal: 0,
+        discountPercent: 0,
+        preGstAmount: 0,
+        cgstAmount: 0,
+        sgstAmount: 0,
+        igstAmount: 0,
+        totalAmount: 0,
+        status: "draft",
+        passedToManager: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        serviceCenterId: "sc-001",
+        items: data.items || [],
+      };
+    }
+    const response = await apiClient.post<Quotation>(API_ENDPOINTS.QUOTATIONS, quotation);
     return response.data;
   }
 
@@ -157,6 +192,25 @@ class QuotationsService {
       status,
       reason,
     });
+    return response.data;
+  }
+
+  async passToManager(quotationId: string, managerId: string): Promise<Quotation> {
+    const response = await apiClient.post<Quotation>(
+      `${API_ENDPOINTS.QUOTATION(quotationId)}/pass-to-manager`,
+      { managerId }
+    );
+    return response.data;
+  }
+
+  async updateCustomerApproval(
+    quotationId: string,
+    data: { status: "APPROVED" | "REJECTED"; notes?: string }
+  ): Promise<Quotation> {
+    const response = await apiClient.patch<Quotation>(
+      `${API_ENDPOINTS.QUOTATION(quotationId)}/customer-approval`,
+      data
+    );
     return response.data;
   }
 

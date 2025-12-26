@@ -195,7 +195,7 @@ export const useAppointmentLogic = () => {
                 serviceCenterId: apt.serviceCenterId,
                 serviceCenterName: apt.serviceCenter?.name || apt.serviceCenterName,
                 // Map other fields as necessary from apt properties
-                customerComplaintIssue: apt.customerComplaint,
+                customerComplaint: apt.customerComplaint,
                 estimatedCost: apt.estimatedCost?.toString(),
             }));
 
@@ -388,7 +388,7 @@ export const useAppointmentLogic = () => {
                 serviceType: form.serviceType,
                 appointmentDate: new Date(form.date).toISOString(),
                 appointmentTime: form.time,
-                customerComplaint: form.customerComplaintIssue,
+                customerComplaint: form.customerComplaint,
                 location: "STATION" as const,
                 estimatedCost: form.estimatedCost ? parseFloat(form.estimatedCost) : undefined,
                 documentationFiles: {
@@ -580,7 +580,7 @@ export const useAppointmentLogic = () => {
             serviceCenterPhone: undefined,
             expectedServiceDate: selectedAppointment.estimatedDeliveryDate || undefined,
             serviceType: selectedAppointment.serviceType || undefined,
-            notes: selectedAppointment.technicianObservation || selectedAppointment.customerComplaintIssue || undefined,
+            notes: selectedAppointment.technicianObservation || selectedAppointment.customerComplaint || undefined,
         };
     }, [selectedAppointment, currentJobCard, selectedAppointmentCustomer, serviceCenterContext]);
 

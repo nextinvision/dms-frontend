@@ -17,7 +17,7 @@ export interface Appointment {
   serviceCenterId?: string | number;
   serviceCenterName?: string;
   customerType?: "B2C" | "B2B";
-  customerComplaintIssue?: string;
+  customerComplaint?: string;
   previousServiceHistory?: string;
   estimatedServiceTime?: string;
   estimatedCost?: string;
@@ -60,7 +60,7 @@ export interface AppointmentForm {
   serviceCenterId?: string | number;
   serviceCenterName?: string;
   customerType?: "B2C" | "B2B";
-  customerComplaintIssue?: string;
+  customerComplaint?: string;
   previousServiceHistory?: string;
   estimatedServiceTime?: string;
   estimatedCost?: string;
@@ -133,7 +133,7 @@ export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   serviceCenterId: undefined,
   serviceCenterName: undefined,
   customerType: undefined,
-  customerComplaintIssue: undefined,
+  customerComplaint: undefined,
   previousServiceHistory: undefined,
   estimatedServiceTime: undefined,
   estimatedCost: undefined,

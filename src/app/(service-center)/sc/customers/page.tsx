@@ -178,7 +178,7 @@ export default function CustomerFind() {
     const query = serviceCenterSearch.trim().toLowerCase();
     if (!query) return staticServiceCenters;
     return staticServiceCenters.filter((center) =>
-      `${center.name} ${center.location}`.toLowerCase().includes(query)
+      `${center.name} ${center.city}`.toLowerCase().includes(query)
     );
   }, [serviceCenterSearch]);
 
@@ -208,7 +208,7 @@ export default function CustomerFind() {
     if (normalizedCity) {
       const match = staticServiceCenters.find(
         (center) =>
-          center.location.toLowerCase().includes(normalizedCity) ||
+          center.city?.toLowerCase().includes(normalizedCity) ||
           center.name.toLowerCase().includes(normalizedCity)
       );
       if (match) return match.name;
@@ -676,7 +676,7 @@ export default function CustomerFind() {
               address: form.address,
               cityState: form.cityState,
               pincode: form.pincode,
-              customerComplaintIssue: form.customerComplaintIssue,
+              customerComplaint: form.customerComplaint,
               previousServiceHistory: form.previousServiceHistory,
               estimatedServiceTime: form.estimatedServiceTime,
               estimatedCost: form.estimatedCost,
@@ -803,7 +803,7 @@ export default function CustomerFind() {
                       className="w-full px-4 py-3 rounded-lg border border-gray-200 text-left hover:bg-indigo-50 transition"
                     >
                       <div className="font-semibold text-gray-900">{center.name}</div>
-                      <p className="text-xs text-gray-500">{center.location}</p>
+                      <p className="text-xs text-gray-500">{center.city}</p>
                     </button>
                   ))}
                   {filteredServiceCenters.length === 0 && (

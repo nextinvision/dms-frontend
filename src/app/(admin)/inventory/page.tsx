@@ -15,9 +15,40 @@ export default function InventoryPage() {
   useEffect(() => {
     const fetchInventory = async () => {
       try {
-        const stockData = await centralInventoryRepository.getAllStock();
+        // Fetch data using the available method from repository
+        const stockData = await centralInventoryRepository.getAll();
+
+        // Map Repository Item (CentralInventoryItem) to UI Type (CentralStock)
+        const mappedStock: CentralStock[] = stockData.map((item: any) => ({
+          ...item,
+          id: item.id,
+          partId: item.id, // Use id as partId if not present
+          partName: item.partName,
+          partNumber: item.partNumber || "",
+          hsnCode: item.hsnCode || "8708", // Default HSN if missing
+          category: item.category || "General",
+          currentQty: item.stockQuantity || item.quantity || 0,
+          minStock: item.reorderPoint || 0,
+          maxStock: item.reorderQuantity ? item.reorderPoint + item.reorderQuantity : 100,
+          unitPrice: item.unitPrice || 0,
+          costPrice: item.unitPrice || 0, // Assumption
+          supplier: item.supplier || "Central Hub",
+          location: item.location || "Zone A",
+          warehouse: item.warehouse || "Main Warehouse",
+          // Determine status based on quantity
+          status: (item.stockQuantity > (item.reorderPoint || 5))
+            ? "In Stock"
+            : (item.stockQuantity > 0 ? "Low Stock" : "Out of Stock"),
+          lastUpdated: item.updatedAt || new Date().toISOString(),
+          lastUpdatedBy: "System",
+          // Extended fields
+          brandName: item.brandName || "Tata",
+          partType: item.partType || "NEW",
+          highValuePart: item.highValuePart || false
+        }));
+
         startTransition(() => {
-          setInventory(stockData);
+          setInventory(mappedStock);
           setIsLoading(false);
         });
       } catch (error) {
@@ -27,17 +58,17 @@ export default function InventoryPage() {
     };
     fetchInventory();
   }, []);
-  
+
   const [searchTerm, setSearchTerm] = useState("");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Filter inventory based on search term using useMemo
   const filteredInventory = useMemo(() => {
     let filtered = inventory;
-    
+
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(item => 
+      filtered = filtered.filter(item =>
         item.partName.toLowerCase().includes(term) ||
         item.hsnCode.toLowerCase().includes(term) ||
         item.partNumber?.toLowerCase().includes(term) ||
@@ -46,7 +77,7 @@ export default function InventoryPage() {
         item.warehouse?.toLowerCase().includes(term)
       );
     }
-    
+
     return filtered;
   }, [inventory, searchTerm]);
 
@@ -75,14 +106,14 @@ export default function InventoryPage() {
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
               Central Inventory
             </h1>
-            <button 
+            <button
               className="sm:hidden p-2 text-gray-600"
               onClick={() => setShowMobileMenu(!showMobileMenu)}
             >
               <Search size={24} />
             </button>
           </div>
-          
+
           {/* Search Bar - Hidden on mobile in header, shown in mobile menu */}
           <div className={`${showMobileMenu ? 'block' : 'hidden'} sm:block w-full sm:w-auto`}>
             <div className="relative">
@@ -139,9 +170,9 @@ export default function InventoryPage() {
             </div>
           </div>
           <p className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800">
-            {totalValue >= 1000000 
+            {totalValue >= 1000000
               ? `₹${(totalValue / 1000000).toFixed(1)}M`
-              : totalValue >= 1000 
+              : totalValue >= 1000
                 ? `₹${(totalValue / 1000).toFixed(0)}K`
                 : `₹${totalValue}`
             }
@@ -228,9 +259,8 @@ export default function InventoryPage() {
                       {item.brandName || "-"}
                     </td>
                     <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm text-gray-600">
-                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        item.partType === "NEW" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"
-                      }`}>
+                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${item.partType === "NEW" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"
+                        }`}>
                         {item.partType || "NEW"}
                       </span>
                     </td>
@@ -257,13 +287,12 @@ export default function InventoryPage() {
                     </td>
                     <td className="px-4 sm:px-6 py-3 sm:py-4">
                       <span
-                        className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          item.status === "In Stock"
+                        className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${item.status === "In Stock"
                             ? "bg-green-100 text-green-800"
                             : item.status === "Low Stock"
-                            ? "bg-orange-100 text-orange-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
+                              ? "bg-orange-100 text-orange-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
                       >
                         {item.status}
                       </span>
@@ -290,13 +319,12 @@ export default function InventoryPage() {
                 <div className="flex justify-between items-start mb-2">
                   <h3 className="font-medium text-gray-900">{item.partName}</h3>
                   <span
-                    className={`px-2 py-1 text-xs leading-5 font-semibold rounded-full ${
-                      item.status === "In Stock"
+                    className={`px-2 py-1 text-xs leading-5 font-semibold rounded-full ${item.status === "In Stock"
                         ? "bg-green-100 text-green-800"
                         : item.status === "Low Stock"
-                        ? "bg-orange-100 text-orange-800"
-                        : "bg-red-100 text-red-800"
-                    }`}
+                          ? "bg-orange-100 text-orange-800"
+                          : "bg-red-100 text-red-800"
+                      }`}
                   >
                     {item.status}
                   </span>

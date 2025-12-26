@@ -1,4 +1,4 @@
-    "use client";
+"use client";
 import { useState, useEffect, useMemo } from "react";
 import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList } from "lucide-react";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -28,7 +28,7 @@ interface ServiceIntakeForm {
   insuranceEndDate: string;
   insuranceCompanyName: string;
   serviceType: string;
-  customerComplaintIssue: string;
+  customerComplaint: string;
   previousServiceHistory: string;
   estimatedServiceTime: string;
   estimatedCost: string;
@@ -89,7 +89,7 @@ export default function Approvals() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [showJobCardModal, setShowJobCardModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
-  
+
   // Service center context for filtering
   const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
   const shouldFilter = shouldFilterByServiceCenter(serviceCenterContext);
@@ -99,11 +99,11 @@ export default function Approvals() {
     const loadData = () => {
       // Load quotations
       let storedQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
-      
+
       // Check if we have any pending quotations for manager approval
       const hasPendingQuotations = storedQuotations.some(q => q.status === "sent_to_manager");
-      
-        // Initialize mock quotations if none exist (for testing)
+
+      // Initialize mock quotations if none exist (for testing)
       if (!hasPendingQuotations) {
         // Get service center info
         let serviceCenterId: string;
@@ -113,7 +113,7 @@ export default function Approvals() {
         let serviceCenterCity: string;
         let serviceCenterState: string;
         let serviceCenterPincode: string;
-        
+
         if (serviceCenterContext.serviceCenterId) {
           const contextId = String(serviceCenterContext.serviceCenterId);
           if (contextId === "1" || contextId === "sc-001") {
@@ -158,7 +158,7 @@ export default function Approvals() {
           serviceCenterState = "Delhi";
           serviceCenterPincode = "110001";
         }
-        
+
         const mockQuotations: Quotation[] = [
           {
             id: "QT-MOCK-001",
@@ -370,7 +370,7 @@ export default function Approvals() {
             },
           },
         ];
-        
+
         // Add mock quotations if they don't exist
         const existingQuotationIds = new Set(storedQuotations.map(q => q.id));
         const newQuotations = mockQuotations.filter(q => !existingQuotationIds.has(q.id));
@@ -379,32 +379,32 @@ export default function Approvals() {
           safeStorage.setItem("quotations", storedQuotations);
         }
       }
-      
+
       // Reload from localStorage
       storedQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
       let pendingApprovals = storedQuotations.filter(
         (q) => q.status === "sent_to_manager"
       );
-      
+
       // Filter by service center if needed
       if (shouldFilter) {
         pendingApprovals = filterByServiceCenter(pendingApprovals, serviceCenterContext);
       }
-      
+
       setQuotations(pendingApprovals);
-      
+
       // Load service intake requests
       let storedRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
-      
+
       // Check if we have any pending service intake requests
       const hasPendingRequests = storedRequests.some(r => r.status === "pending");
-      
+
       // Initialize mock service intake requests if none exist (for testing)
       if (!hasPendingRequests) {
         // Get service center info
         let serviceCenterId: string;
         let serviceCenterName: string;
-        
+
         if (serviceCenterContext.serviceCenterId) {
           const contextId = String(serviceCenterContext.serviceCenterId);
           if (contextId === "1" || contextId === "sc-001") {
@@ -424,7 +424,7 @@ export default function Approvals() {
           serviceCenterId = "sc-001";
           serviceCenterName = "Delhi Central Hub";
         }
-        
+
         const mockServiceIntakeRequests: ServiceIntakeRequest[] = [
           {
             id: "SIR-001",
@@ -457,7 +457,7 @@ export default function Approvals() {
               insuranceEndDate: "2024-06-19",
               insuranceCompanyName: "HDFC Ergo",
               serviceType: "Battery Service",
-              customerComplaintIssue: "Battery not holding charge properly, range reduced significantly",
+              customerComplaint: "Battery not holding charge properly, range reduced significantly",
               previousServiceHistory: "Last service done 3 months ago, routine maintenance",
               estimatedServiceTime: "4 hours",
               estimatedCost: "₹8,500",
@@ -515,7 +515,7 @@ export default function Approvals() {
               insuranceEndDate: "2023-11-14",
               insuranceCompanyName: "ICICI Lombard",
               serviceType: "AC Service",
-              customerComplaintIssue: "AC not cooling properly, air flow is weak",
+              customerComplaint: "AC not cooling properly, air flow is weak",
               previousServiceHistory: "First service after purchase, no previous issues",
               estimatedServiceTime: "2 hours",
               estimatedCost: "₹3,200",
@@ -543,7 +543,7 @@ export default function Approvals() {
             serviceCenterName: serviceCenterName,
           },
         ];
-        
+
         // Add mock requests if they don't exist
         const existingRequestIds = new Set(storedRequests.map(r => r.id));
         const newRequests = mockServiceIntakeRequests.filter(r => !existingRequestIds.has(r.id));
@@ -552,26 +552,26 @@ export default function Approvals() {
           safeStorage.setItem("serviceIntakeRequests", storedRequests);
         }
       }
-      
+
       // Reload from localStorage
       storedRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
       let pendingRequests = storedRequests.filter(
         (r) => r.status === "pending"
       );
-      
+
       // Filter by service center if needed
       if (shouldFilter) {
         pendingRequests = filterByServiceCenter(pendingRequests, serviceCenterContext);
       }
-      
+
       setServiceIntakeRequests(pendingRequests);
-      
+
       // Load job cards submitted to manager
       let storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
-      
+
       // Check if we have any pending job card approvals
       const hasPendingApprovals = storedJobCards.some(jc => jc.submittedToManager === true && jc.status === "Created");
-      
+
       // Initialize mock job card approvals if none exist (for testing)
       if (!hasPendingApprovals) {
         // Get service center info - use actual service center from context or default to first one
@@ -579,7 +579,7 @@ export default function Approvals() {
         let serviceCenterId: string;
         let serviceCenterCode: string;
         let serviceCenterName: string;
-        
+
         if (serviceCenterContext.serviceCenterId) {
           const contextId = String(serviceCenterContext.serviceCenterId);
           // Map numeric IDs to sc-xxx format
@@ -607,7 +607,7 @@ export default function Approvals() {
           serviceCenterCode = "SC001";
           serviceCenterName = "Delhi Central Hub";
         }
-        
+
         const mockJobCardApprovals: JobCard[] = [
           {
             id: "JC-APPROVAL-001",
@@ -632,7 +632,7 @@ export default function Approvals() {
             estimatedTime: "2 hours",
             createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toLocaleString(), // 1 hour ago
             parts: ["Engine Oil", "Air Filter", "Battery Check"],
-            location: "Station",
+            location: "STATION",
             submittedToManager: true,
             submittedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
             part1: {
@@ -706,7 +706,7 @@ export default function Approvals() {
             estimatedTime: "3 hours",
             createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toLocaleString(), // 2 hours ago
             parts: ["Brake Pads Front", "Brake Pads Rear", "Brake Fluid"],
-            location: "Station",
+            location: "STATION",
             submittedToManager: true,
             submittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
             part1: {
@@ -769,7 +769,7 @@ export default function Approvals() {
             ],
           },
         ];
-        
+
         // Add mock approvals if they don't exist
         const existingIds = new Set(storedJobCards.map(jc => jc.id));
         const newApprovals = mockJobCardApprovals.filter(jc => !existingIds.has(jc.id));
@@ -778,19 +778,19 @@ export default function Approvals() {
           safeStorage.setItem("jobCards", storedJobCards);
         }
       }
-      
+
       // Reload from localStorage to ensure we have the latest data
       storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
-      
+
       let pendingJobCards = storedJobCards.filter(
         (jc) => jc.submittedToManager === true && jc.status === "Created"
       );
-      
+
       // Filter by service center if needed
       if (shouldFilter) {
         pendingJobCards = filterByServiceCenter(pendingJobCards, serviceCenterContext);
       }
-      
+
       setJobCardApprovals(pendingJobCards);
     };
 
@@ -810,47 +810,47 @@ export default function Approvals() {
       clearInterval(interval);
     };
   }, [shouldFilter, serviceCenterContext]);
-  
+
   // Filter requests and quotations by search query
   const filteredServiceIntakeRequests = useMemo(() => {
     if (!searchQuery.trim()) return serviceIntakeRequests;
-    
+
     const query = searchQuery.toLowerCase();
     return serviceIntakeRequests.filter((request) => {
       const customerName = request.appointment.customerName?.toLowerCase() || "";
       const vehicle = request.appointment.vehicle?.toLowerCase() || "";
       const phone = request.appointment.phone?.toLowerCase() || "";
       const serviceType = request.serviceIntakeForm.serviceType?.toLowerCase() || request.appointment.serviceType?.toLowerCase() || "";
-      const complaint = request.serviceIntakeForm.customerComplaintIssue?.toLowerCase() || request.appointment.customerComplaintIssue?.toLowerCase() || "";
+      const complaint = request.serviceIntakeForm.customerComplaint?.toLowerCase() || request.appointment.customerComplaint?.toLowerCase() || "";
       const requestId = request.id?.toLowerCase() || "";
-      
-      return customerName.includes(query) || 
-             vehicle.includes(query) || 
-             phone.includes(query) || 
-             serviceType.includes(query) || 
-             complaint.includes(query) ||
-             requestId.includes(query);
+
+      return customerName.includes(query) ||
+        vehicle.includes(query) ||
+        phone.includes(query) ||
+        serviceType.includes(query) ||
+        complaint.includes(query) ||
+        requestId.includes(query);
     });
   }, [serviceIntakeRequests, searchQuery]);
-  
+
   const filteredQuotations = useMemo(() => {
     if (!searchQuery.trim()) return quotations;
-    
+
     const query = searchQuery.toLowerCase();
     return quotations.filter((quotation) => {
       const customerName = `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.toLowerCase();
       const vehicle = `${quotation.vehicle?.make || ""} ${quotation.vehicle?.model || ""}`.toLowerCase();
       const quotationNumber = quotation.quotationNumber?.toLowerCase() || "";
-      
-      return customerName.includes(query) || 
-             vehicle.includes(query) || 
-             quotationNumber.includes(query);
+
+      return customerName.includes(query) ||
+        vehicle.includes(query) ||
+        quotationNumber.includes(query);
     });
   }, [quotations, searchQuery]);
-  
+
   const filteredJobCardApprovals = useMemo(() => {
     if (!searchQuery.trim()) return jobCardApprovals;
-    
+
     const query = searchQuery.toLowerCase();
     return jobCardApprovals.filter((jobCard) => {
       const customerName = jobCard.customerName?.toLowerCase() || "";
@@ -859,13 +859,13 @@ export default function Approvals() {
       const jobCardNumber = jobCard.jobCardNumber?.toLowerCase() || jobCard.id?.toLowerCase() || "";
       const serviceType = jobCard.serviceType?.toLowerCase() || "";
       const description = jobCard.description?.toLowerCase() || "";
-      
-      return customerName.includes(query) || 
-             vehicle.includes(query) || 
-             registration.includes(query) ||
-             jobCardNumber.includes(query) ||
-             serviceType.includes(query) ||
-             description.includes(query);
+
+      return customerName.includes(query) ||
+        vehicle.includes(query) ||
+        registration.includes(query) ||
+        jobCardNumber.includes(query) ||
+        serviceType.includes(query) ||
+        description.includes(query);
     });
   }, [jobCardApprovals, searchQuery]);
 
@@ -877,11 +877,11 @@ export default function Approvals() {
     const updatedQuotations = quotations.map((q) =>
       q.id === quotationId
         ? {
-            ...q,
-            status: "manager_approved" as const,
-            managerApproved: true,
-            managerApprovedAt: new Date().toISOString(),
-          }
+          ...q,
+          status: "manager_approved" as const,
+          managerApproved: true,
+          managerApprovedAt: new Date().toISOString(),
+        }
         : q
     );
 
@@ -890,11 +890,11 @@ export default function Approvals() {
     const updatedAllQuotations = allQuotations.map((q) =>
       q.id === quotationId
         ? {
-            ...q,
-            status: "manager_approved" as const,
-            managerApproved: true,
-            managerApprovedAt: new Date().toISOString(),
-          }
+          ...q,
+          status: "manager_approved" as const,
+          managerApproved: true,
+          managerApprovedAt: new Date().toISOString(),
+        }
         : q
     );
     safeStorage.setItem("quotations", updatedAllQuotations);
@@ -910,11 +910,11 @@ export default function Approvals() {
     const updatedQuotations = quotations.map((q) =>
       q.id === quotationId
         ? {
-            ...q,
-            status: "manager_rejected" as const,
-            managerRejected: true,
-            managerRejectedAt: new Date().toISOString(),
-          }
+          ...q,
+          status: "manager_rejected" as const,
+          managerRejected: true,
+          managerRejectedAt: new Date().toISOString(),
+        }
         : q
     );
 
@@ -923,11 +923,11 @@ export default function Approvals() {
     const updatedAllQuotations = allQuotations.map((q) =>
       q.id === quotationId
         ? {
-            ...q,
-            status: "manager_rejected" as const,
-            managerRejected: true,
-            managerRejectedAt: new Date().toISOString(),
-          }
+          ...q,
+          status: "manager_rejected" as const,
+          managerRejected: true,
+          managerRejectedAt: new Date().toISOString(),
+        }
         : q
     );
     safeStorage.setItem("quotations", updatedAllQuotations);
@@ -944,11 +944,11 @@ export default function Approvals() {
     const updatedRequests = allRequests.map((r) =>
       r.id === requestId
         ? {
-            ...r,
-            status: "approved" as const,
-            approvedAt: new Date().toISOString(),
-            approvedBy: "Service Manager",
-          }
+          ...r,
+          status: "approved" as const,
+          approvedAt: new Date().toISOString(),
+          approvedBy: "Service Manager",
+        }
         : r
     );
     safeStorage.setItem("serviceIntakeRequests", updatedRequests);
@@ -968,12 +968,12 @@ export default function Approvals() {
     const updatedRequests = allRequests.map((r) =>
       r.id === requestId
         ? {
-            ...r,
-            status: "rejected" as const,
-            rejectedAt: new Date().toISOString(),
-            rejectedBy: "Service Manager",
-            rejectionReason: reason,
-          }
+          ...r,
+          status: "rejected" as const,
+          rejectedAt: new Date().toISOString(),
+          rejectedBy: "Service Manager",
+          rejectionReason: reason,
+        }
         : r
     );
     safeStorage.setItem("serviceIntakeRequests", updatedRequests);
@@ -992,11 +992,11 @@ export default function Approvals() {
     const updatedJobCards = allJobCards.map((jc) =>
       jc.id === jobCardId
         ? {
-            ...jc,
-            submittedToManager: false,
-            status: "Created" as const,
-            // Job card is approved and ready for technician assignment
-          }
+          ...jc,
+          submittedToManager: false,
+          status: "Created" as const,
+          // Job card is approved and ready for technician assignment
+        }
         : jc
     );
     safeStorage.setItem("jobCards", updatedJobCards);
@@ -1016,11 +1016,11 @@ export default function Approvals() {
     const updatedJobCards = allJobCards.map((jc) =>
       jc.id === jobCardId
         ? {
-            ...jc,
-            submittedToManager: false,
-            status: "Created" as const,
-            // In production, you might want to add a rejectionReason field
-          }
+          ...jc,
+          submittedToManager: false,
+          status: "Created" as const,
+          // In production, you might want to add a rejectionReason field
+        }
         : jc
     );
     safeStorage.setItem("jobCards", updatedJobCards);
@@ -1071,7 +1071,7 @@ export default function Approvals() {
                             Pending Approval
                           </span>
                         </div>
-                        
+
                         <div className="space-y-2 mb-4">
                           <p className="text-gray-700">
                             <span className="font-semibold">Customer:</span> {jobCard.customerName}
@@ -1101,7 +1101,7 @@ export default function Approvals() {
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex flex-col gap-2">
                         <button
                           onClick={() => {
@@ -1153,7 +1153,7 @@ export default function Approvals() {
                             Pending Approval
                           </span>
                         </div>
-                        
+
                         <div className="space-y-2 mb-4">
                           <p className="text-gray-700">
                             <span className="font-semibold">Customer:</span> {request.appointment.customerName}
@@ -1165,7 +1165,7 @@ export default function Approvals() {
                             <span className="font-semibold">Service Type:</span> {request.serviceIntakeForm.serviceType || request.appointment.serviceType}
                           </p>
                           <p className="text-gray-700">
-                            <span className="font-semibold">Complaint:</span> {request.serviceIntakeForm.customerComplaintIssue || request.appointment.customerComplaintIssue || "N/A"}
+                            <span className="font-semibold">Complaint:</span> {request.serviceIntakeForm.customerComplaint || request.appointment.customerComplaint || "N/A"}
                           </p>
                           <p className="text-sm text-gray-500">
                             Submitted: {new Date(request.submittedAt).toLocaleString("en-IN")}
@@ -1173,7 +1173,7 @@ export default function Approvals() {
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex flex-col gap-2">
                         <button
                           onClick={() => {
@@ -1215,105 +1215,105 @@ export default function Approvals() {
               </h2>
             )}
             {filteredQuotations.length === 0 && filteredServiceIntakeRequests.length === 0 && filteredJobCardApprovals.length === 0 ? (
-            <div className="bg-white rounded-2xl shadow-md p-12 text-center">
-              <FileText className="mx-auto text-gray-400 mb-4" size={48} />
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">No Pending Approvals</h3>
+              <div className="bg-white rounded-2xl shadow-md p-12 text-center">
+                <FileText className="mx-auto text-gray-400 mb-4" size={48} />
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">No Pending Approvals</h3>
                 <p className="text-gray-500">
-                  {searchQuery.trim() 
-                    ? "No requests match your search criteria." 
+                  {searchQuery.trim()
+                    ? "No requests match your search criteria."
                     : "There are no requests pending your approval at this time."}
                 </p>
-            </div>
+              </div>
             ) : filteredQuotations.length > 0 ? (
-            filteredQuotations.map((quotation) => (
-              <div key={quotation.id} className="bg-white rounded-2xl shadow-md p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
-                      <FileText className="text-blue-600" size={20} />
-                      <span className="font-semibold text-lg">{quotation.quotationNumber}</span>
-                      <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
-                        Pending Approval
-                      </span>
-                    </div>
-                    
-                    <div className="space-y-2 mb-4">
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Customer:</span>{" "}
-                        {quotation.customer?.firstName || ""} {quotation.customer?.lastName || ""}
-                      </p>
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Vehicle:</span>{" "}
-                        {quotation.vehicle?.make || ""} {quotation.vehicle?.model || ""} ({quotation.vehicle?.registration || ""})
-                      </p>
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Total Amount:</span>{" "}
-                        <span className="text-green-600 font-bold">₹{quotation.totalAmount.toLocaleString("en-IN")}</span>
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Date: {new Date(quotation.quotationDate).toLocaleDateString("en-IN")}
-                      </p>
+              filteredQuotations.map((quotation) => (
+                <div key={quotation.id} className="bg-white rounded-2xl shadow-md p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-3">
+                        <FileText className="text-blue-600" size={20} />
+                        <span className="font-semibold text-lg">{quotation.quotationNumber}</span>
+                        <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                          Pending Approval
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 mb-4">
+                        <p className="text-gray-700">
+                          <span className="font-semibold">Customer:</span>{" "}
+                          {quotation.customer?.firstName || ""} {quotation.customer?.lastName || ""}
+                        </p>
+                        <p className="text-gray-700">
+                          <span className="font-semibold">Vehicle:</span>{" "}
+                          {quotation.vehicle?.make || ""} {quotation.vehicle?.model || ""} ({quotation.vehicle?.registration || ""})
+                        </p>
+                        <p className="text-gray-700">
+                          <span className="font-semibold">Total Amount:</span>{" "}
+                          <span className="text-green-600 font-bold">₹{quotation.totalAmount.toLocaleString("en-IN")}</span>
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Date: {new Date(quotation.quotationDate).toLocaleDateString("en-IN")}
+                        </p>
+                      </div>
+
+                      {/* Customer Approval Status */}
+                      {quotation.customerApproved && (
+                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <UserCheck className="text-green-600" size={18} />
+                            <span className="font-semibold text-green-700">Approved by Customer</span>
+                          </div>
+                          {quotation.customerApprovedAt && (
+                            <p className="text-sm text-green-600 ml-6">
+                              Approved on: {new Date(quotation.customerApprovedAt).toLocaleString("en-IN")}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {quotation.customerRejected && (
+                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <XCircle className="text-red-600" size={18} />
+                            <span className="font-semibold text-red-700">Rejected by Customer</span>
+                          </div>
+                          {quotation.customerRejectedAt && (
+                            <p className="text-sm text-red-600 ml-6">
+                              Rejected on: {new Date(quotation.customerRejectedAt).toLocaleString("en-IN")}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Customer Approval Status */}
-                    {quotation.customerApproved && (
-                      <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <div className="flex items-center gap-2 mb-1">
-                          <UserCheck className="text-green-600" size={18} />
-                          <span className="font-semibold text-green-700">Approved by Customer</span>
-                        </div>
-                        {quotation.customerApprovedAt && (
-                          <p className="text-sm text-green-600 ml-6">
-                            Approved on: {new Date(quotation.customerApprovedAt).toLocaleString("en-IN")}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {quotation.customerRejected && (
-                      <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <div className="flex items-center gap-2 mb-1">
-                          <XCircle className="text-red-600" size={18} />
-                          <span className="font-semibold text-red-700">Rejected by Customer</span>
-                        </div>
-                        {quotation.customerRejectedAt && (
-                          <p className="text-sm text-red-600 ml-6">
-                            Rejected on: {new Date(quotation.customerRejectedAt).toLocaleString("en-IN")}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex flex-col gap-2">
-                    <button
-                      onClick={() => handleApprove(quotation.id)}
-                      className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-medium"
-                    >
-                      <ShieldCheck size={18} />
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleReject(quotation.id)}
-                      className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium"
-                    >
-                      <ShieldX size={18} />
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => {
-                        // Open quotation view modal or navigate to quotations page
-                        window.location.href = `/sc/quotations?view=${quotation.id}`;
-                      }}
-                      className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 font-medium"
-                    >
-                      <Eye size={18} />
-                      View Details
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => handleApprove(quotation.id)}
+                        className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-medium"
+                      >
+                        <ShieldCheck size={18} />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleReject(quotation.id)}
+                        className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium"
+                      >
+                        <ShieldX size={18} />
+                        Reject
+                      </button>
+                      <button
+                        onClick={() => {
+                          // Open quotation view modal or navigate to quotations page
+                          window.location.href = `/sc/quotations?view=${quotation.id}`;
+                        }}
+                        className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 font-medium"
+                      >
+                        <Eye size={18} />
+                        View Details
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              ))
             ) : null}
           </div>
         </div>
@@ -1425,7 +1425,7 @@ export default function Approvals() {
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Customer Complaint/Issue</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.customerComplaintIssue || selectedRequest.appointment.customerComplaintIssue || "N/A"}</p>
+                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.customerComplaint || selectedRequest.appointment.customerComplaint || "N/A"}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Previous Service History</p>
@@ -1517,32 +1517,32 @@ export default function Approvals() {
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Customer ID Proof</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.customerIdProof?.urls?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.customerIdProof.urls.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.customerIdProof?.urls?.length > 0
+                          ? `${selectedRequest.serviceIntakeForm.customerIdProof.urls.length} file(s)`
                           : "Not provided"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Vehicle RC Copy</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.vehicleRCCopy?.urls?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.vehicleRCCopy.urls.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.vehicleRCCopy?.urls?.length > 0
+                          ? `${selectedRequest.serviceIntakeForm.vehicleRCCopy.urls.length} file(s)`
                           : "Not provided"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Warranty Card/Service Book</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.warrantyCardServiceBook?.urls?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.warrantyCardServiceBook.urls.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.warrantyCardServiceBook?.urls?.length > 0
+                          ? `${selectedRequest.serviceIntakeForm.warrantyCardServiceBook.urls.length} file(s)`
                           : "Not provided"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Photos/Videos</p>
                       <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.photosVideos?.urls?.length > 0 
-                          ? `${selectedRequest.serviceIntakeForm.photosVideos.urls.length} file(s)` 
+                        {selectedRequest.serviceIntakeForm.photosVideos?.urls?.length > 0
+                          ? `${selectedRequest.serviceIntakeForm.photosVideos.urls.length} file(s)`
                           : "Not provided"}
                       </p>
                     </div>

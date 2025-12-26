@@ -48,11 +48,28 @@ import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import type { CheckInSlipFormData } from "@/shared/types/check-in-slip.types";
 import { CheckInSlipForm } from "../components/check-in-slip/CheckInSlipForm";
 import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/components/check-in-slip/CheckInSlip";
+
+const defaultInsurers: Insurer[] = [
+  { id: "1", name: "HDFC Ergo", isActive: true },
+  { id: "2", name: "ICICI Lombard", isActive: true },
+  { id: "3", name: "Bajaj Allianz", isActive: true },
+];
+
+const defaultNoteTemplates: NoteTemplate[] = [
+  { id: "1", name: "Standard Service", content: "Standard service check completed.", isActive: true, category: "General" },
+  { id: "2", name: "Oil Change", content: "Oil change and filter replacement.", isActive: true, category: "Maintenance" },
+];
+
+const staticServiceCenters = [
+  { id: "sc-1", name: "Main Center", location: "Mumbai" },
+  { id: "sc-2", name: "City Branch", location: "Mumbai" },
+];
 import type { EnhancedCheckInSlipData } from "@/shared/types/check-in-slip.types";
 import { convertCheckInSlipFormToData } from "../components/check-in-slip/utils";
 import { SERVICE_CENTER_CODE_MAP } from "../appointments/constants";
 import { generateQuotationNumber } from "@/shared/utils/quotation.utils";
 import { getServiceCenterCode, normalizeServiceCenterId } from "@/shared/utils/service-center.utils";
+import { quotationsService } from "@/services/quotations/quotations.service";
 import { CreateQuotationModal } from "../components/quotations/CreateQuotationModal";
 import { ViewQuotationModal } from "../components/quotations/ViewQuotationModal";
 
@@ -124,15 +141,22 @@ function QuotationsContent() {
   const performCustomerSearch = customerSearch.search;
   const clearCustomerSearch = customerSearch.clear;
 
-  // Load quotations from localStorage or use mock data
-  useEffect(() => {
-    const storedQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
-    if (storedQuotations.length > 0) {
-      setQuotations(storedQuotations);
-    } else {
-      setQuotations(defaultQuotations);
+  // Load quotations from service
+  const loadQuotations = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await quotationsService.getAll();
+      setQuotations(data);
+    } catch (error) {
+      console.error("Failed to load quotations:", error);
+    } finally {
+      setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    loadQuotations();
+  }, [loadQuotations]);
 
   // Load insurers from localStorage or use mock data
   useEffect(() => {
@@ -222,7 +246,7 @@ function QuotationsContent() {
                   ...prev,
                   customerId: String(customer.id),
                   documentType: "Quotation",
-                  notes: appointmentData.customerComplaintIssue || "",
+                  notes: appointmentData.customerComplaint || "",
                   customNotes: appointmentData.previousServiceHistory || "",
                   batterySerialNumber: appointmentData.batterySerialNumber || appointmentData.chargerSerialNumber || "",
                   hasInsurance: hasInsuranceData,
@@ -489,7 +513,7 @@ function QuotationsContent() {
       batterySerialNumber: form.batterySerialNumber,
       customNotes: form.customNotes,
       noteTemplateId: form.noteTemplateId,
-      status: "draft",
+      status: "DRAFT",
       passedToManager: false,
       passedToManagerAt: undefined,
       managerId: undefined,
@@ -538,34 +562,14 @@ function QuotationsContent() {
     };
   };
 
-  const persistQuotation = (quotation: Quotation) => {
-    const updatedQuotations = [quotation, ...quotations];
-    setQuotations(updatedQuotations);
-    safeStorage.setItem("quotations", updatedQuotations);
-
-    // Update appointment status if quotation is linked to an appointment
-    if (quotation.appointmentId) {
-      const appointments = safeStorage.getItem<any[]>("appointments", []);
-      const appointmentIndex = appointments.findIndex((apt) => apt.id === quotation.appointmentId);
-
-      if (appointmentIndex !== -1) {
-        const appointment = appointments[appointmentIndex];
-        // Check if this is the first quotation for this appointment
-        const existingQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
-        const quotationsForAppointment = existingQuotations.filter(
-          (q) => q.appointmentId === quotation.appointmentId && q.id !== quotation.id
-        );
-
-        // Update appointment status to "Quotation Created" if first quotation
-        // For subsequent quotations, status remains "Quotation Created" (allows multiple quotations)
-        if (quotationsForAppointment.length === 0 || appointment.status !== "Quotation Created") {
-          appointments[appointmentIndex] = {
-            ...appointment,
-            status: "Quotation Created",
-          };
-          safeStorage.setItem("appointments", appointments);
-        }
-      }
+  const persistQuotation = async (quotation: any) => {
+    try {
+      const newQuotation = await quotationsService.create(quotation);
+      setQuotations(prev => [newQuotation, ...prev]);
+      return newQuotation;
+    } catch (error) {
+      console.error("Failed to persist quotation:", error);
+      throw error;
     }
   };
 
@@ -1098,21 +1102,9 @@ Or reply with "APPROVE" or "REJECT"
         setLoading(true);
       }
 
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "sent_to_customer" as const,
-            sentToCustomer: true,
-            sentToCustomerAt: new Date().toISOString(),
-            whatsappSent: true,
-            whatsappSentAt: new Date().toISOString(),
-          }
-          : q
-      );
+      const updatedQuotation = await quotationsService.updateStatus(quotationId, "SENT_TO_CUSTOMER");
 
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      setQuotations(prev => prev.map(q => q.id === quotationId ? updatedQuotation : q));
 
       // Get service center and advisor details
       const serviceCenterData: any = quotation.serviceCenter || {
@@ -1331,7 +1323,7 @@ Or reply with "APPROVE" or "REJECT"
           batterySerialNumber: enhancedData.batterySerialNumber,
           customNotes: enhancedData.technicalObservation || "",
           noteTemplateId: undefined,
-          status: "draft",
+          status: "DRAFT",
           passedToManager: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1398,9 +1390,12 @@ Or reply with "APPROVE" or "REJECT"
 
     try {
       setLoading(true);
-      const newQuotation = buildQuotationFromForm();
-      persistQuotation(newQuotation);
-      setFilter("draft");
+      const quotationPayload = {
+        ...form,
+        serviceCenterId: normalizeServiceCenterId(activeServiceCenterId || serviceCenterContext.serviceCenterId),
+      };
+      await persistQuotation(quotationPayload);
+      setFilter("DRAFT");
 
       alert("Quotation created successfully!");
       setShowCreateModal(false);
@@ -1420,9 +1415,12 @@ Or reply with "APPROVE" or "REJECT"
 
     try {
       setLoading(true);
-      const newQuotation = buildQuotationFromForm();
-      persistQuotation(newQuotation);
-      setFilter("sent_to_customer");
+      const quotationPayload = {
+        ...form,
+        serviceCenterId: normalizeServiceCenterId(activeServiceCenterId || serviceCenterContext.serviceCenterId),
+      };
+      const newQuotation = await persistQuotation(quotationPayload);
+      setFilter("SENT_TO_CUSTOMER");
 
       await sendQuotationToCustomerById(newQuotation.id, { manageLoading: false });
 
@@ -1497,7 +1495,7 @@ Or reply with "APPROVE" or "REJECT"
         batterySerialNumber: enhancedData.batterySerialNumber,
         customNotes: enhancedData.technicalObservation || "",
         noteTemplateId: undefined,
-        status: "draft",
+        status: "DRAFT",
         passedToManager: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -1670,7 +1668,7 @@ Please keep this slip safe for vehicle collection.`;
         q.id === quotationId
           ? {
             ...q,
-            status: "sent_to_customer" as const,
+            status: "SENT_TO_CUSTOMER" as const,
             sentToCustomer: true,
             sentToCustomerAt: new Date().toISOString(),
             whatsappSent: true,
@@ -1997,7 +1995,7 @@ Please keep this slip safe for vehicle collection.`;
         q.id === quotationId
           ? {
             ...q,
-            status: "customer_approved" as const,
+            status: "CUSTOMER_APPROVED" as const,
             customerApproved: true,
             customerApprovedAt: new Date().toISOString(),
           }
@@ -2080,7 +2078,7 @@ Please keep this slip safe for vehicle collection.`;
         q.id === quotationId
           ? {
             ...q,
-            status: "customer_rejected" as const,
+            status: "CUSTOMER_REJECTED" as const,
             customerRejected: true,
             customerRejectedAt: new Date().toISOString(),
           }
@@ -2126,7 +2124,7 @@ Please keep this slip safe for vehicle collection.`;
         q.id === quotationId
           ? {
             ...q,
-            status: "sent_to_manager" as const,
+            status: "SENT_TO_MANAGER" as const,
             sentToManager: true,
             sentToManagerAt: new Date().toISOString(),
           }
@@ -2158,7 +2156,7 @@ Please keep this slip safe for vehicle collection.`;
         q.id === quotationId
           ? {
             ...q,
-            status: "manager_approved" as const,
+            status: "MANAGER_APPROVED" as const,
             managerApproved: true,
             managerApprovedAt: new Date().toISOString(),
             managerId: userInfo?.id || "",
@@ -2191,7 +2189,7 @@ Please keep this slip safe for vehicle collection.`;
         q.id === quotationId
           ? {
             ...q,
-            status: "manager_rejected" as const,
+            status: "MANAGER_REJECTED" as const,
             managerRejected: true,
             managerRejectedAt: new Date().toISOString(),
             managerId: userInfo?.id || "",
@@ -2255,19 +2253,19 @@ Please keep this slip safe for vehicle collection.`;
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "draft":
+      case "DRAFT":
         return "bg-gray-100 text-gray-700 border-gray-300";
-      case "sent_to_customer":
+      case "SENT_TO_CUSTOMER":
         return "bg-blue-100 text-blue-700 border-blue-300";
-      case "customer_approved":
+      case "CUSTOMER_APPROVED":
         return "bg-green-100 text-green-700 border-green-300";
-      case "customer_rejected":
+      case "CUSTOMER_REJECTED":
         return "bg-red-100 text-red-700 border-red-300";
-      case "sent_to_manager":
+      case "SENT_TO_MANAGER":
         return "bg-purple-100 text-purple-700 border-purple-300";
-      case "manager_approved":
+      case "MANAGER_APPROVED":
         return "bg-green-100 text-green-700 border-green-300";
-      case "manager_rejected":
+      case "MANAGER_REJECTED":
         return "bg-red-100 text-red-700 border-red-300";
       default:
         return "bg-gray-100 text-gray-700 border-gray-300";
@@ -2309,7 +2307,7 @@ Please keep this slip safe for vehicle collection.`;
               />
             </div>
             <div className="flex gap-2">
-              {(["all", "draft", "sent_to_customer", "customer_approved", "customer_rejected", "sent_to_manager", "manager_approved", "manager_rejected"] as QuotationFilterType[]).map((f) => (
+              {(["all", "DRAFT", "SENT_TO_CUSTOMER", "CUSTOMER_APPROVED", "CUSTOMER_REJECTED", "SENT_TO_MANAGER", "MANAGER_APPROVED", "MANAGER_REJECTED"] as QuotationFilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -2478,7 +2476,7 @@ Please keep this slip safe for vehicle collection.`;
                               >
                                 <Eye size={18} />
                               </button>
-                              {isServiceAdvisor && quotation.status === "draft" && (
+                              {isServiceAdvisor && quotation.status === "DRAFT" && (
                                 <button
                                   onClick={() => handleSendToCustomer(quotation.id)}
                                   className="text-green-600 hover:text-green-900"
@@ -2487,7 +2485,7 @@ Please keep this slip safe for vehicle collection.`;
                                   <MessageCircle size={18} />
                                 </button>
                               )}
-                              {isServiceAdvisor && quotation.status === "customer_approved" && (
+                              {isServiceAdvisor && quotation.status === "CUSTOMER_APPROVED" && (
                                 <button
                                   onClick={() => handleSendToManager(quotation.id)}
                                   className="text-purple-600 hover:text-purple-900"

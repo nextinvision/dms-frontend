@@ -347,7 +347,7 @@ export function AppointmentDetailModal({
         )}
 
         {/* Service Details */}
-        {(appointment.customerComplaintIssue ||
+        {(appointment.customerComplaint ||
           appointment.previousServiceHistory ||
           appointment.estimatedServiceTime ||
           appointment.estimatedCost ||
@@ -359,10 +359,10 @@ export function AppointmentDetailModal({
                 Service Details
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {appointment.customerComplaintIssue && (
+                {appointment.customerComplaint && (
                   <div className="md:col-span-2">
                     <p className="text-sm text-gray-500 mb-1">Customer Complaint / Issue</p>
-                    <p className="font-medium text-gray-800 whitespace-pre-wrap">{appointment.customerComplaintIssue}</p>
+                    <p className="font-medium text-gray-800 whitespace-pre-wrap">{appointment.customerComplaint}</p>
                   </div>
                 )}
                 {appointment.previousServiceHistory && (

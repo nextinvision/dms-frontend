@@ -161,7 +161,7 @@ function AppointmentsContent() {
           vehicleMake: vehicleData.vehicleMake,
           vehicleModel: vehicleData.vehicleModel,
           registration: vehicleData.registration,
-          customerComplaint: appointment.customerComplaintIssue,
+          customerComplaint: appointment.customerComplaint,
           estimatedDeliveryDate: appointment.estimatedDeliveryDate,
           warrantyStatus: appointment.warrantyStatus,
           technicianObservation: appointment.technicianObservation,
