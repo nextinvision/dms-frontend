@@ -1,9 +1,10 @@
 import { userRepository } from "@/core/repositories/user.repository";
 import type { User, CreateUserDto } from "@/shared/types/user.types";
+import type { ApiRequestConfig } from "@/core/api/types";
 
 class UserService {
-    async getAll(): Promise<User[]> {
-        return userRepository.getAll();
+    async getAll(config?: ApiRequestConfig): Promise<User[]> {
+        return userRepository.getAll(undefined, config);
     }
 
     async getById(id: string): Promise<User> {

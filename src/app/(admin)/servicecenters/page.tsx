@@ -268,20 +268,14 @@ export default function ServiceCentersPage() {
                   <span className="font-medium ml-2">{center._count?.jobCards || 0}</span>
                 </p>
                 {/* Revenue not in backend yet, keeping placeholder or remove */}
-                {/* 
-                <p className="flex justify-between">
-                  <span>Revenue</span>
-                  <span className="font-semibold ml-2">₹0.0L</span>
-                </p> 
-                */}
               </div>
             </div>
 
             <div className="mt-3 sm:mt-4 flex items-center justify-between">
               <span
                 className={`text-xs font-medium px-2 sm:px-3 py-1 rounded-full ${center.status === "Active"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-orange-100 text-orange-700"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-orange-100 text-orange-700"
                   }`}
               >
                 {center.status}
@@ -332,10 +326,10 @@ export default function ServiceCentersPage() {
                 <div key={step} className="flex items-center flex-1">
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${activeStep === step
-                        ? "bg-indigo-600 text-white"
-                        : activeStep > step
-                          ? "bg-green-500 text-white"
-                          : "bg-gray-200 text-gray-600"
+                      ? "bg-indigo-600 text-white"
+                      : activeStep > step
+                        ? "bg-green-500 text-white"
+                        : "bg-gray-200 text-gray-600"
                       }`}
                   >
                     {activeStep > step ? "✓" : step}

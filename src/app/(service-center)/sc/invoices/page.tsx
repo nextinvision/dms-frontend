@@ -1,6 +1,8 @@
 "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { Suspense, useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { invoiceRepository } from "@/core/repositories/invoice.repository";
 import { useRole } from "@/shared/hooks";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -59,23 +61,21 @@ function InvoicesContent() {
   const invoiceIdFromParams = searchParams?.get("invoiceId");
   const [handledInvoiceId, setHandledInvoiceId] = useState<string | null>(null);
 
-  // Use mock data from __mocks__ folder
-  const [invoices, setInvoices] = useState<ServiceCenterInvoice[]>(() => {
-    const storedInvoices = typeof window !== "undefined" ? safeStorage.getItem<ServiceCenterInvoice[]>("serviceHistoryInvoices", []) : [];
-    const base = typeof window !== "undefined" ? safeStorage.getItem<ServiceCenterInvoice[]>("invoices", []) : [];
-    if (base.length > 0 || storedInvoices.length > 0) {
-      const existingIds = new Set<string>();
-      const merged: ServiceCenterInvoice[] = [];
-      [...(defaultInvoices as unknown as ServiceCenterInvoice[]), ...base, ...storedInvoices].forEach((inv) => {
-        if (!existingIds.has(inv.id)) {
-          existingIds.add(inv.id);
-          merged.push(inv);
-        }
-      });
-      return merged;
-    }
-    return [...(defaultInvoices as unknown as ServiceCenterInvoice[]), ...storedInvoices];
+  // Fetch invoices from backend
+  const { data: fetchedInvoices = [], isLoading } = useQuery({
+    queryKey: ['invoices'],
+    queryFn: () => invoiceRepository.getAll(),
   });
+
+  const [invoices, setInvoices] = useState<ServiceCenterInvoice[]>([]);
+
+  // Sync fetched invoices to local state
+  useEffect(() => {
+    if (fetchedInvoices.length > 0) {
+      setInvoices(fetchedInvoices);
+    }
+  }, [fetchedInvoices]);
+
 
   useEffect(() => {
     if (!invoiceIdFromParams || handledInvoiceId === invoiceIdFromParams) {
@@ -131,11 +131,17 @@ function InvoicesContent() {
     unpaid: invoices.filter((i) => i.status === "Unpaid").length,
     overdue: invoices.filter((i) => i.status === "Overdue").length,
     totalAmount: invoices.reduce(
-      (sum, inv) => sum + parseFloat(inv.amount.replace("₹", "").replace(",", "")),
+      (sum, inv) => {
+        const amount = String(inv.amount || "0").replace("₹", "").replace(/,/g, "");
+        return sum + (parseFloat(amount) || 0);
+      },
       0
     ),
     paidAmount: invoices.reduce(
-      (sum, inv) => sum + parseFloat(inv.paidAmount.replace("₹", "").replace(",", "")),
+      (sum, inv) => {
+        const amount = String(inv.paidAmount || "0").replace("₹", "").replace(/,/g, "");
+        return sum + (parseFloat(amount) || 0);
+      },
       0
     ),
   };
@@ -465,6 +471,14 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
     alert(`Invoice generated successfully! Invoice Number: ${invoiceNumber}`);
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex bg-[#f9f9fb] min-h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-[#f9f9fb] min-h-screen">
       <div className="pt-6 pb-10">
@@ -591,8 +605,8 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                       key={f}
                       onClick={() => setFilter(f)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition ${filter === f
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         }`}
                     >
                       {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -623,8 +637,8 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                     key={status}
                     onClick={() => setFilter(status)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filter === status
-                        ? "bg-indigo-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
                   >
                     {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -661,7 +675,11 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                             <div className="text-xs text-gray-500">{invoice.jobCardId ? `Job Card: ${invoice.jobCardId}` : "—"}</div>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="text-gray-800">{invoice.vehicle}</div>
+                            <div className="text-gray-800">
+                              {typeof invoice.vehicle === 'string'
+                                ? invoice.vehicle
+                                : `${(invoice.vehicle as any).model || ''} ${(invoice.vehicle as any).registration || ''}`}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <span className="text-sm text-gray-600">
@@ -733,7 +751,11 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                         <div>
                           <p className="text-sm text-gray-600">Customer</p>
                           <p className="font-medium text-gray-800">{invoice.customerName}</p>
-                          <p className="text-xs text-gray-500">{invoice.vehicle}</p>
+                          <p className="text-xs text-gray-500">
+                            {typeof invoice.vehicle === 'string'
+                              ? invoice.vehicle
+                              : `${(invoice.vehicle as any).model || ''} ${(invoice.vehicle as any).registration || ''}`}
+                          </p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-600">Dates</p>

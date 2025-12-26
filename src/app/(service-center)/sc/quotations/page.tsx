@@ -55,6 +55,14 @@ import { generateQuotationNumber } from "@/shared/utils/quotation.utils";
 import { getServiceCenterCode, normalizeServiceCenterId } from "@/shared/utils/service-center.utils";
 import { CreateQuotationModal } from "../components/quotations/CreateQuotationModal";
 import { ViewQuotationModal } from "../components/quotations/ViewQuotationModal";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { quotationRepository } from "@/core/repositories/quotation.repository";
+import { serviceCenterRepository } from "@/core/repositories/service-center.repository";
+import { jobCardRepository } from "@/core/repositories/job-card.repository";
+
+import { defaultInsurers, defaultNoteTemplates } from "./defaults";
+
+
 
 const createEmptyCustomer = (): CustomerWithVehicles => ({
   id: "",
@@ -82,7 +90,31 @@ function QuotationsContent() {
   );
   const [activeCustomerId, setActiveCustomerId] = useState<string>("");
 
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const queryClient = useQueryClient();
+  const { data: quotations = [], isLoading: isLoadingQuotations } = useQuery({
+    queryKey: ['quotations'],
+    queryFn: () => quotationRepository.getAll(),
+  });
+
+  const { data: serviceCenters = [] } = useQuery({
+    queryKey: ['service-centers'],
+    queryFn: () => serviceCenterRepository.getAll(),
+  });
+
+  const createQuotationMutation = useMutation({
+    mutationFn: (data: Partial<Quotation>) => quotationRepository.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    }
+  });
+
+  const updateQuotationMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Quotation> }) => quotationRepository.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    }
+  });
+
   const [filter, setFilter] = useState<QuotationFilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
@@ -124,15 +156,6 @@ function QuotationsContent() {
   const performCustomerSearch = customerSearch.search;
   const clearCustomerSearch = customerSearch.clear;
 
-  // Load quotations from localStorage or use mock data
-  useEffect(() => {
-    const storedQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
-    if (storedQuotations.length > 0) {
-      setQuotations(storedQuotations);
-    } else {
-      setQuotations(defaultQuotations);
-    }
-  }, []);
 
   // Load insurers from localStorage or use mock data
   useEffect(() => {
@@ -449,7 +472,7 @@ function QuotationsContent() {
     const selectedInsurer = insurers.find((i) => i.id === form.insurerId);
     const selectedTemplate = noteTemplates.find((t) => t.id === form.noteTemplateId);
     const vehicle = customer.vehicles?.find((v) => v.id.toString() === form.vehicleId);
-    const centerMeta = staticServiceCenters.find(
+    const centerMeta = serviceCenters.find(
       (center) => normalizeServiceCenterId(center.id) === resolvedServiceCenterId
     );
 
@@ -527,22 +550,18 @@ function QuotationsContent() {
           serviceCenterContext.serviceCenterName ??
           "Service Center",
         code: serviceCenterCode,
-        address: centerMeta?.location ?? "",
-        city: centerMeta?.location ?? "",
-        state: "",
-        pincode: "",
-        phone: "",
-        gstNumber: "",
-        panNumber: "",
+        address: centerMeta?.address ?? "",
+        city: centerMeta?.city ?? "",
+        state: centerMeta?.state ?? "",
+        pincode: centerMeta?.pinCode ?? "",
+        phone: centerMeta?.phone ?? "",
+        gstNumber: centerMeta?.gstNumber ?? "",
+        panNumber: centerMeta?.panNumber ?? "",
       },
     };
   };
 
-  const persistQuotation = (quotation: Quotation) => {
-    const updatedQuotations = [quotation, ...quotations];
-    setQuotations(updatedQuotations);
-    safeStorage.setItem("quotations", updatedQuotations);
-
+  const updateLocalAppointmentStatus = (quotation: Quotation) => {
     // Update appointment status if quotation is linked to an appointment
     if (quotation.appointmentId) {
       const appointments = safeStorage.getItem<any[]>("appointments", []);
@@ -550,15 +569,8 @@ function QuotationsContent() {
 
       if (appointmentIndex !== -1) {
         const appointment = appointments[appointmentIndex];
-        // Check if this is the first quotation for this appointment
-        const existingQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
-        const quotationsForAppointment = existingQuotations.filter(
-          (q) => q.appointmentId === quotation.appointmentId && q.id !== quotation.id
-        );
-
-        // Update appointment status to "Quotation Created" if first quotation
-        // For subsequent quotations, status remains "Quotation Created" (allows multiple quotations)
-        if (quotationsForAppointment.length === 0 || appointment.status !== "Quotation Created") {
+        // Update appointment status to "Quotation Created" if not already
+        if (appointment.status !== "Quotation Created") {
           appointments[appointmentIndex] = {
             ...appointment,
             status: "Quotation Created",
@@ -1098,21 +1110,22 @@ Or reply with "APPROVE" or "REJECT"
         setLoading(true);
       }
 
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "sent_to_customer" as const,
-            sentToCustomer: true,
-            sentToCustomerAt: new Date().toISOString(),
-            whatsappSent: true,
-            whatsappSentAt: new Date().toISOString(),
-          }
-          : q
-      );
+      const updatedQuotationData = {
+        status: "sent_to_customer" as const,
+        sentToCustomer: true,
+        sentToCustomerAt: new Date().toISOString(),
+        whatsappSent: true,
+        whatsappSentAt: new Date().toISOString(),
+      };
 
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: updatedQuotationData
+      });
+
+      // Update local object for use in PDF generation (since query might not invalidate instantly in this closure)
+      const updatedQuotation = { ...quotation, ...updatedQuotationData };
+
 
       // Get service center and advisor details
       const serviceCenterData: any = quotation.serviceCenter || {
@@ -1288,7 +1301,7 @@ Or reply with "APPROVE" or "REJECT"
 
         // Get service center info
         const normalizedServiceCenterId = activeServiceCenterId || serviceCenterContext.serviceCenterId?.toString() || "sc-001";
-        const serviceCenter = staticServiceCenters.find(
+        const serviceCenter = serviceCenters.find(
           (sc) => (sc as any).serviceCenterId === normalizedServiceCenterId || sc.id?.toString() === normalizedServiceCenterId
         );
         const serviceCenterName = serviceCenter?.name || serviceCenterContext.serviceCenterName || "Service Center";
@@ -1367,10 +1380,11 @@ Or reply with "APPROVE" or "REJECT"
         };
 
         // Save check-in slip as quotation
-        persistQuotation(checkInSlipQuotation);
+        const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
+        updateLocalAppointmentStatus(createdQuotation);
 
         // Store enhanced check-in slip data for display
-        safeStorage.setItem(`checkInSlip_${checkInSlipQuotation.id}`, enhancedData);
+        safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
 
         setShowCheckInSlipModal(true);
         // Keep form open so user can send via WhatsApp
@@ -1399,7 +1413,8 @@ Or reply with "APPROVE" or "REJECT"
     try {
       setLoading(true);
       const newQuotation = buildQuotationFromForm();
-      persistQuotation(newQuotation);
+      const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
+      updateLocalAppointmentStatus(createdQuotation);
       setFilter("draft");
 
       alert("Quotation created successfully!");
@@ -1421,10 +1436,11 @@ Or reply with "APPROVE" or "REJECT"
     try {
       setLoading(true);
       const newQuotation = buildQuotationFromForm();
-      persistQuotation(newQuotation);
+      const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
+      updateLocalAppointmentStatus(createdQuotation);
       setFilter("sent_to_customer");
 
-      await sendQuotationToCustomerById(newQuotation.id, { manageLoading: false });
+      await sendQuotationToCustomerById(createdQuotation.id, { manageLoading: false });
 
       setShowCreateModal(false);
       resetForm();
@@ -1454,7 +1470,7 @@ Or reply with "APPROVE" or "REJECT"
 
       // Get service center info
       const normalizedServiceCenterId = activeServiceCenterId || serviceCenterContext.serviceCenterId?.toString() || "sc-001";
-      const serviceCenter = staticServiceCenters.find(
+      const serviceCenter = serviceCenters.find(
         (sc) => (sc as any).serviceCenterId === normalizedServiceCenterId || sc.id?.toString() === normalizedServiceCenterId
       );
       const serviceCenterName = serviceCenter?.name || serviceCenterContext.serviceCenterName || "Service Center";
@@ -1533,10 +1549,11 @@ Or reply with "APPROVE" or "REJECT"
       };
 
       // Save check-in slip as quotation
-      persistQuotation(checkInSlipQuotation);
+      const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
+      updateLocalAppointmentStatus(createdQuotation);
 
       // Store enhanced check-in slip data for display
-      safeStorage.setItem(`checkInSlip_${checkInSlipQuotation.id}`, enhancedData);
+      safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
 
       // Clear stored appointment data if exists
       if (quotationDataFromStorage) {
@@ -1666,21 +1683,18 @@ Please keep this slip safe for vehicle collection.`;
       setLoading(true);
 
       // Update quotation status
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "sent_to_customer" as const,
-            sentToCustomer: true,
-            sentToCustomerAt: new Date().toISOString(),
-            whatsappSent: true,
-            whatsappSentAt: new Date().toISOString(),
-          }
-          : q
-      );
+      const updateData = {
+        status: "sent_to_customer" as const,
+        sentToCustomer: true,
+        sentToCustomerAt: new Date().toISOString(),
+        whatsappSent: true,
+        whatsappSentAt: new Date().toISOString(),
+      };
+      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
 
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      // Update local reference for lead creation
+      const updatedQuotationForLead = { ...quotation, ...updateData };
+
 
       // Create or update lead when quotation is sent to customer
       createOrUpdateLeadFromQuotation(quotation);
@@ -1780,33 +1794,23 @@ Please keep this slip safe for vehicle collection.`;
   };
 
   // Convert Quotation to Job Card
-  const convertQuotationToJobCard = (quotation: Quotation) => {
+  const convertQuotationToJobCard = async (quotation: Quotation) => {
     const resolvedServiceCenterId = normalizeServiceCenterId(quotation.serviceCenterId);
     const serviceCenterCode = getServiceCenterCode(resolvedServiceCenterId);
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
 
-    // Get next sequence number
-    const existingJobCards = safeStorage.getItem<any[]>("jobCards", []);
-    const lastJobCard = existingJobCards
-      .filter((jc) => jc.jobCardNumber?.startsWith(`${serviceCenterCode}-${year}-${month}`))
-      .sort((a, b) => {
-        const aSeq = parseInt(a.jobCardNumber?.split("-")[3] || "0");
-        const bSeq = parseInt(b.jobCardNumber?.split("-")[3] || "0");
-        return bSeq - aSeq;
-      })[0];
-
-    const nextSequence = lastJobCard
-      ? parseInt(lastJobCard.jobCardNumber?.split("-")[3] || "0") + 1
-      : 1;
-
-    const jobCardNumber = `${serviceCenterCode}-${year}-${month}-${String(nextSequence).padStart(4, "0")}`;
+    // We can't easily get next sequence synchronously from API without fetching all or using a special endpoint.
+    // Ideally backend handles this.
+    // For now, we will construct a payload without specific number if possible, or use a dummy.
+    // But since the current Logic tries to calculate it, we might try to fetch latest job card?
+    // Using simple creation payload and letting backend handle logic is best.
 
     // Create job card from quotation
     const newJobCard = {
-      id: `JC-${Date.now()}`,
-      jobCardNumber,
+      // id: `JC-${Date.now()}`, // Let backend handle ID
+      // jobCardNumber, // Let backend handle Number
       serviceCenterId: quotation.serviceCenterId || resolvedServiceCenterId,
       serviceCenterCode,
       customerId: quotation.customerId,
@@ -1825,17 +1829,21 @@ Please keep this slip safe for vehicle collection.`;
       estimatedTime: "To be determined",
       createdAt: new Date().toISOString(),
       parts: quotation.items?.map((item) => item.partName) || [],
-      location: "Station" as const,
+      location: "STATION" as const,
       quotationId: quotation.id,
       hasInsurance: quotation.hasInsurance,
       insurerName: quotation.insurer?.name,
     };
 
-    // Save job card
-    const updatedJobCards = [...existingJobCards, newJobCard];
-    safeStorage.setItem("jobCards", updatedJobCards);
-
-    return newJobCard;
+    // Save job card via API
+    try {
+      const createdJobCard = await jobCardRepository.create(newJobCard);
+      return createdJobCard;
+    } catch (e) {
+      console.error("Failed to create job card via API", e);
+      // Fallback or rethrow? Rethrow to alert user.
+      throw e;
+    }
   };
 
   // Create or Update Lead from Quotation (when sent to customer)
@@ -1993,44 +2001,18 @@ Please keep this slip safe for vehicle collection.`;
       }
 
       // Update quotation status
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "customer_approved" as const,
-            customerApproved: true,
-            customerApprovedAt: new Date().toISOString(),
-          }
-          : q
-      );
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "customer_approved" as const,
+          customerApproved: true,
+          customerApprovedAt: new Date().toISOString(),
+        }
+      });
 
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
 
-      // Find temporary job card linked to quotation
-      const storedJobCards = safeStorage.getItem<any[]>("jobCards", []);
-      const tempJobCard = storedJobCards.find((jc) =>
-        jc.id === quotation.jobCardId && jc.isTemporary === true
-      );
-
-      let jobCard;
-      if (tempJobCard) {
-        // Convert job card in-place
-        const jobCardIndex = storedJobCards.findIndex((jc) => jc.id === tempJobCard.id);
-        storedJobCards[jobCardIndex] = {
-          ...tempJobCard,
-          isTemporary: false,
-          status: "Created" as const, // Will be changed to "Ready for Assignment" if needed
-          quotationId: quotation.id,
-          submittedToManager: true,
-          submittedAt: new Date().toISOString(),
-        };
-        safeStorage.setItem("jobCards", storedJobCards);
-        jobCard = storedJobCards[jobCardIndex];
-      } else {
-        // Fallback: Create new job card if temporary one not found
-        jobCard = convertQuotationToJobCard(quotation);
-      }
+      // Create job card (we skip looking for temp job card in local storage as we migrated)
+      const jobCard = await convertQuotationToJobCard(quotation);
 
       // Update lead status to job_card_in_progress or converted
       updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
@@ -2076,22 +2058,17 @@ Please keep this slip safe for vehicle collection.`;
       }
 
       // Update quotation status
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "customer_rejected" as const,
-            customerRejected: true,
-            customerRejectedAt: new Date().toISOString(),
-          }
-          : q
-      );
+      const updateData = {
+        status: "customer_rejected" as const,
+        customerRejected: true,
+        customerRejectedAt: new Date().toISOString(),
+      };
+      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
 
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      const updatedQuotation = { ...quotation, ...updateData };
 
       // Add to leads for follow-up
-      const lead = addRejectedQuotationToLeads(quotation);
+      const lead = addRejectedQuotationToLeads(updatedQuotation);
 
       // Show notification to advisor
       alert(`⚠️ Customer Rejected Quotation\n\nQuotation ${quotation.quotationNumber} has been rejected by the customer.\n\nAdded to Leads for follow-up.\n\nLead ID: ${lead.id}\n\nPlease follow up with the customer to understand their concerns.`);
@@ -2122,19 +2099,14 @@ Please keep this slip safe for vehicle collection.`;
     try {
       setLoading(true);
 
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "sent_to_manager" as const,
-            sentToManager: true,
-            sentToManagerAt: new Date().toISOString(),
-          }
-          : q
-      );
-
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "sent_to_manager" as const,
+          sentToManager: true,
+          sentToManagerAt: new Date().toISOString(),
+        }
+      });
 
       alert("Quotation sent to manager!");
     } catch (error) {
@@ -2154,20 +2126,15 @@ Please keep this slip safe for vehicle collection.`;
     try {
       setLoading(true);
 
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "manager_approved" as const,
-            managerApproved: true,
-            managerApprovedAt: new Date().toISOString(),
-            managerId: userInfo?.id || "",
-          }
-          : q
-      );
-
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "manager_approved" as const,
+          managerApproved: true,
+          managerApprovedAt: new Date().toISOString(),
+          managerId: userInfo?.id || "",
+        }
+      });
 
       alert("Quotation approved by manager!");
     } catch (error) {
@@ -2187,20 +2154,15 @@ Please keep this slip safe for vehicle collection.`;
     try {
       setLoading(true);
 
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "manager_rejected" as const,
-            managerRejected: true,
-            managerRejectedAt: new Date().toISOString(),
-            managerId: userInfo?.id || "",
-          }
-          : q
-      );
-
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "manager_rejected" as const,
+          managerRejected: true,
+          managerRejectedAt: new Date().toISOString(),
+          managerId: userInfo?.id || "",
+        }
+      });
 
       alert("Quotation rejected by manager.");
     } catch (error) {
