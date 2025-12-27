@@ -24,13 +24,8 @@ const fetchJobCard = async (id: string): Promise<JobCard | undefined> => {
     // Import the job card service
     const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
 
-    // Fetch all job cards from API
-    const allJobCards = await jobCardService.getAll();
-
-    // Find the one we need
-    const jobCard = allJobCards.find((card) =>
-      card.id === id || card.jobCardNumber === id
-    );
+    // Fetch job card directly by ID from API
+    const jobCard = await jobCardService.getById(id);
 
     if (jobCard) {
       console.log("Found job card from API:", jobCard);

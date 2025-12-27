@@ -89,6 +89,20 @@ class JobCardService {
     return response.data;
   }
 
+  async getById(id: string): Promise<JobCard | null> {
+    if (this.useMock) {
+      const all = safeStorage.getItem<JobCard[]>("jobCards", []);
+      return all.find(jc => jc.id === id || jc.jobCardNumber === id) || null;
+    }
+    try {
+      const response = await apiClient.get<JobCard>(`${API_ENDPOINTS.JOB_CARDS}/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching job card by ID:", error);
+      return null;
+    }
+  }
+
   async create(jobCard: Partial<JobCard>): Promise<JobCard> {
     if (this.useMock) {
       const existing = await this.getAll();
@@ -141,7 +155,7 @@ class JobCardService {
         estimatedCost: "0",
         estimatedTime: "0",
         parts: [],
-        location: "Station",
+        location: "STATION",
         quotationId,
         createdAt: new Date().toISOString(),
       };
@@ -170,7 +184,7 @@ class JobCardService {
         estimatedCost: "0",
         estimatedTime: "0",
         parts: [],
-        location: "Station",
+        location: "STATION",
         createdAt: new Date().toISOString(),
       };
     }

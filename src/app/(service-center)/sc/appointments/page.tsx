@@ -153,7 +153,7 @@ function AppointmentsContent() {
         vehicleId: appointment.vehicleExternalId.toString(),
         appointmentId: appointment.id?.toString(), // Link to appointment
         serviceType: appointment.serviceType,
-        priority: "MEDIUM" as const, // Backend enum: LOW, MEDIUM, HIGH, URGENT
+        priority: "NORMAL" as const, // Backend enum: LOW, NORMAL, HIGH, CRITICAL
         location: "STATION" as const, // Backend enum: STATION, DOORSTEP
         part1Data: customerData && vehicleData ? {
           customerName: appointment.customerName || customerData.name,
