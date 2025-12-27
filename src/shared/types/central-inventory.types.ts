@@ -25,6 +25,9 @@ export interface CentralStock {
   lastUpdated: string;
   lastUpdatedBy: string;
   notes?: string;
+  // Stock availability tracking
+  allocated?: number;
+  available?: number;
   // Extended fields for admin inventory
   // Basic Part Info
   brandName?: string;

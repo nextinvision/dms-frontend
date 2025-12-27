@@ -8,7 +8,7 @@ export const ROUTES = {
   ADMIN_DASHBOARD: "/dashboard",
   SC_DASHBOARD: "/sc/dashboard",
   INVENTORY_MANAGER_DASHBOARD: "/inventory-manager/dashboard",
-  VEHICLE_SEARCH: "/sc/vehicle-search",
+
   SERVICE_REQUESTS: "/sc/service-requests",
   JOB_CARDS: "/sc/job-cards",
   WORKSHOP: "/sc/workshop",
@@ -38,7 +38,6 @@ export const ROUTES = {
 export function getRedirectPath(role: UserRole): string {
   const rolePaths: Record<UserRole, string> = {
     admin: ROUTES.ADMIN_DASHBOARD,
-    super_admin: ROUTES.ADMIN_DASHBOARD,
     sc_manager: ROUTES.SC_DASHBOARD,
     service_engineer: ROUTES.SC_DASHBOARD,
     service_advisor: ROUTES.SC_DASHBOARD,
@@ -55,7 +54,7 @@ export function getRedirectPath(role: UserRole): string {
  */
 export function hasAccess(role: UserRole, path: string): boolean {
   // Admin has access to everything
-  if (role === "admin" || role === "super_admin") {
+  if (role === "admin") {
     return true;
   }
 
@@ -66,7 +65,7 @@ export function hasAccess(role: UserRole, path: string): boolean {
     "service_advisor",
     "call_center",
   ];
-  
+
   if (scRoles.includes(role)) {
     return path.startsWith("/sc");
   }

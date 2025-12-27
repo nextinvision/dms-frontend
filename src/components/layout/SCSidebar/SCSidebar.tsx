@@ -41,7 +41,7 @@ export interface SCSidebarProps {
 const roleMenus: Record<UserRole, MenuItem[]> = {
   sc_manager: [
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
+    { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
     { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
     { name: "Workshop", icon: Wrench, href: "/sc/workshop" },
@@ -63,7 +63,7 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
   ],
   service_advisor: [
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
+    { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
     { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
     { name: "Leads", icon: Users, href: "/sc/leads" },
@@ -72,12 +72,11 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
   ],
   call_center: [
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
+    { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
     { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
   ],
   admin: [],
-  super_admin: [],
   inventory_manager: [],
   central_inventory_manager: [],
 };
@@ -99,7 +98,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
   // Use role from hook (most reliable) - it reads directly from localStorage
   // Use consistent role during SSR to avoid hydration mismatch
   // Default to sc_manager during SSR, then use actual role after mount
-  const effectiveRole = (isMounted && userRole && userRole !== "admin" && userRole !== "super_admin")
+  const effectiveRole = (isMounted && userRole && userRole !== "admin")
     ? userRole
     : (roleProp || "sc_manager");
   // Always use the same menu structure - roleProp should be provided from parent
@@ -152,8 +151,8 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
               )}
               title={!open ? item.name : ""}
             >
-              <Icon 
-                size={18} 
+              <Icon
+                size={18}
                 className={clsx(
                   "flex-shrink-0 transition-colors",
                   active ? "text-white" : "text-gray-500"

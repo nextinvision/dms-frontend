@@ -53,6 +53,11 @@ export default function CheckInSlip({ data, onClose, showActions = true }: Check
   };
 
   const formatTime = (timeString: string) => {
+    // Handle undefined, null, or empty string
+    if (!timeString) {
+      return "N/A";
+    }
+
     // If time is in HH:MM format, format it nicely
     if (timeString.includes(":")) {
       const [hours, minutes] = timeString.split(":");
@@ -97,7 +102,8 @@ export default function CheckInSlip({ data, onClose, showActions = true }: Check
 
         {/* Check-in Slip Content */}
         <div ref={slipRef} className="p-8 bg-white">
-          <style dangerouslySetInnerHTML={{__html: `
+          <style dangerouslySetInnerHTML={{
+            __html: `
             @media print {
               .no-print {
                 display: none !important;
@@ -267,7 +273,7 @@ export function generateCheckInSlipNumber(serviceCenterCode: string = "SC001"): 
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
-  
+
   return `${serviceCenterCode}-CIS-${year}${month}${day}-${random}`;
 }
 

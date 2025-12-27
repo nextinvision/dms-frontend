@@ -5,7 +5,7 @@
 import { mockCustomers } from "../data/customers.mock";
 import { safeStorage } from "@/shared/lib/localStorage";
 import type { CustomerWithVehicles, NewCustomerForm, CustomerSearchType } from "@/shared/types";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError } from "@/core/api/errors";
 
 class CustomerRepository {
   private customers: CustomerWithVehicles[];
@@ -134,8 +134,8 @@ class CustomerRepository {
       .padStart(4, "0");
     const customerNumber = `CUST-${year}-${random}`;
 
-    const cleanedAlternateMobile = data.alternateMobile
-      ? data.alternateMobile.replace(/[\s-+]/g, "").replace(/^91/, "")
+    const cleanedAlternateNumber = data.alternateNumber
+      ? data.alternateNumber.replace(/[\s-+]/g, "").replace(/^91/, "")
       : undefined;
 
     const storedUserInfo = safeStorage.getItem<any>("userInfo", null);
@@ -157,7 +157,7 @@ class CustomerRepository {
       address: data.address || undefined,
       cityState: data.cityState || undefined,
       pincode: data.pincode || undefined,
-      alternateMobile: cleanedAlternateMobile,
+      alternateNumber: cleanedAlternateNumber,
       customerType: data.customerType,
       serviceType: data.serviceType,
       addressType: data.addressType,
@@ -176,8 +176,8 @@ class CustomerRepository {
       this.loadUserContext().serviceCenterId ??
       newCustomer.serviceCenterId ??
       "sc-001";
-    const normalizedCenterId = String(preferredServiceCenterId).startsWith("sc-") 
-      ? String(preferredServiceCenterId) 
+    const normalizedCenterId = String(preferredServiceCenterId).startsWith("sc-")
+      ? String(preferredServiceCenterId)
       : `sc-${String(preferredServiceCenterId).padStart(3, "0")}`;
     newCustomer.serviceCenterId = normalizedCenterId;
     newCustomer.lastServiceCenterId = normalizedCenterId;
@@ -208,7 +208,7 @@ class CustomerRepository {
   async getRecent(limit: number = 10): Promise<CustomerWithVehicles[]> {
     // Get recent customers from localStorage
     let recentIds = safeStorage.getItem<string[]>("recentCustomerIds", []);
-    
+
     // If no recent customers, initialize with first few customers from mock data
     if (recentIds.length === 0 && this.customers.length > 0) {
       recentIds = this.customers
@@ -216,7 +216,7 @@ class CustomerRepository {
         .map((c) => String(c.id));
       safeStorage.setItem("recentCustomerIds", recentIds);
     }
-    
+
     const recentCustomers = recentIds
       .map((id) => this.customers.find((c) => c.id === id))
       .filter((c): c is CustomerWithVehicles => c !== undefined)
@@ -228,10 +228,10 @@ class CustomerRepository {
   async addToRecent(id: number | string): Promise<void> {
     const recentIds = safeStorage.getItem<string[]>("recentCustomerIds", []);
     const stringId = String(id);
-    
+
     // Remove if already exists
     const filtered = recentIds.filter((rid) => rid !== stringId);
-    
+
     // Add to beginning
     const updated = [stringId, ...filtered].slice(0, 10);
     safeStorage.setItem("recentCustomerIds", updated);

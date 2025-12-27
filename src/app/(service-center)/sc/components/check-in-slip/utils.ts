@@ -2,7 +2,8 @@ import type { CheckInSlipFormData } from "@/shared/types/check-in-slip.types";
 import type { EnhancedCheckInSlipData } from "@/shared/types/check-in-slip.types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import { generateCheckInSlipNumber } from "@/components/check-in-slip/CheckInSlip";
-import { staticServiceCenters } from "@/__mocks__/data/service-centers.mock";
+import { staticServiceCenters } from "@/shared/types";
+
 import { SERVICE_CENTER_CODE_MAP } from "../../appointments/constants";
 
 /**
@@ -27,11 +28,11 @@ export function convertCheckInSlipFormToData(
     (sc) => (sc as any).serviceCenterId === normalizedServiceCenterId || sc.id?.toString() === normalizedServiceCenterId
   );
 
-  const locationParts = serviceCenter?.location?.split(",") || [];
-  const serviceCenterAddress = locationParts[0]?.trim() || serviceCenter?.location || "";
-  const serviceCenterCity = locationParts[1]?.trim() || "";
-  const serviceCenterState = locationParts[2]?.trim() || "";
-  const serviceCenterPincode = "";
+  // Use the proper ServiceCenter properties (address, city, state, pinCode)
+  const serviceCenterAddress = serviceCenter?.address || "";
+  const serviceCenterCity = serviceCenter?.city || "";
+  const serviceCenterState = serviceCenter?.state || "";
+  const serviceCenterPincode = serviceCenter?.pinCode || "";
 
   const slipNumber = generateCheckInSlipNumber(serviceCenterCode);
 
@@ -61,12 +62,12 @@ export function convertCheckInSlipFormToData(
     serviceCenterPhone: (serviceCenter as any)?.phone || undefined,
     expectedServiceDate: appointmentData?.estimatedDeliveryDate || formData.extendedDeliveryDate,
     serviceType: appointmentData?.serviceType,
-    notes: appointmentData?.customerComplaintIssue || formData.customerFeedback,
-    
+    notes: appointmentData?.customerComplaint || formData.customerFeedback,
+
     // Section 1: Customer & Vehicle Details
     dateOfVehicleDelivery: formData.dateOfVehicleDelivery || vehicle?.purchaseDate || appointmentData?.dateOfPurchase,
     extendedDeliveryDate: formData.extendedDeliveryDate,
-    customerFeedback: formData.customerFeedback || appointmentData?.customerComplaintIssue,
+    customerFeedback: formData.customerFeedback || appointmentData?.customerComplaint,
     technicalObservation: formData.technicalObservation || appointmentData?.technicianObservation,
     batterySerialNumber: formData.batterySerialNumber || appointmentData?.batterySerialNumber,
     mcuSerialNumber: formData.mcuSerialNumber || appointmentData?.mcuSerialNumber,

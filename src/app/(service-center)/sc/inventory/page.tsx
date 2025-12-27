@@ -1,6 +1,7 @@
 "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { inventoryService } from "@/features/inventory/services/inventory.service";
 import {
   Package,
   Search,
@@ -15,11 +16,11 @@ import {
   CheckCircle,
   X,
 } from "lucide-react";
-import type { InventoryItem, StockStatus, FilterType as InventoryFilterType, StockIndicator } from "@/shared/types";
-import { getDefaultServiceCenterInventory, initializeInventoryMockData } from "@/__mocks__/data/inventory.mock";
+import type { InventoryItem, StockStatus, FilterType, StockIndicator } from "@/shared/types/inventory.types";
+
 
 interface RequestItem {
-  partId: number;
+  partId: string | number;
   partName: string;
   hsnCode: string;
   partCode?: string;
@@ -29,13 +30,13 @@ interface RequestItem {
 }
 
 export default function SCInventory() {
-  const [filter, setFilter] = useState<InventoryFilterType>("all");
+  const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPart, setSelectedPart] = useState<InventoryItem | null>(null);
   const [showRequestModal, setShowRequestModal] = useState<boolean>(false);
   const [requestItems, setRequestItems] = useState<RequestItem[]>([]);
   const [currentRequest, setCurrentRequest] = useState<{
-    partId: number;
+    partId: string | number;
     partName: string;
     hsnCode: string;
     partCode?: string;
@@ -44,17 +45,21 @@ export default function SCInventory() {
     reason: string;
   } | null>(null);
 
-  // Initialize mock data and use mockParts converted to InventoryItem format
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
-    if (typeof window !== "undefined") {
-      initializeInventoryMockData();
-      const storedInventory = safeStorage.getItem<InventoryItem[]>("inventory", []);
-      if (storedInventory.length > 0) {
-        return storedInventory;
+  // Load inventory from localStorage
+  // Load inventory from API
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+
+  useEffect(() => {
+    const loadInventory = async () => {
+      try {
+        const data = await inventoryService.getAll();
+        setInventory(data);
+      } catch (error) {
+        console.error("Failed to load inventory:", error);
       }
-    }
-    return getDefaultServiceCenterInventory();
-  });
+    };
+    loadInventory();
+  }, []);
 
   const filteredInventory = inventory.filter((item) => {
     const matchesSearch =
@@ -310,21 +315,20 @@ export default function SCInventory() {
               />
             </div>
             <div className="flex gap-2">
-              {(["all", "low_stock", "out_of_stock"] as InventoryFilterType[]).map((f) => (
+              {(["all", "low_stock", "out_of_stock"] as FilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                    filter === f
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${filter === f
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                 >
                   {f === "all"
                     ? "All"
                     : f === "low_stock"
-                    ? "Low Stock"
-                    : "Out of Stock"}
+                      ? "Low Stock"
+                      : "Out of Stock"}
                 </button>
               ))}
             </div>
@@ -400,9 +404,8 @@ export default function SCInventory() {
                             <div
                               className={`h-2 rounded-full ${stockIndicator.color}`}
                               style={{
-                                width: `${
-                                  (item.currentQty / (item.minStock * 3)) * 100
-                                }%`,
+                                width: `${(item.currentQty / (item.minStock * 3)) * 100
+                                  }%`,
                               }}
                             ></div>
                           </div>
@@ -500,7 +503,8 @@ export default function SCInventory() {
                     <select
                       value={selectedPart?.id || ""}
                       onChange={(e) => {
-                        const part = inventory.find((p) => p.id === parseInt(e.target.value));
+                        const val = e.target.value;
+                        const part = inventory.find((p) => String(p.id) === val);
                         setSelectedPart(part || null);
                         if (part) {
                           setCurrentRequest({

@@ -31,7 +31,12 @@ export function useCustomers(options: UseCustomersOptions = {}): UseCustomersRet
     setError(null);
     try {
       const data = await customerService.getAll();
-      setCustomers(data);
+      if (Array.isArray(data)) {
+        setCustomers(data);
+      } else {
+        console.warn("useCustomers: getAll returned non-array data", data);
+        setCustomers([]);
+      }
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -119,7 +124,12 @@ export function useCustomerSearch(): UseCustomerSearchReturn {
     setError(null);
     try {
       const data = await customerService.search(query, type);
-      setResults(data);
+      if (Array.isArray(data)) {
+        setResults(data);
+      } else {
+        console.warn("useCustomerSearch: search returned non-array data", data);
+        setResults([]);
+      }
     } catch (err) {
       setError(getErrorMessage(err));
       setResults([]);

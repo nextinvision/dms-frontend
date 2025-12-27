@@ -16,7 +16,10 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
-import { defaultServiceCenters } from "../service-center";
+import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
+import { staticServiceCenters } from "../service-center";
+import { apiClient } from "@/core/api";
+import { API_ENDPOINTS } from "@/config/api.config";
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 import { INDIAN_STATES, getCitiesByState } from "@/shared/constants/indian-states-cities";
 import { FormInput, FormSelect, formatVehicleString, CameraModal } from "../shared";
@@ -24,6 +27,7 @@ import { findNearestServiceCenter } from "./types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { AppointmentForm as AppointmentFormType } from "./types";
 import { INITIAL_APPOINTMENT_FORM } from "./types";
+import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
 import {
   getCurrentTime,
   getCurrentDate,
@@ -32,6 +36,9 @@ import {
 } from "@/shared/utils/date";
 import { validatePhone } from "@/shared/utils/validation";
 import { getInitialAppointmentForm, mapVehicleToFormData, mapCustomerToFormData } from "./utils";
+import { saveFileMetadata, saveFileMetadataFromArray } from "@/services/files/fileMetadata.service";
+import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 export interface AppointmentFormProps {
   initialData?: Partial<AppointmentFormType>;
@@ -74,7 +81,7 @@ export const AppointmentForm = ({
   const isServiceManager = userRole === "sc_manager";
   const isTechnician = userRole === "service_engineer";
   const isInventoryManager = userRole === "inventory_manager";
-  const isAdminRole = userRole === "admin" || userRole === "super_admin";
+  const isAdminRole = userRole === "admin";
 
   const hasRoleAccess = (roles: string[]): boolean => {
     return isAdminRole || roles.includes(userRole);
@@ -100,39 +107,70 @@ export const AppointmentForm = ({
   );
 
   // Local state for UI
-  const [pickupAddressDifferent, setPickupAddressDifferent] = useState(false);
-  const [pickupState, setPickupState] = useState("");
-  const [pickupCity, setPickupCity] = useState("");
-  const [dropState, setDropState] = useState("");
-  const [dropCity, setDropCity] = useState("");
+  const [pickupAddressDifferent, setPickupAddressDifferent] = useState(() =>
+    !!(initialData?.pickupAddress || initialData?.pickupState || initialData?.pickupCity)
+  );
+  const [pickupState, setPickupState] = useState(initialData?.pickupState || "");
+  const [pickupCity, setPickupCity] = useState(initialData?.pickupCity || "");
+  const [dropState, setDropState] = useState(initialData?.dropState || "");
+  const [dropCity, setDropCity] = useState(initialData?.dropCity || "");
   const [dropSameAsPickup, setDropSameAsPickup] = useState(false);
   const [showServiceCenterSelector, setShowServiceCenterSelector] = useState(false);
   const [serviceCenterSearch, setServiceCenterSearch] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [validationError, setValidationError] = useState("");
 
+  const [realServiceCenters, setRealServiceCenters] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchSCs = async () => {
+      try {
+        const res = await apiClient.get(API_ENDPOINTS.SERVICE_CENTERS) as any;
+        const data = Array.isArray(res) ? res : res.data || [];
+        if (Array.isArray(data)) {
+          const mapped = data.map((sc: any) => ({
+            ...sc,
+            id: sc.id, // UUID
+            serviceCenterId: sc.id, // For compatibility
+            name: sc.name,
+            location: `${sc.address || ''}, ${sc.city || ''}`,
+            status: "Active" // Assume active if returned
+          }));
+          setRealServiceCenters(mapped);
+        }
+      } catch (e) {
+        console.error("Error fetching SCs", e);
+      }
+    };
+    fetchSCs();
+  }, []);
+
   const availableServiceCenters = useMemo(
-    () => defaultServiceCenters.filter((sc) => sc.status === "Active"),
-    []
+    () => {
+      if (realServiceCenters.length > 0) return realServiceCenters;
+      const mocks = (staticServiceCenters && Array.isArray(staticServiceCenters)) ? staticServiceCenters : [];
+      return mocks.filter((sc) => sc.status === "Active");
+    },
+    [realServiceCenters]
   );
 
   const selectedCustomer = customerInfo;
   const selectedVehicle = useMemo(() => {
     // If vehicleInfo is explicitly provided, use it
     if (vehicleInfo) return vehicleInfo;
-    
+
     // If form has a vehicle selected, find it in customer's vehicles
     if (selectedCustomer && formData.vehicle) {
       return selectedCustomer.vehicles?.find(
         (v) => formatVehicleString(v) === formData.vehicle
       ) || null;
     }
-    
+
     // If no vehicle selected but customer has vehicles, use first one
     if (selectedCustomer && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 0) {
       return selectedCustomer.vehicles[0];
     }
-    
+
     return null;
   }, [selectedCustomer, formData.vehicle, vehicleInfo]);
 
@@ -161,7 +199,7 @@ export const AppointmentForm = ({
         ...prev,
         ...initialData,
       }));
-      
+
       // Initialize pickup/drop state and city from initialData
       if (initialData.pickupState) {
         setPickupState(initialData.pickupState);
@@ -180,11 +218,11 @@ export const AppointmentForm = ({
         setPickupAddressDifferent(true);
       }
       // Initialize dropSameAsPickup if drop address matches pickup
-      if (initialData.dropAddress && 
-          initialData.dropAddress === initialData.pickupAddress &&
-          initialData.dropState === initialData.pickupState &&
-          initialData.dropCity === initialData.pickupCity &&
-          initialData.dropPincode === initialData.pickupPincode) {
+      if (initialData.dropAddress &&
+        initialData.dropAddress === initialData.pickupAddress &&
+        initialData.dropState === initialData.pickupState &&
+        initialData.dropCity === initialData.pickupCity &&
+        initialData.dropPincode === initialData.pickupPincode) {
         setDropSameAsPickup(true);
       }
     }
@@ -200,14 +238,14 @@ export const AppointmentForm = ({
         customerName: prev.customerName || customerData.customerName || "",
         phone: prev.phone || customerData.phone || "",
         whatsappNumber: prev.whatsappNumber || customerData.whatsappNumber || "",
-        alternateMobile: prev.alternateMobile || customerData.alternateMobile || "",
+        alternateNumber: prev.alternateNumber || customerData.alternateNumber || "",
         email: prev.email || customerData.email || "",
         address: prev.address || customerData.address || "",
         cityState: prev.cityState || customerData.cityState || "",
         pincode: prev.pincode || customerData.pincode || "",
         customerType: prev.customerType || customerData.customerType || undefined,
       }));
-      
+
       // Auto-select first vehicle if none selected and customer has vehicles
       if (!formData.vehicle && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 0) {
         const firstVehicle = selectedCustomer.vehicles[0];
@@ -231,7 +269,7 @@ export const AppointmentForm = ({
       }
     }
   }, [selectedCustomer, selectedVehicle, formData.vehicle, onVehicleChange]);
-  
+
   // Update parent when form vehicle changes (for external vehicle selection)
   useEffect(() => {
     if (formData.vehicle && selectedCustomer && onVehicleChange) {
@@ -244,27 +282,13 @@ export const AppointmentForm = ({
     }
   }, [formData.vehicle, selectedCustomer, onVehicleChange]);
 
-  // Auto-populate vehicle fields from selectedVehicle (preserve user edits)
+  // Auto-populate vehicle fields from selectedVehicle
   useEffect(() => {
     if (selectedVehicle) {
       const vehicleData = mapVehicleToFormData(selectedVehicle);
       setFormData((prev) => ({
         ...prev,
-        // Only populate if field is empty (preserve user edits)
-        vehicleBrand: prev.vehicleBrand || vehicleData.vehicleBrand || "",
-        vehicleModel: prev.vehicleModel || vehicleData.vehicleModel || "",
-        vehicleYear: prev.vehicleYear || vehicleData.vehicleYear || undefined,
-        registrationNumber: prev.registrationNumber || vehicleData.registrationNumber || "",
-        vinChassisNumber: prev.vinChassisNumber || vehicleData.vinChassisNumber || "",
-        variantBatteryCapacity: prev.variantBatteryCapacity || vehicleData.variantBatteryCapacity || "",
-        motorNumber: prev.motorNumber || vehicleData.motorNumber || "",
-        chargerSerialNumber: prev.chargerSerialNumber || vehicleData.chargerSerialNumber || "",
-        vehicleColor: prev.vehicleColor || vehicleData.vehicleColor || "",
-        dateOfPurchase: prev.dateOfPurchase || vehicleData.dateOfPurchase || "",
-        warrantyStatus: prev.warrantyStatus || vehicleData.warrantyStatus || "",
-        insuranceStartDate: prev.insuranceStartDate || vehicleData.insuranceStartDate || "",
-        insuranceEndDate: prev.insuranceEndDate || vehicleData.insuranceEndDate || "",
-        insuranceCompanyName: prev.insuranceCompanyName || vehicleData.insuranceCompanyName || "",
+        ...vehicleData,
       }));
     }
   }, [selectedVehicle]);
@@ -292,7 +316,7 @@ export const AppointmentForm = ({
       dropState: dropState || formData.dropState,
       dropCity: dropCity || formData.dropCity,
     };
-    
+
     const errors: Record<string, string> = {};
     const missingFields: string[] = [];
 
@@ -335,8 +359,8 @@ export const AppointmentForm = ({
       }
     }
 
-    if (isCallCenter && !finalFormData.customerComplaintIssue?.trim()) {
-      errors.customerComplaintIssue = "Customer Complaint / Issue Description is required";
+    if (isCallCenter && !finalFormData.customerComplaint?.trim()) {
+      errors.customerComplaint = "Customer Complaint / Issue Description is required";
       missingFields.push("Customer Complaint / Issue Description");
     }
 
@@ -366,49 +390,141 @@ export const AppointmentForm = ({
     }
   }, [fieldErrors]);
 
-  // Document handlers
+  // Document handlers with Cloudinary
+  const { uploadMultiple, uploadFile, isUploading: isUploadingFiles } = useCloudinaryUpload();
   const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
 
   const handleDocumentUpload = useCallback(
-    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
+    async (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
       if (!files || files.length === 0) return;
 
       const fileArray = Array.from(files);
-      const existingFiles = formData[field]?.files || [];
-      const existingUrls = formData[field]?.urls || [];
 
-      const newUrls = fileArray.map((file) => URL.createObjectURL(file));
+      // Determine folder based on field and entity IDs
+      let folder: string;
+      const customerId = formData.customerName || 'temp';
+      const vehicleId = formData.vehicle || 'temp';
+      const appointmentId = formData.date || 'temp'; // Use date as temporary ID if no appointment ID
 
-      updateFormData({
-        [field]: {
-          files: [...existingFiles, ...fileArray],
-          urls: [...existingUrls, ...newUrls],
-        },
-      });
+      switch (field) {
+        case 'customerIdProof':
+          folder = CLOUDINARY_FOLDERS.customerIdProof(customerId);
+          break;
+        case 'vehicleRCCopy':
+          folder = CLOUDINARY_FOLDERS.vehicleRC(vehicleId);
+          break;
+        case 'photosVideos':
+          folder = CLOUDINARY_FOLDERS.vehiclePhotos(vehicleId);
+          break;
+        case 'warrantyCardServiceBook':
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          break;
+        default:
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+      }
+
+      try {
+        // Upload files to Cloudinary
+        const uploadResults = await uploadMultiple(fileArray, folder, {
+          tags: [field, 'appointment'],
+          context: {
+            field,
+            customerId: customerId,
+            vehicleId: vehicleId,
+          },
+        });
+
+        // Store Cloudinary URLs and public IDs
+        const newUrls = uploadResults.map(result => result.secureUrl);
+        const newPublicIds = uploadResults.map(result => result.publicId);
+        const existingUrls = formData[field]?.urls || [];
+        const existingPublicIds = formData[field]?.publicIds || [];
+
+        updateFormData({
+          [field]: {
+            urls: [...existingUrls, ...newUrls],
+            publicIds: [...existingPublicIds, ...newPublicIds],
+            metadata: [
+              ...(formData[field]?.metadata || []),
+              ...uploadResults.map(result => ({
+                publicId: result.publicId,
+                url: result.secureUrl,
+                format: result.format,
+                bytes: result.bytes,
+                uploadedAt: new Date().toISOString(),
+              })),
+            ],
+          },
+        });
+
+        // Save file metadata to backend if appointment ID exists
+        /* 
+        if (mode === 'edit') {
+          const categoryMap: Record<string, FileCategory> = {
+            customerIdProof: FileCategory.CUSTOMER_ID_PROOF,
+            vehicleRCCopy: FileCategory.VEHICLE_RC,
+            warrantyCardServiceBook: FileCategory.WARRANTY_CARD,
+            photosVideos: FileCategory.PHOTOS_VIDEOS,
+          };
+
+          // Note: Appointment ID should be passed separately or retrieved from form submission
+          // For now, we'll skip saving metadata here and let it be saved during form submission
+          const appointmentId = 'temp'; // Will be replaced with actual ID during submission
+          const authToken = safeStorage.getItem<string | null>('authToken', null);
+
+          // Save metadata to backend (non-blocking)
+          saveFileMetadata(
+            uploadResults,
+            fileArray,
+            {
+              category: categoryMap[field],
+              relatedEntityId: appointmentId,
+              relatedEntityType: RelatedEntityType.APPOINTMENT,
+              uploadedBy: userInfo?.id,
+            },
+            authToken || undefined
+          ).catch(err => {
+            console.error('Failed to save file metadata to backend:', err);
+            // Don't block user - metadata can be saved later
+          });
+        }
+        */
+      } catch (err) {
+        console.error('Upload failed:', err);
+        alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
     },
-    [formData, updateFormData]
+    [formData, uploadMultiple, updateFormData, initialData, mode, userInfo]
   );
 
   const handleRemoveDocument = useCallback(
     (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
-      const existingFiles = formData[field]?.files || [];
       const existingUrls = formData[field]?.urls || [];
+      const existingPublicIds = formData[field]?.publicIds || [];
+      const publicId = existingPublicIds[index];
 
-      // Revoke URL to free memory
-      if (existingUrls[index]) {
-        URL.revokeObjectURL(existingUrls[index]);
-      }
-
-      const newFiles = existingFiles.filter((_, i) => i !== index);
-      const newUrls = existingUrls.filter((_, i) => i !== index);
+      // Remove from state immediately (optimistic update)
+      const newUrls = existingUrls.filter((_: string, i: number) => i !== index);
+      const newPublicIds = existingPublicIds.filter((_: string, i: number) => i !== index);
+      const newMetadata = (formData[field]?.metadata || []).filter((_: any, i: number) => i !== index);
 
       updateFormData({
         [field]: {
-          files: newFiles,
           urls: newUrls,
+          publicIds: newPublicIds,
+          metadata: newMetadata,
         },
       });
+
+      // Optionally delete from Cloudinary via backend API
+      if (publicId) {
+        // Note: Deletion should be handled by backend for security
+        // Frontend can request deletion via API endpoint
+        fetch(`/api/files/${publicId}`, { method: 'DELETE' }).catch((err) => {
+          console.error('Failed to delete from Cloudinary:', err);
+        });
+      }
     },
     [formData, updateFormData]
   );
@@ -422,24 +538,73 @@ export const AppointmentForm = ({
   );
 
   const handleCameraCapture = useCallback(
-    (file: File) => {
+    async (file: File) => {
       if (!cameraDocumentType) return;
 
-      const newUrl = URL.createObjectURL(file);
-      const existingFiles = formData[cameraDocumentType]?.files || [];
-      const existingUrls = formData[cameraDocumentType]?.urls || [];
+      // Determine folder
+      let folder: string;
+      const customerId = formData.customerName || 'temp';
+      const vehicleId = formData.vehicle || 'temp';
+      const appointmentId = formData.date || 'temp';
 
-      updateFormData({
-        [cameraDocumentType]: {
-          files: [...existingFiles, file],
-          urls: [...existingUrls, newUrl],
-        },
-      });
+      switch (cameraDocumentType) {
+        case 'customerIdProof':
+          folder = CLOUDINARY_FOLDERS.customerIdProof(customerId);
+          break;
+        case 'vehicleRCCopy':
+          folder = CLOUDINARY_FOLDERS.vehicleRC(vehicleId);
+          break;
+        case 'photosVideos':
+          folder = CLOUDINARY_FOLDERS.vehiclePhotos(vehicleId);
+          break;
+        case 'warrantyCardServiceBook':
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          break;
+        default:
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+      }
 
-      setCameraModalOpen(false);
-      setCameraDocumentType(null);
+      try {
+        // Upload immediately to Cloudinary
+        const result = await uploadFile(file, folder, {
+          tags: [cameraDocumentType, 'appointment', 'camera'],
+          context: {
+            field: cameraDocumentType,
+            customerId: customerId,
+            vehicleId: vehicleId,
+            source: 'camera',
+          },
+        });
+
+        // Store in form data
+        const existingUrls = formData[cameraDocumentType]?.urls || [];
+        const existingPublicIds = formData[cameraDocumentType]?.publicIds || [];
+
+        updateFormData({
+          [cameraDocumentType]: {
+            urls: [...existingUrls, result.secureUrl],
+            publicIds: [...existingPublicIds, result.publicId],
+            metadata: [
+              ...(formData[cameraDocumentType]?.metadata || []),
+              {
+                publicId: result.publicId,
+                url: result.secureUrl,
+                format: result.format,
+                bytes: result.bytes,
+                uploadedAt: new Date().toISOString(),
+              },
+            ],
+          },
+        });
+
+        setCameraModalOpen(false);
+        setCameraDocumentType(null);
+      } catch (err) {
+        console.error('Camera capture upload failed:', err);
+        alert(`Failed to upload: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
     },
-    [cameraDocumentType, formData, updateFormData]
+    [cameraDocumentType, formData, uploadFile, updateFormData]
   );
 
   return (
@@ -468,7 +633,7 @@ export const AppointmentForm = ({
             onChange={(e) => {
               const selectedVehicleValue = e.target.value;
               updateFormData({ vehicle: selectedVehicleValue });
-              
+
               // Find and notify parent about vehicle change
               if (selectedCustomer && onVehicleChange) {
                 const vehicle = selectedCustomer.vehicles?.find(
@@ -489,7 +654,7 @@ export const AppointmentForm = ({
             label="Vehicle"
             required
             value={formData.vehicle}
-            onChange={() => {}}
+            onChange={() => { }}
             readOnly
             error={fieldErrors.vehicle}
           />
@@ -501,8 +666,8 @@ export const AppointmentForm = ({
           </p>
         )}
       </div>
-  {/* Vehicle Information Section */}
-  <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
+      {/* Vehicle Information Section */}
+      <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
         <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
           <span className="w-1 h-6 bg-green-600 rounded"></span>
           Vehicle Information
@@ -685,21 +850,20 @@ export const AppointmentForm = ({
                 Customer Complaint / Issue Description {isCallCenter && <span className="text-red-500">*</span>}
               </label>
               <textarea
-                value={formData.customerComplaintIssue || ""}
-                onChange={(e) => updateFormData({ customerComplaintIssue: e.target.value })}
+                value={formData.customerComplaint || ""}
+                onChange={(e) => updateFormData({ customerComplaint: e.target.value })}
                 rows={3}
                 placeholder="Describe the customer complaint or issue..."
-                className={`w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 resize-none ${
-                  fieldErrors.customerComplaintIssue
-                    ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
-                    : "border border-gray-200 focus:ring-purple-500/20 focus:border-purple-500 bg-gray-50/50 focus:bg-white"
-                }`}
+                className={`w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 resize-none ${fieldErrors.customerComplaint
+                  ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
+                  : "border border-gray-200 focus:ring-purple-500/20 focus:border-purple-500 bg-gray-50/50 focus:bg-white"
+                  }`}
                 required={isCallCenter}
               />
-              {fieldErrors.customerComplaintIssue && (
+              {fieldErrors.customerComplaint && (
                 <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
                   <span className="text-red-500">•</span>
-                  {fieldErrors.customerComplaintIssue}
+                  {fieldErrors.customerComplaint}
                 </p>
               )}
             </div>
@@ -767,7 +931,7 @@ export const AppointmentForm = ({
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="text-indigo-600" size={24} />
                           <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
                         </div>
                         <input
                           type="file"
@@ -787,24 +951,40 @@ export const AppointmentForm = ({
                         <span className="text-xs font-medium">Camera</span>
                       </button>
                     </div>
-                    {formData.customerIdProof?.files && formData.customerIdProof.files.length > 0 && (
+                    {formData.customerIdProof?.urls && formData.customerIdProof.urls.length > 0 && (
                       <div className="space-y-2">
-                        {formData.customerIdProof.files.map((file, index) => (
-                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            <FileText className="text-indigo-600 shrink-0" size={18} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                        {formData.customerIdProof.urls.map((url: string, index: number) => {
+                          const metadata = formData.customerIdProof?.metadata?.[index];
+                          return (
+                            <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                              <FileText className="text-indigo-600 shrink-0" size={18} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                                </p>
+                              </div>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                                title="View file"
+                              >
+                                <ImageIcon size={16} />
+                              </a>
+                              <button
+                                onClick={() => handleRemoveDocument("customerIdProof", index)}
+                                className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                                title="Remove file"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
-                            <button
-                              onClick={() => handleRemoveDocument("customerIdProof", index)}
-                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                              title="Remove file"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -821,7 +1001,7 @@ export const AppointmentForm = ({
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="text-indigo-600" size={24} />
                           <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
                         </div>
                         <input
                           type="file"
@@ -841,24 +1021,40 @@ export const AppointmentForm = ({
                         <span className="text-xs font-medium">Camera</span>
                       </button>
                     </div>
-                    {formData.vehicleRCCopy?.files && formData.vehicleRCCopy.files.length > 0 && (
+                    {formData.vehicleRCCopy?.urls && formData.vehicleRCCopy.urls.length > 0 && (
                       <div className="space-y-2">
-                        {formData.vehicleRCCopy.files.map((file, index) => (
-                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            <FileText className="text-indigo-600 shrink-0" size={18} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                        {formData.vehicleRCCopy.urls.map((url: string, index: number) => {
+                          const metadata = formData.vehicleRCCopy?.metadata?.[index];
+                          return (
+                            <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                              <FileText className="text-indigo-600 shrink-0" size={18} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                                </p>
+                              </div>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                                title="View file"
+                              >
+                                <ImageIcon size={16} />
+                              </a>
+                              <button
+                                onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
+                                className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                                title="Remove file"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
-                            <button
-                              onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
-                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                              title="Remove file"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -875,7 +1071,7 @@ export const AppointmentForm = ({
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="text-indigo-600" size={24} />
                           <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 10MB)</span>
+                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
                         </div>
                         <input
                           type="file"
@@ -895,24 +1091,40 @@ export const AppointmentForm = ({
                         <span className="text-xs font-medium">Camera</span>
                       </button>
                     </div>
-                    {formData.warrantyCardServiceBook?.files && formData.warrantyCardServiceBook.files.length > 0 && (
+                    {formData.warrantyCardServiceBook?.urls && formData.warrantyCardServiceBook.urls.length > 0 && (
                       <div className="space-y-2">
-                        {formData.warrantyCardServiceBook.files.map((file, index) => (
-                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            <FileText className="text-indigo-600 shrink-0" size={18} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                        {formData.warrantyCardServiceBook.urls.map((url: string, index: number) => {
+                          const metadata = formData.warrantyCardServiceBook?.metadata?.[index];
+                          return (
+                            <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                              <FileText className="text-indigo-600 shrink-0" size={18} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                                </p>
+                              </div>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                                title="View file"
+                              >
+                                <ImageIcon size={16} />
+                              </a>
+                              <button
+                                onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
+                                className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                                title="Remove file"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
-                            <button
-                              onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
-                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                              title="Remove file"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -930,7 +1142,7 @@ export const AppointmentForm = ({
                       <div className="flex flex-col items-center gap-2">
                         <ImageIcon className="text-indigo-600" size={24} />
                         <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                        <span className="text-xs text-gray-500">JPG, PNG, MP4, MOV (Max 50MB)</span>
+                        <span className="text-xs text-gray-500">Images (Max 4MB), Videos (Max 15MB)</span>
                       </div>
                       <input
                         type="file"
@@ -950,39 +1162,56 @@ export const AppointmentForm = ({
                       <span className="text-xs font-medium">Camera</span>
                     </button>
                   </div>
-                  {formData.photosVideos?.files && formData.photosVideos.files.length > 0 && (
+                  {formData.photosVideos?.urls && formData.photosVideos.urls.length > 0 && (
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {formData.photosVideos.files.map((file, index) => (
-                        <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                          {file.type.startsWith("image/") ? (
-                            <Image
-                              src={formData.photosVideos?.urls[index] || ""}
-                              alt={file.name}
-                              width={128}
-                              height={128}
-                              className="w-full h-32 object-cover"
-                              unoptimized
-                            />
-                          ) : (
-                            <div className="w-full h-32 flex items-center justify-center bg-gray-100">
-                              <FileText className="text-gray-400" size={32} />
+                      {formData.photosVideos.urls.map((url: string, index: number) => {
+                        const metadata = formData.photosVideos?.metadata?.[index];
+                        const isImage = metadata?.format && ['jpg', 'jpeg', 'png', 'webp'].includes(metadata.format.toLowerCase());
+                        return (
+                          <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                            {isImage && url ? (
+                              <Image
+                                src={url}
+                                alt={`Upload ${index + 1}`}
+                                width={128}
+                                height={128}
+                                className="w-full h-32 object-cover"
+                                unoptimized
+                              />
+                            ) : (
+                              <div className="w-full h-32 flex items-center justify-center bg-gray-100">
+                                <FileText className="text-gray-400" size={32} />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-white hover:text-blue-300 p-2 rounded transition mr-2"
+                                title="View file"
+                              >
+                                <ImageIcon size={20} />
+                              </a>
+                              <button
+                                onClick={() => handleRemoveDocument("photosVideos", index)}
+                                className="text-white hover:text-red-300 p-2 rounded transition"
+                                title="Remove file"
+                              >
+                                <Trash2 size={20} />
+                              </button>
                             </div>
-                          )}
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <button
-                              onClick={() => handleRemoveDocument("photosVideos", index)}
-                              className="text-white hover:text-red-300 p-2 rounded transition"
-                              title="Remove file"
-                            >
-                              <Trash2 size={20} />
-                            </button>
+                            <div className="p-2 bg-white">
+                              <p className="text-xs font-medium text-gray-800 truncate">
+                                {metadata?.format ? `File.${metadata.format.toUpperCase()}` : "Uploaded File"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                              </p>
+                            </div>
                           </div>
-                          <div className="p-2 bg-white">
-                            <p className="text-xs font-medium text-gray-800 truncate">{file.name}</p>
-                            <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1004,7 +1233,7 @@ export const AppointmentForm = ({
         />
       )}
 
-    
+
 
       {/* Date and Time */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1094,15 +1323,15 @@ export const AppointmentForm = ({
                       ...(checked
                         ? {}
                         : {
-                            pickupAddress: undefined,
-                            pickupState: undefined,
-                            pickupCity: undefined,
-                            pickupPincode: undefined,
-                            dropAddress: undefined,
-                            dropState: undefined,
-                            dropCity: undefined,
-                            dropPincode: undefined,
-                          }),
+                          pickupAddress: undefined,
+                          pickupState: undefined,
+                          pickupCity: undefined,
+                          pickupPincode: undefined,
+                          dropAddress: undefined,
+                          dropState: undefined,
+                          dropCity: undefined,
+                          dropPincode: undefined,
+                        }),
                     });
                     if (!checked) {
                       setPickupAddressDifferent(false);
@@ -1177,9 +1406,9 @@ export const AppointmentForm = ({
                                 pickupCity: undefined,
                                 ...(dropSameAsPickup
                                   ? {
-                                      dropState: newState,
-                                      dropCity: undefined,
-                                    }
+                                    dropState: newState,
+                                    dropCity: undefined,
+                                  }
                                   : {}),
                               });
                               if (dropSameAsPickup) {
@@ -1354,7 +1583,7 @@ export const AppointmentForm = ({
             <FormInput
               label="Estimated Cost"
               value={formData.estimatedCost ? `₹${formData.estimatedCost}` : ""}
-              onChange={() => {}}
+              onChange={() => { }}
               readOnly
               placeholder="Cost will be determined during service"
             />
@@ -1378,50 +1607,50 @@ export const AppointmentForm = ({
       )}
 
       {/* Customer Arrival Section (Service Advisor Only) */}
-      {isServiceAdvisor && 
-       onCustomerArrived && 
-       appointmentStatus && 
-       appointmentStatus !== "In Progress" && 
-       appointmentStatus !== "Sent to Manager" && (
-        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <CheckCircle size={20} className="text-blue-600" />
-            Customer Arrival
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Mark customer arrival status. This will update the appointment status when you save.
-          </p>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (onCustomerArrived) {
-                  // Ensure all state values are synced to formData
-                  const finalFormData: AppointmentFormType = {
-                    ...formData,
-                    pickupState: pickupState || formData.pickupState,
-                    pickupCity: pickupCity || formData.pickupCity,
-                    dropState: dropState || formData.dropState,
-                    dropCity: dropCity || formData.dropCity,
-                  };
-                  onCustomerArrived(finalFormData);
-                }
-              }}
-              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
-            >
-              <CheckCircle size={18} />
-              Customer Arrived
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
-            >
-              Customer Not Arrived
-            </button>
+      {isServiceAdvisor &&
+        onCustomerArrived &&
+        appointmentStatus &&
+        appointmentStatus !== "In Progress" &&
+        appointmentStatus !== "Sent to Manager" && (
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <CheckCircle size={20} className="text-blue-600" />
+              Customer Arrival
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Mark customer arrival status. This will update the appointment status when you save.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onCustomerArrived) {
+                    // Ensure all state values are synced to formData
+                    const finalFormData: AppointmentFormType = {
+                      ...formData,
+                      pickupState: pickupState || formData.pickupState,
+                      pickupCity: pickupCity || formData.pickupCity,
+                      dropState: dropState || formData.dropState,
+                      dropCity: dropCity || formData.dropCity,
+                    };
+                    onCustomerArrived(finalFormData);
+                  }
+                }}
+                className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
+              >
+                <CheckCircle size={18} />
+                Customer Arrived
+              </button>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                Customer Not Arrived
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Action Buttons */}
       <div className="flex gap-3 pt-4 border-t border-gray-200">
@@ -1432,12 +1661,12 @@ export const AppointmentForm = ({
           Cancel
         </button>
         {(
-        <button
-          onClick={handleSubmit}
-          className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
-        >
-          {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
-        </button>
+          <button
+            onClick={handleSubmit}
+            className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+          >
+            {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
+          </button>
         )}
       </div>
 

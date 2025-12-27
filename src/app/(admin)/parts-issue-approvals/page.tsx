@@ -12,7 +12,7 @@ import type { PartsIssue } from "@/shared/types/central-inventory.types";
 export default function PartsIssueApprovalsPage() {
   const { userInfo, userRole } = useRole();
   const { showSuccess, showError } = useToast();
-  const isAdmin = userRole === "admin" || userRole === "super_admin";
+  const isAdmin = userRole === "admin";
   const [pendingRequests, setPendingRequests] = useState<PartsIssue[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export default function PartsIssueApprovalsPage() {
       const interval = setInterval(() => {
         fetchPendingRequests();
       }, 5000);
-      
+
       // Also refresh when page becomes visible
       const handleVisibilityChange = () => {
         if (document.visibilityState === "visible") {
@@ -35,7 +35,7 @@ export default function PartsIssueApprovalsPage() {
         }
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
-      
+
       return () => {
         clearInterval(interval);
         document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -119,13 +119,12 @@ export default function PartsIssueApprovalsPage() {
     return (
       <Card
         key={request.id}
-        className={`border-l-4 ${
-          request.adminApproved
+        className={`border-l-4 ${request.adminApproved
             ? "border-l-green-500"
             : request.adminRejected
-            ? "border-l-red-500"
-            : "border-l-yellow-500"
-        }`}
+              ? "border-l-red-500"
+              : "border-l-yellow-500"
+          }`}
       >
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -164,13 +163,12 @@ export default function PartsIssueApprovalsPage() {
           <div className="mb-4 flex gap-3">
             <button
               disabled
-              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${
-                request.adminApproved
+              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${request.adminApproved
                   ? "bg-green-500 text-white"
                   : request.adminRejected
-                  ? "bg-red-500 text-white"
-                  : "bg-yellow-500 text-white"
-              }`}
+                    ? "bg-red-500 text-white"
+                    : "bg-yellow-500 text-white"
+                }`}
             >
               {request.adminApproved ? (
                 <CheckCircle size={16} />

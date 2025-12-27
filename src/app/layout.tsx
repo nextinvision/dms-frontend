@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect, useRef, ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { TanStackProvider } from "@/components/providers/TanStackProvider";
 import { Sidebar, SCSidebar, InventoryManagerSidebar, CentralInventorySidebar, Navbar } from "@/components/layout";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { GlobalErrorBoundary } from "@/shared/components/providers/GlobalErrorBoundary";
 import { useRole } from "@/shared/hooks";
 import type { UserRole } from "@/shared/types";
 import { TopLoadingBar } from "@/components/ui/TopLoadingBar";
@@ -14,6 +15,7 @@ interface RootLayoutProps {
 }
 
 export default function RootLayout({ children }: RootLayoutProps) {
+
   const [open, setOpen] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
   const { userRole } = useRole();
@@ -43,7 +45,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
 
   // For /inventory and /approvals, check role to determine which sidebar
   const isSharedRoute = pathname === "/inventory" || pathname === "/approvals";
-  const isAdminOnSharedRoute = isSharedRoute && (userRole === "admin" || userRole === "super_admin");
+  const isAdminOnSharedRoute = isSharedRoute && userRole === "admin";
 
   // Use Inventory Manager sidebar if on inventory manager page
   const useInventoryManagerSidebar = isInventoryManagerPage && !isCentralInventoryPage;
@@ -54,7 +56,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
   // Use SC sidebar if: on SC page OR on shared route as non-admin OR not on admin route and not admin/super_admin and not inventory manager and not central inventory manager
   const useSCSidebar = (isServiceCenterPage ||
     (isSharedRoute && !isAdminOnSharedRoute) ||
-    (!isAdminRoute && !isSharedRoute && userRole !== "admin" && userRole !== "super_admin" && userRole !== "inventory_manager" && userRole !== "central_inventory_manager")) && !isInventoryManagerPage && !isCentralInventoryPage;
+    (!isAdminRoute && !isSharedRoute && userRole !== "admin" && userRole !== "inventory_manager" && userRole !== "central_inventory_manager")) && !isInventoryManagerPage && !isCentralInventoryPage;
 
   // Show loader during navigation (track pathname changes)
   useEffect(() => {
@@ -74,38 +76,40 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
       <body className="antialiased bg-[#f9f9fb] flex" suppressHydrationWarning>
-        <ToastProvider>
-          <ErrorBoundary>
-          {isLoggedIn &&
-            (useCentralInventorySidebar ? (
-              <CentralInventorySidebar open={open} setOpen={setOpen} />
-            ) : useInventoryManagerSidebar ? (
-              <InventoryManagerSidebar open={open} setOpen={setOpen} />
-            ) : useSCSidebar ? (
-              <SCSidebar open={open} setOpen={setOpen} role={userRole} />
-            ) : (
-              <Sidebar open={open} setOpen={setOpen} />
-            ))}
+        <TanStackProvider>
+          <ToastProvider>
+            <GlobalErrorBoundary>
+              {isLoggedIn &&
+                (useCentralInventorySidebar ? (
+                  <CentralInventorySidebar open={open} setOpen={setOpen} />
+                ) : useInventoryManagerSidebar ? (
+                  <InventoryManagerSidebar open={open} setOpen={setOpen} />
+                ) : useSCSidebar ? (
+                  <SCSidebar open={open} setOpen={setOpen} role={userRole} />
+                ) : (
+                  <Sidebar open={open} setOpen={setOpen} />
+                ))}
 
-          <TopLoadingBar isLoading={isNavigating} />
-          <div
-            className={`flex-1 flex flex-col transition-all duration-300 relative overflow-x-hidden ${isLoggedIn
-                ? open
-                  ? "ml-64 md:ml-64"
-                  : "ml-0 md:ml-20"
-                : "ml-0"
-              }`}
-          >
-            {isLoggedIn && <Navbar open={open} setOpen={setOpen} isLoggedIn={isLoggedIn} />}
+              <TopLoadingBar isLoading={isNavigating} />
+              <div
+                className={`flex-1 flex flex-col transition-all duration-300 relative overflow-x-hidden ${isLoggedIn
+                  ? open
+                    ? "ml-64 md:ml-64"
+                    : "ml-0 md:ml-20"
+                  : "ml-0"
+                  }`}
+              >
+                {isLoggedIn && <Navbar open={open} setOpen={setOpen} isLoggedIn={isLoggedIn} />}
 
-            <main className={`relative min-h-[calc(100vh-4rem)] overflow-x-hidden ${isLoggedIn ? "pt-16 px-6 md:px-8" : "px-0"}`}>
-              <ErrorBoundary>
-                {children}
-              </ErrorBoundary>
-            </main>
-          </div>
-        </ErrorBoundary>
-        </ToastProvider>
+                <main className={`relative min-h-[calc(100vh-4rem)] overflow-x-hidden ${isLoggedIn ? "pt-16 px-6 md:px-8" : "px-0"}`}>
+                  <GlobalErrorBoundary>
+                    {children}
+                  </GlobalErrorBoundary>
+                </main>
+              </div>
+            </GlobalErrorBoundary>
+          </ToastProvider>
+        </TanStackProvider>
       </body>
     </html>
   );

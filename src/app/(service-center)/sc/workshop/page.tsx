@@ -6,25 +6,51 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
+  Search,
+  Filter,
+  Eye,
+  UserPlus,
+  AlertTriangle,
+  User,
+  Package,
+  X,
   Calendar,
   BarChart3,
-  UserPlus,
-  Filter,
-  X,
-  Search,
-  User,
-  Car,
-  Package,
 } from "lucide-react";
 import type { Engineer, WorkshopStats, EngineerStatus, Workload, Priority, JobCard, JobCardStatus } from "@/shared/types";
-import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { defaultJobCards } from "@/__mocks__/data/job-cards.mock";
-import { defaultEngineers } from "@/__mocks__/data/workshop.mock";
+// import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+
+const safeStorage = {
+  getItem: <T,>(key: string, defaultValue: T): T => {
+    if (typeof window === "undefined") return defaultValue;
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch (error) {
+      console.error(`Error reading ${key} from localStorage:`, error);
+      return defaultValue;
+    }
+  },
+  setItem: <T,>(key: string, value: T): void => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.error(`Error writing ${key} to localStorage:`, error);
+    }
+  }
+};
+import { staffService } from "@/features/workshop/services/staff.service";
 import {
   filterByServiceCenter,
   getServiceCenterContext,
   shouldFilterByServiceCenter,
 } from "@/shared/lib/serviceCenter";
+
+// Load default data
+const defaultJobCards: JobCard[] = [];
+const defaultEngineers: Engineer[] = [];
+
 
 export default function Workshop() {
   const [selectedEngineer, setSelectedEngineer] = useState<Engineer | null>(null);
@@ -78,10 +104,10 @@ export default function Workshop() {
 
   // Filter to show only active job cards (Assigned, In Progress, Parts Pending)
   const activeJobCards = useMemo(() => {
-    return visibleJobCards.filter((job) => 
-      job.status === "Assigned" || 
-      job.status === "In Progress" || 
-      job.status === "Parts Pending"
+    return visibleJobCards.filter((job) =>
+      job.status === "ASSIGNED" ||
+      job.status === "IN_PROGRESS" ||
+      job.status === "PARTS_PENDING"
     );
   }, [visibleJobCards]);
 
@@ -93,7 +119,7 @@ export default function Workshop() {
     return activeJobCards.filter((job) => {
       const matchesStatus = filterStatus === "all" || job.status.toLowerCase() === filterStatus.toLowerCase();
       const matchesPriority = filterPriority === "all" || job.priority.toLowerCase() === filterPriority.toLowerCase();
-      const matchesSearch = searchQuery === "" || 
+      const matchesSearch = searchQuery === "" ||
         job.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
         job.jobCardNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         job.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -110,11 +136,11 @@ export default function Workshop() {
     const activeCount = activeJobCards.length;
     const occupiedBays = Math.min(activeCount, totalBays);
     const completedToday = visibleJobCards.filter(
-      (job) => job.status === "Completed" && 
-      job.completedAt && 
-      new Date(job.completedAt).toDateString() === new Date().toDateString()
+      (job) => job.status === "COMPLETED" &&
+        job.completedAt &&
+        new Date(job.completedAt).toDateString() === new Date().toDateString()
     ).length;
-    
+
     return {
       totalBays,
       occupiedBays,
@@ -157,18 +183,18 @@ export default function Workshop() {
     );
     setJobCards(updatedJobs);
     safeStorage.setItem("jobCards", updatedJobs);
-    
+
     // Update lead status to converted when service is completed
     if (selectedJobForAction.id) {
       const existingLeads = safeStorage.getItem<any[]>("leads", []);
       const leadIndex = existingLeads.findIndex((l) => l.jobCardId === selectedJobForAction.id);
-      
+
       if (leadIndex !== -1) {
         const lead = existingLeads[leadIndex];
-        const updatedNotes = lead.notes 
+        const updatedNotes = lead.notes
           ? `${lead.notes}\nService completed on ${new Date().toLocaleString()}`
           : `Service completed on ${new Date().toLocaleString()}`;
-        
+
         existingLeads[leadIndex] = {
           ...lead,
           status: "converted" as const,
@@ -178,39 +204,32 @@ export default function Workshop() {
         safeStorage.setItem("leads", existingLeads);
       }
     }
-    
+
     setShowCompleteModal(false);
     setSelectedJobForAction(null);
     alert("Job marked as completed!");
   };
 
   const getStatusColor = (status: JobCardStatus): string => {
-    const colors: Record<JobCardStatus, string> = {
-      arrival_pending: "bg-gray-100 text-gray-700 border-gray-300",
-      job_card_pending_vehicle: "bg-blue-50 text-blue-700 border-blue-200",
-      job_card_active: "bg-yellow-100 text-yellow-700 border-yellow-300",
-      check_in_only: "bg-indigo-50 text-indigo-700 border-indigo-200",
-      no_response_lead: "bg-red-100 text-red-700 border-red-200",
-      manager_quote: "bg-purple-50 text-purple-700 border-purple-200",
-      "Awaiting Quotation Approval": "bg-amber-100 text-amber-700 border-amber-300",
-      Created: "bg-gray-100 text-gray-700 border-gray-300",
-      Assigned: "bg-blue-100 text-blue-700 border-blue-300",
-      "In Progress": "bg-yellow-100 text-yellow-700 border-yellow-300",
-      "Parts Pending": "bg-orange-100 text-orange-700 border-orange-300",
-      Completed: "bg-green-100 text-green-700 border-green-300",
-      Invoiced: "bg-purple-100 text-purple-700 border-purple-300",
+    const colors: Record<string, string> = {
+      CREATED: "bg-gray-100 text-gray-700 border-gray-300",
+      ASSIGNED: "bg-blue-100 text-blue-700 border-blue-300",
+      IN_PROGRESS: "bg-yellow-100 text-yellow-700 border-yellow-300",
+      COMPLETED: "bg-green-100 text-green-700 border-green-300",
+      INVOICED: "bg-purple-100 text-purple-700 border-purple-300",
+      // Add other statuses if needed or map them
     };
-    return colors[status] || colors.Created;
+    return (colors as any)[status] || colors.CREATED;
   };
 
   const getPriorityColor = (priority: Priority): string => {
-    const colors: Record<Priority, string> = {
-      Low: "bg-gray-500",
-      Normal: "bg-blue-500",
-      High: "bg-orange-500",
-      Critical: "bg-red-500",
+    const colors: Record<string, string> = {
+      LOW: "bg-gray-500",
+      NORMAL: "bg-blue-500",
+      HIGH: "bg-orange-500",
+      CRITICAL: "bg-red-500",
     };
-    return colors[priority] || colors.Normal;
+    return (colors as any)[priority] || colors.NORMAL;
   };
 
   const getEngineerStatusColor = (status: EngineerStatus): string => {
@@ -307,7 +326,7 @@ export default function Workshop() {
                   {filteredActiveJobs.length} {filteredActiveJobs.length === 1 ? "job" : "jobs"}
                 </span>
               </div>
-              
+
               {/* Search Bar */}
               <div className="mb-4">
                 <div className="relative">
@@ -487,11 +506,10 @@ export default function Workshop() {
                     {Array.from({ length: workshopStats.totalBays }).map((_, idx) => (
                       <div
                         key={idx}
-                        className={`flex-1 h-8 rounded ${
-                          idx < workshopStats.occupiedBays
-                            ? "bg-red-500"
-                            : "bg-green-500"
-                        }`}
+                        className={`flex-1 h-8 rounded ${idx < workshopStats.occupiedBays
+                          ? "bg-red-500"
+                          : "bg-green-500"
+                          }`}
                         title={
                           idx < workshopStats.occupiedBays ? "Occupied" : "Available"
                         }

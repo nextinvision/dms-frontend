@@ -21,8 +21,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { usePartsApproval } from "@/shared/hooks/usePartsApproval";
 import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
-import { jobCardPartsRequestService } from "@/features/inventory/services/jobCardPartsRequest.service";
-import { initializeInventoryMockData } from "@/__mocks__/data/inventory.mock";
+import { partsIssueService, type PartsIssue } from "@/features/inventory/services/parts-issue.service"; // Updated
 import type { InventoryStats, Part } from "@/shared/types/inventory.types";
 import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types";
 
@@ -32,6 +31,32 @@ interface QuickAction {
   bg: string;
   link: string;
 }
+
+// Reuse mapping helper from Approvals Page (or duplicate for now to avoid specific shared file dependency hell right now)
+const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
+  const isApproved = issue.status === 'APPROVED' || issue.status === 'ISSUED';
+  const isIssued = issue.status === 'ISSUED';
+
+  return {
+    id: issue.id,
+    jobCardId: issue.jobCardId,
+    vehicleNumber: "N/A",
+    customerName: "N/A",
+    requestedBy: issue.requestedBy,
+    requestedAt: issue.requestedAt,
+    status: issue.status === 'ISSUED' ? 'approved' : issue.status === 'REJECTED' ? 'rejected' : 'pending',
+    parts: issue.items.map(i => ({
+      partId: i.partId,
+      partName: `Part ${i.partId}`,
+      quantity: i.quantity,
+      isWarranty: i.isWarranty,
+      serialNumber: i.serialNumber
+    })),
+    scManagerApproved: isApproved,
+    inventoryManagerAssigned: isIssued,
+  };
+};
+
 
 export default function InventoryManagerDashboard() {
   const { pendingRequests, refresh } = usePartsApproval();
@@ -47,9 +72,6 @@ export default function InventoryManagerDashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Initialize mock data on mount
-    initializeInventoryMockData();
-    
     const fetchDashboardData = async () => {
       try {
         // Fetch parts and calculate stats
@@ -60,7 +82,9 @@ export default function InventoryManagerDashboard() {
         const totalValue = parts.reduce((sum, p) => sum + p.price * p.stockQuantity, 0);
 
         // Fetch recent parts requests (last 5)
-        const allRequests = await jobCardPartsRequestService.getAll();
+        const allIssues = await partsIssueService.getAll();
+        const allRequests = allIssues.map(mapPartsIssueToRequest);
+
         const recent = allRequests
           .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime())
           .slice(0, 5);
@@ -240,13 +264,12 @@ export default function InventoryManagerDashboard() {
                 {recentRequests.map((request) => (
                   <div
                     key={request.id}
-                    className={`p-4 rounded-lg border ${
-                      request.status === "pending"
-                        ? "bg-orange-50 border-orange-200"
-                        : request.status === "approved"
+                    className={`p-4 rounded-lg border ${request.status === "pending"
+                      ? "bg-orange-50 border-orange-200"
+                      : request.status === "approved"
                         ? "bg-green-50 border-green-200"
                         : "bg-red-50 border-red-200"
-                    }`}
+                      }`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
@@ -259,8 +282,8 @@ export default function InventoryManagerDashboard() {
                               request.status === "pending"
                                 ? "warning"
                                 : request.status === "approved"
-                                ? "success"
-                                : "danger"
+                                  ? "success"
+                                  : "danger"
                             }
                           >
                             {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
@@ -335,4 +358,3 @@ export default function InventoryManagerDashboard() {
     </div>
   );
 }
-

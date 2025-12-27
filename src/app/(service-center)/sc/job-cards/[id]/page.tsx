@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ClipboardList, ArrowLeft } from "lucide-react";
 import type { JobCard } from "@/shared/types";
-import { defaultJobCards } from "@/__mocks__/data/job-cards.mock";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import JobCardFormModal from "../../components/job-cards/JobCardFormModal";
 import { jobCardToFormInitialValues } from "../utils/jobCardToForm.util";
@@ -18,66 +17,70 @@ interface AdvisorJobCardPageProps {
   }>;
 }
 
-const fetchJobCard = (id: string): JobCard | undefined => {
-  if (typeof window !== "undefined") {
-    try {
-      // Migrate existing job cards before fetching
-      const { migrateAllJobCards } = require("../utils/migrateJobCards.util");
-      const stored = migrateAllJobCards();
-      const merged = [...stored, ...defaultJobCards];
-      
-      // Debug logging (remove in production)
-      if (process.env.NODE_ENV === "development") {
-        console.log("Looking for job card with ID:", id);
-        console.log("Stored job cards:", stored.length);
-        console.log("Available IDs:", merged.map(c => ({ id: c.id, jobCardNumber: c.jobCardNumber })));
-      }
-      
-      // Try multiple lookup strategies
-      const found = merged.find((card) => {
-        // Exact match on id
-        if (card.id === id) return true;
-        // Exact match on jobCardNumber
-        if (card.jobCardNumber === id) return true;
-        return false;
-      });
-      
-      if (found && process.env.NODE_ENV === "development") {
-        console.log("Found job card:", found);
-      }
-      
-      return found;
-    } catch (error) {
-      console.error("Error fetching job card:", error);
-      // Fallback to default job cards
-      return defaultJobCards.find((card) => card.id === id || card.jobCardNumber === id);
+const fetchJobCard = async (id: string): Promise<JobCard | undefined> => {
+  if (typeof window === "undefined") return undefined;
+
+  try {
+    // Import the job card service
+    const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
+
+    // Fetch all job cards from API
+    const allJobCards = await jobCardService.getAll();
+
+    // Find the one we need
+    const jobCard = allJobCards.find((card) =>
+      card.id === id || card.jobCardNumber === id
+    );
+
+    if (jobCard) {
+      console.log("Found job card from API:", jobCard);
+      return jobCard;
     }
+
+    // Fallback to localStorage if not found in API
+    const { migrateAllJobCards } = require("../utils/migrateJobCards.util");
+    const stored = migrateAllJobCards();
+
+    const found = stored.find((card: JobCard) =>
+      card.id === id || card.jobCardNumber === id
+    );
+
+    if (found) {
+      console.log("Found job card from localStorage:", found);
+    }
+
+    return found;
+  } catch (error) {
+    console.error("Error fetching job card:", error);
+    return undefined;
   }
-  return defaultJobCards.find((card) => card.id === id || card.jobCardNumber === id);
 };
 
 export default function AdvisorJobCardDetailPage({ params, searchParams }: AdvisorJobCardPageProps) {
   const router = useRouter();
   const resolvedParams = use(params);
   const resolvedSearchParams = use(searchParams || Promise.resolve({ temp: undefined }));
-  
+
   const [jobCard, setJobCard] = useState<JobCard | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const found = fetchJobCard(resolvedParams.id);
-      setJobCard(found);
-      setLoading(false);
-      
+      // Use async IIFE to handle the promise
+      (async () => {
+        const found = await fetchJobCard(resolvedParams.id);
+        setJobCard(found);
+        setLoading(false);
+      })();
+
       // Also listen for storage changes in case job card is updated in another tab
-      const handleStorageChange = (e: StorageEvent) => {
+      const handleStorageChange = async (e: StorageEvent) => {
         if (e.key === "jobCards") {
-          const updated = fetchJobCard(resolvedParams.id);
+          const updated = await fetchJobCard(resolvedParams.id);
           setJobCard(updated);
         }
       };
-      
+
       window.addEventListener("storage", handleStorageChange);
       return () => {
         window.removeEventListener("storage", handleStorageChange);
@@ -113,25 +116,63 @@ export default function AdvisorJobCardDetailPage({ params, searchParams }: Advis
     );
   }
 
-  // Always show the form modal for editing job cards
+  // Render as a full page instead of modal
   return (
-    <JobCardFormModal
-      open={true}
-      mode="edit"
-      jobCardId={jobCard.id}
-      initialValues={jobCardToFormInitialValues(jobCard)}
-      onClose={() => router.push("/sc/job-cards")}
-      onCreated={() => {}} // Not used in edit mode
-      onUpdated={(updatedJobCard) => {
-        // Update local state
-        setJobCard(updatedJobCard);
-        // Redirect to updated job card
-        router.push(`/sc/job-cards/${updatedJobCard.id}`);
-      }}
-      onError={(error) => {
-        console.error("Error updating job card:", error);
-      }}
-    />
+    <div className="min-h-screen bg-gray-50">
+      {/* Header with Back Button */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push("/sc/job-cards")}
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <ArrowLeft size={20} />
+              <span className="font-medium">Back to Job Cards</span>
+            </button>
+            <div className="h-6 w-px bg-gray-300"></div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">
+                {jobCard.jobCardNumber || "Job Card Details"}
+              </h1>
+              <p className="text-sm text-gray-500">
+                {jobCard.customerName} • {jobCard.registration}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${jobCard.status === "Created" ? "bg-blue-100 text-blue-700" :
+              jobCard.status === "In Progress" ? "bg-yellow-100 text-yellow-700" :
+                jobCard.status === "Completed" ? "bg-green-100 text-green-700" :
+                  "bg-gray-100 text-gray-700"
+              }`}>
+              {jobCard.status}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Job Card Form Content */}
+      <div className="max-w-7xl mx-auto py-6 px-6">
+        <JobCardFormModal
+          open={true}
+          mode="edit"
+          jobCardId={jobCard.id}
+          initialValues={jobCardToFormInitialValues(jobCard)}
+          onClose={() => router.push("/sc/job-cards")}
+          onCreated={() => { }} // Not used in edit mode
+          onUpdated={(updatedJobCard) => {
+            // Update local state
+            setJobCard(updatedJobCard);
+            // Navigate back to list
+            router.push("/sc/job-cards");
+          }}
+          onError={(error) => {
+            console.error("Error updating job card:", error);
+          }}
+          isFullPage={true}
+        />
+      </div>
+    </div>
   );
 }
-

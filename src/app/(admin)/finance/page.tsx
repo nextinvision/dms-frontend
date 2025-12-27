@@ -1,76 +1,38 @@
 "use client";
 
 import { useState } from "react";
-import { invoiceData, type LegacyInvoice } from "@/__mocks__/data/invoices.mock";
-import { serviceCentersList } from "@/__mocks__/data/service-centers.mock";
-import { Eye, FileText, BarChart3, Calendar, X, Building, DollarSign, Check, Download, Printer } from "lucide-react";
+import { Search, Filter, Download, BarChart3, Calendar, Eye, X, FileText, Building, DollarSign, Check, Printer, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { invoiceRepository } from "@/core/repositories/invoice.repository";
+import type { ServiceCenterInvoice, PaymentStatus } from "@/shared/types/invoice.types";
 
-// Types - LegacyInvoice imported from mock data
-
-interface DetailedInvoice extends LegacyInvoice {
-  location: string;
-  paymentTerms: string;
-  amountBreakdown: {
-    laborCost: string;
-    partsCost: string;
-    tax: string;
-    total: string;
-  };
-  paymentDate: string | null;
-}
-
-interface ReportFormData {
-  reportType: string;
-  fromDate: string;
-  toDate: string;
-  selectedServiceCenters: string[];
-  paymentStatus: string;
-  exportFormat: string;
-}
-
-// Helper function to get detailed invoice data
-const getDetailedInvoiceData = (invoice: LegacyInvoice): DetailedInvoice => {
-  // Service center locations mapping
-  const scLocations: Record<string, string> = {
-    "Delhi Central Hub": "Connaught Place, New Delhi",
-    "Mumbai Metroplex": "Bandra Kurla Complex, Mumbai",
-    "Bangalore Innovation Center": "Whitefield, Bangalore",
-    "Pune Elite Care": "Hinjawadi, Pune",
-    "Hyderabad Excellence": "HITEC City, Hyderabad",
-  };
-
-  // Calculate amount breakdown (simplified calculation)
-  const totalAmount = parseInt(invoice.amount.replace(/[₹,]/g, ""));
-  const laborCost = Math.round(totalAmount * 0.5);
-  const partsCost = Math.round(totalAmount * 0.35);
-  const tax = totalAmount - laborCost - partsCost;
-
-  // Payment date (if paid, set to a date after issue date)
-  const paymentDate = invoice.paymentStatus === "Paid" 
-    ? new Date(new Date(invoice.dateIssued).getTime() + 5 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-    : null;
-
-  return {
-    ...invoice,
-    location: scLocations[invoice.scName] || "Location not specified",
-    paymentTerms: "Net 7 days",
-    amountBreakdown: {
-      laborCost: `₹${laborCost.toLocaleString("en-IN")}`,
-      partsCost: `₹${partsCost.toLocaleString("en-IN")}`,
-      tax: `₹${tax.toLocaleString("en-IN")}`,
-      total: invoice.amount,
-    },
-    paymentDate: paymentDate,
-  };
+// Helper to format currency
+const formatCurrency = (amount: number | string | undefined) => {
+  if (amount === undefined || amount === null) return "₹0";
+  const num = typeof amount === 'string' ? parseFloat(amount.replace(/[₹,]/g, "")) : amount;
+  return isNaN(num) ? "₹0" : `₹${num.toLocaleString("en-IN")}`;
 };
 
-// All data imported from __mocks__/data
+// Map backend status to UI color
+const getStatusBadgeClass = (status: PaymentStatus): string => {
+  switch (status) {
+    case "Paid":
+      return "bg-green-100 text-green-800";
+    case "Unpaid":
+    case "Partially Paid":
+      return "bg-orange-100 text-orange-800";
+    case "Overdue":
+      return "bg-red-100 text-red-800";
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
+};
 
 export default function FinancePage() {
-  const [selectedInvoice, setSelectedInvoice] = useState<LegacyInvoice | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<ServiceCenterInvoice | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  
+
   // Report form state
   const [reportType, setReportType] = useState("");
   const [fromDate, setFromDate] = useState("2024-10-01");
@@ -79,18 +41,53 @@ export default function FinancePage() {
   const [paymentStatus, setPaymentStatus] = useState("All Status");
   const [exportFormat, setExportFormat] = useState("PDF");
 
-  // Calculate summary statistics
-  const totalPaid = invoiceData.filter((inv) => inv.paymentStatus === "Paid");
-  const pending = invoiceData.filter((inv) => inv.paymentStatus === "Pending");
-  const overdue = invoiceData.filter((inv) => inv.paymentStatus === "Overdue");
+  // Fetch Invoices
+  const { data: invoices = [], isLoading, isError } = useQuery({
+    queryKey: ['invoices'],
+    queryFn: () => invoiceRepository.getAll(),
+  });
 
-  // Calculate amounts (simplified - in real app, parse amounts properly)
-  const totalPaidAmount = "₹61.7K";
-  const pendingAmount = "₹28.4K";
-  const overdueAmount = "₹16.5K";
-  const todayRevenue = "₹19.1K";
+  // Calculate Summary Statistics
+  const stats = invoices.reduce((acc, inv) => {
+    const amount = inv.grandTotal || parseFloat(inv.amount || "0");
+    if (isNaN(amount)) return acc;
 
-  const handleViewDetails = (invoice: LegacyInvoice) => {
+    // Total Paid
+    if (inv.status === "Paid") {
+      acc.totalPaid.count++;
+      acc.totalPaid.amount += amount;
+    }
+    // Pending (Unpaid or Partially Paid)
+    else if (inv.status === "Unpaid" || inv.status === "Partially Paid") {
+      acc.pending.count++;
+      acc.pending.amount += amount;
+    }
+    // Overdue
+    else if (inv.status === "Overdue") {
+      acc.overdue.count++;
+      acc.overdue.amount += amount;
+    }
+
+    // Today's Revenue (Simple check on date string match)
+    const today = new Date().toISOString().split("T")[0];
+    if (inv.date && inv.date.startsWith(today)) {
+      acc.todayRevenue += amount;
+    }
+
+    return acc;
+  }, {
+    totalPaid: { count: 0, amount: 0 },
+    pending: { count: 0, amount: 0 },
+    overdue: { count: 0, amount: 0 },
+    todayRevenue: 0
+  });
+
+  const getServiceCentersList = () => {
+    const names = new Set(invoices.map(i => i.serviceCenterName).filter(Boolean));
+    return ["All Service Centers", ...Array.from(names)];
+  };
+
+  const handleViewDetails = (invoice: ServiceCenterInvoice) => {
     setSelectedInvoice(invoice);
     setShowModal(true);
   };
@@ -114,25 +111,18 @@ export default function FinancePage() {
   };
 
   const handleExportReport = () => {
-    // Handle report export
-    // TODO: Implement report export functionality
-    // Exporting report with: reportType, fromDate, toDate, selectedServiceCenters, paymentStatus, exportFormat
-    // Close modal after export
+    // Handle report export logic here
+    console.log("Exporting report:", { reportType, fromDate, toDate, selectedServiceCenters, paymentStatus, exportFormat });
     handleCloseReportModal();
   };
 
-  const getStatusBadgeClass = (status: LegacyInvoice["paymentStatus"]): string => {
-    switch (status) {
-      case "Paid":
-        return "bg-green-100 text-green-800";
-      case "Pending":
-        return "bg-orange-100 text-orange-800";
-      case "Overdue":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+  if (isLoading) {
+    return (
+      <div className="flex bg-[#f9f9fb] min-h-screen items-center justify-center">
+        <Loader2 className="animate-spin text-blue-600 w-8 h-8" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f9f9fb] p-4 sm:p-6 lg:p-8">
@@ -158,11 +148,11 @@ export default function FinancePage() {
               </p>
             </div>
             <div className="mb-2">
-              <p className="text-2xl font-bold text-green-600">{totalPaidAmount}</p>
+              <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.totalPaid.amount)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">
-                {totalPaid.length} invoices
+                {stats.totalPaid.count} invoices
               </p>
             </div>
           </div>
@@ -176,12 +166,12 @@ export default function FinancePage() {
             </div>
             <div className="mb-2">
               <p className="text-2xl font-bold text-orange-600">
-                {pendingAmount}
+                {formatCurrency(stats.pending.amount)}
               </p>
             </div>
             <div>
               <p className="text-sm text-gray-600">
-                {pending.length} invoices
+                {stats.pending.count} invoices
               </p>
             </div>
           </div>
@@ -194,11 +184,11 @@ export default function FinancePage() {
               </p>
             </div>
             <div className="mb-2">
-              <p className="text-2xl font-bold text-red-600">{overdueAmount}</p>
+              <p className="text-2xl font-bold text-red-600">{formatCurrency(stats.overdue.amount)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">
-                {overdue.length} invoices
+                {stats.overdue.count} invoices
               </p>
             </div>
           </div>
@@ -211,11 +201,11 @@ export default function FinancePage() {
               </p>
             </div>
             <div className="mb-2">
-              <p className="text-2xl font-bold text-blue-600">{todayRevenue}</p>
+              <p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.todayRevenue)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">
-                As of {new Date().toISOString().split("T")[0]}
+                As of {new Date().toLocaleDateString()}
               </p>
             </div>
           </div>
@@ -266,16 +256,16 @@ export default function FinancePage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {invoiceData.length > 0 ? (
-                  invoiceData.map((invoice) => (
+                {invoices.length > 0 ? (
+                  invoices.map((invoice) => (
                     <tr key={invoice.id} className="hover:bg-gray-50">
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span className="text-blue-600 font-medium cursor-pointer hover:underline">
-                          {invoice.id}
+                          {invoice.invoiceNumber || invoice.id.substring(0, 8)}
                         </span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <span className="text-gray-900">{invoice.scName}</span>
+                        <span className="text-gray-900">{invoice.serviceCenterName || "N/A"}</span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span className="text-gray-900">
@@ -284,22 +274,22 @@ export default function FinancePage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span className="text-gray-900 font-medium">
-                          {invoice.amount}
+                          {formatCurrency(invoice.grandTotal || invoice.amount)}
                         </span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <span className="text-gray-900">{invoice.dateIssued}</span>
+                        <span className="text-gray-900">{invoice.date ? new Date(invoice.date).toLocaleDateString() : 'N/A'}</span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <span className="text-gray-900">{invoice.dueDate}</span>
+                        <span className="text-gray-900">{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}</span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(
-                            invoice.paymentStatus
+                            invoice.status
                           )}`}
                         >
-                          {invoice.paymentStatus}
+                          {invoice.status}
                         </span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
@@ -417,12 +407,12 @@ export default function FinancePage() {
                   size={6}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-black"
                 >
-                  {serviceCentersList.map((center) => (
+                  {getServiceCentersList().map((center) => (
                     <option
-                      key={center}
-                      value={center}
+                      key={center as string}
+                      value={center as string}
                       className={
-                        selectedServiceCenters.includes(center)
+                        selectedServiceCenters.includes(center as string)
                           ? "bg-blue-100 text-black"
                           : "text-black"
                       }
@@ -448,7 +438,7 @@ export default function FinancePage() {
                 >
                   <option value="All Status">All Status</option>
                   <option value="Paid">Paid</option>
-                  <option value="Pending">Pending</option>
+                  <option value="Unpaid">Unpaid / Pending</option>
                   <option value="Overdue">Overdue</option>
                 </select>
               </div>
@@ -492,248 +482,241 @@ export default function FinancePage() {
       )}
 
       {/* Invoice Detail Modal */}
-      {showModal && selectedInvoice && (() => {
-        const detailedInvoice = getDetailedInvoiceData(selectedInvoice);
-        return (
-          <div key={selectedInvoice.id} className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              {/* Modal Header */}
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-bold text-black">
-                    Invoice {detailedInvoice.id}
-                  </h2>
-                  <span
-                    className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-medium ${
-                      detailedInvoice.paymentStatus === "Paid"
-                        ? "bg-green-100 text-black"
-                        : detailedInvoice.paymentStatus === "Pending"
-                        ? "bg-orange-100 text-black"
-                        : "bg-red-100 text-black"
-                    }`}
-                  >
-                    {detailedInvoice.paymentStatus}
-                  </span>
-                </div>
-                <button
-                  onClick={handleCloseModal}
-                  className="text-gray-400 hover:text-gray-600"
+      {showModal && selectedInvoice && (
+        <div key={selectedInvoice.id} className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-bold text-black">
+                  Invoice {selectedInvoice.invoiceNumber || selectedInvoice.id}
+                </h2>
+                <span
+                  className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-medium ${getStatusBadgeClass(selectedInvoice.status)}`}
                 >
-                  <X size={24} />
-                </button>
+                  {selectedInvoice.status}
+                </span>
               </div>
+              <button
+                onClick={handleCloseModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
 
-              {/* Modal Content */}
-              <div className="p-6 space-y-6">
-                {/* Invoice Details and Service Center Row */}
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Invoice Details Section */}
-                  <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
-                    <div className="flex items-center gap-2 mb-4">
-                      <FileText className="text-blue-600" size={20} />
-                      <h3 className="text-lg font-semibold text-blue-600">
-                        Invoice Details
-                      </h3>
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Invoice Details and Service Center Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Invoice Details Section */}
+                <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
+                  <div className="flex items-center gap-2 mb-4">
+                    <FileText className="text-blue-600" size={20} />
+                    <h3 className="text-lg font-semibold text-blue-600">
+                      Invoice Details
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
+                        Invoice ID
+                      </label>
+                      <p className="text-base text-black font-bold">
+                        {selectedInvoice.invoiceNumber || selectedInvoice.id}
+                      </p>
                     </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
-                          Invoice ID
-                        </label>
-                        <p className="text-base text-black font-bold">
-                          {detailedInvoice.id}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
-                          Date Issued
-                        </label>
-                        <p className="text-base text-black">
-                          {detailedInvoice.dateIssued}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
-                          Due Date
-                        </label>
-                        <p className="text-base text-black">
-                          {detailedInvoice.dueDate}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
-                          Payment Terms
-                        </label>
-                        <p className="text-base text-black">
-                          {detailedInvoice.paymentTerms}
-                        </p>
-                      </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
+                        Date Issued
+                      </label>
+                      <p className="text-base text-black">
+                        {selectedInvoice.date ? new Date(selectedInvoice.date).toLocaleDateString() : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
+                        Due Date
+                      </label>
+                      <p className="text-base text-black">
+                        {selectedInvoice.dueDate ? new Date(selectedInvoice.dueDate).toLocaleDateString() : 'N/A'}
+                      </p>
+                    </div>
+                    {/* Payment Terms hardcoded mostly for now unless in BE */}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
+                        Payment Terms
+                      </label>
+                      <p className="text-base text-black">
+                        Net 7 days
+                      </p>
                     </div>
                   </div>
+                </div>
 
-                  {/* Service Center Section */}
-                  <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Building className="text-blue-600" size={20} />
-                      <h3 className="text-lg font-semibold text-blue-600">
-                        Service Center
-                      </h3>
+                {/* Service Center Section */}
+                <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Building className="text-blue-600" size={20} />
+                    <h3 className="text-lg font-semibold text-blue-600">
+                      Service Center & Customer
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
+                        SC Name
+                      </label>
+                      <p className="text-base text-black font-bold">
+                        {selectedInvoice.serviceCenterName || "N/A"}
+                      </p>
                     </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
-                          SC Name
-                        </label>
-                        <p className="text-base text-black font-bold">
-                          {detailedInvoice.scName}
-                        </p>
-                      </div>
+                    {selectedInvoice.serviceCenterDetails?.address && (
                       <div>
                         <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
                           Location
                         </label>
                         <p className="text-base text-black">
-                          {detailedInvoice.location}
+                          {selectedInvoice.serviceCenterDetails.address}
                         </p>
                       </div>
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
-                          Customer
-                        </label>
-                        <p className="text-base text-black font-bold">
-                          {detailedInvoice.customerName}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Amount Breakdown Section */}
-                <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
-                  <div className="flex items-center gap-2 mb-4">
-                    <DollarSign className="text-blue-600" size={20} />
-                    <h3 className="text-lg font-semibold text-blue-600">
-                      Amount Breakdown
-                    </h3>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-base text-black">Labor Cost:</span>
-                      <span className="text-base text-black font-medium">
-                        {detailedInvoice.amountBreakdown.laborCost}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-base text-black">Parts Cost:</span>
-                      <span className="text-base text-black font-medium">
-                        {detailedInvoice.amountBreakdown.partsCost}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-base text-black">Tax (GST):</span>
-                      <span className="text-base text-black font-medium">
-                        {detailedInvoice.amountBreakdown.tax}
-                      </span>
-                    </div>
-                    <div className="border-t border-gray-300 pt-3 mt-3">
-                      <div className="flex justify-between">
-                        <span className="text-base text-black font-bold">
-                          Total Amount:
-                        </span>
-                        <span className="text-base text-green-600 font-bold">
-                          {detailedInvoice.amountBreakdown.total}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Payment Status Section */}
-                <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
-                  <div className="flex items-center gap-2 mb-4">
-                    <BarChart3 className="text-blue-600" size={20} />
-                    <h3 className="text-lg font-semibold text-blue-600">
-                      Payment Status
-                    </h3>
-                  </div>
-                  <div
-                    className={`rounded-lg p-4 ${
-                      detailedInvoice.paymentStatus === "Paid"
-                        ? "bg-green-100"
-                        : detailedInvoice.paymentStatus === "Pending"
-                        ? "bg-orange-100"
-                        : "bg-red-100"
-                    }`}
-                  >
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-sm font-medium text-black">
-                          Status:{" "}
-                        </span>
-                        <span className="text-sm font-bold text-black">
-                          {detailedInvoice.paymentStatus}
-                        </span>
-                      </div>
-                      {detailedInvoice.paymentDate && (
-                        <div className="flex items-center gap-2">
-                          <Check
-                            className="text-green-600"
-                            size={16}
-                          />
-                          <span className="text-sm text-black">
-                            Paid on {detailedInvoice.paymentDate}
-                          </span>
-                        </div>
-                      )}
-                      <div>
-                        <span className="text-sm text-black">
-                          Amount Paid:{" "}
-                        </span>
-                        <span className="text-sm font-bold text-black">
-                          {detailedInvoice.amountBreakdown.total}
-                        </span>
-                      </div>
+                    )}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 uppercase block mb-1">
+                        Customer
+                      </label>
+                      <p className="text-base text-black font-bold">
+                        {selectedInvoice.customerName}
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Modal Footer - Action Buttons */}
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-between">
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      // TODO: Implement PDF download
-                      window.open(`/api/invoices/${detailedInvoice.id}/pdf`, "_blank");
-                    }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-black hover:bg-gray-50 transition font-medium flex items-center gap-2"
-                  >
-                    <Download size={16} />
-                    Download PDF
-                  </button>
-                  <button
-                    onClick={() => window.print()}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-black hover:bg-gray-50 transition font-medium flex items-center gap-2"
-                  >
-                    <Printer size={16} />
-                    Print
-                  </button>
+              {/* Amount Breakdown Section */}
+              <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
+                <div className="flex items-center gap-2 mb-4">
+                  <DollarSign className="text-blue-600" size={20} />
+                  <h3 className="text-lg font-semibold text-blue-600">
+                    Amount Breakdown
+                  </h3>
                 </div>
-                <button
-                  onClick={() => {
-                    // TODO: Implement credit note creation
-                    alert("Credit note creation feature coming soon");
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-red-600 hover:bg-red-50 transition font-medium flex items-center gap-2"
+                <div className="space-y-3">
+                  {selectedInvoice.subtotal !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-base text-black">Subtotal:</span>
+                      <span className="text-base text-black font-medium">
+                        {formatCurrency(selectedInvoice.subtotal)}
+                      </span>
+                    </div>
+                  )}
+                  {selectedInvoice.totalTax !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-base text-black">Total Tax:</span>
+                      <span className="text-base text-black font-medium">
+                        {formatCurrency(selectedInvoice.totalTax)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="border-t border-gray-300 pt-3 mt-3">
+                    <div className="flex justify-between">
+                      <span className="text-base text-black font-bold">
+                        Total Amount:
+                      </span>
+                      <span className="text-base text-green-600 font-bold">
+                        {formatCurrency(selectedInvoice.grandTotal || selectedInvoice.amount)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Status Section */}
+              <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="text-blue-600" size={20} />
+                  <h3 className="text-lg font-semibold text-blue-600">
+                    Payment Status
+                  </h3>
+                </div>
+                <div
+                  className={`rounded-lg p-4 ${selectedInvoice.status === "Paid"
+                    ? "bg-green-100"
+                    : selectedInvoice.status === "Unpaid"
+                      ? "bg-orange-100"
+                      : "bg-red-100"
+                    }`}
                 >
-                  <FileText size={16} />
-                  Create Credit Note
-                </button>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-sm font-medium text-black">
+                        Status:{" "}
+                      </span>
+                      <span className="text-sm font-bold text-black">
+                        {selectedInvoice.status}
+                      </span>
+                    </div>
+                    {/* Assuming we might have payment date in future extended type */}
+                    {selectedInvoice.status === 'Paid' && (
+                      <div className="flex items-center gap-2">
+                        <Check
+                          className="text-green-600"
+                          size={16}
+                        />
+                        <span className="text-sm text-black">
+                          Paid {selectedInvoice.balance ? `(Balance: ${formatCurrency(selectedInvoice.balance)})` : ''}
+                        </span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-sm text-black">
+                        Total Amount:{" "}
+                      </span>
+                      <span className="text-sm font-bold text-black">
+                        {formatCurrency(selectedInvoice.grandTotal || selectedInvoice.amount)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Modal Footer - Action Buttons */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-between">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    // Start download
+                    // window.open(`/api/invoices/${selectedInvoice.id}/pdf`, "_blank");
+                    alert("Download started...");
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-black hover:bg-gray-50 transition font-medium flex items-center gap-2"
+                >
+                  <Download size={16} />
+                  Download PDF
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-black hover:bg-gray-50 transition font-medium flex items-center gap-2"
+                >
+                  <Printer size={16} />
+                  Print
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  alert("Credit note creation feature coming soon");
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-red-600 hover:bg-red-50 transition font-medium flex items-center gap-2"
+              >
+                <FileText size={16} />
+                Create Credit Note
+              </button>
+            </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 }

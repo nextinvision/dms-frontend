@@ -6,19 +6,19 @@
 import type { ServiceLocation, Priority } from './common.types';
 
 export type JobCardStatus =
-  | "arrival_pending"
-  | "job_card_pending_vehicle"
-  | "job_card_active"
-  | "check_in_only"
-  | "no_response_lead"
-  | "manager_quote"
-  | "Awaiting Quotation Approval"
-  | "Created"
-  | "Assigned"
-  | "In Progress"
-  | "Parts Pending"
-  | "Completed"
-  | "Invoiced";
+  | "ARRIVAL_PENDING"
+  | "JOB_CARD_PENDING_VEHICLE"
+  | "JOB_CARD_ACTIVE"
+  | "CHECK_IN_ONLY"
+  | "NO_RESPONSE_LEAD"
+  | "MANAGER_QUOTE"
+  | "AWAITING_QUOTATION_APPROVAL"
+  | "CREATED"
+  | "ASSIGNED"
+  | "IN_PROGRESS"
+  | "PARTS_PENDING"
+  | "COMPLETED"
+  | "INVOICED";
 
 /**
  * PART 1 — CUSTOMER & VEHICLE INFORMATION
@@ -35,20 +35,20 @@ export interface JobCardPart1 {
   variantBatteryCapacity: string;
   warrantyStatus: string;
   estimatedDeliveryDate: string;
-  
+
   // RIGHT SIDE
   customerAddress: string;
-  
+
   // TOP RIGHT
   jobCardNumber: string;
-  
+
   // BELOW DETAILS (Text Blocks)
   customerFeedback: string; // Customer Feedback / Concerns
   technicianObservation: string;
   insuranceStartDate: string;
   insuranceEndDate: string;
   insuranceCompanyName: string;
-  
+
   // MANDATORY SERIAL DATA (only if applicable)
   batterySerialNumber: string;
   mcuSerialNumber: string;
@@ -61,7 +61,7 @@ export interface JobCardPart1 {
  */
 export interface JobCardPart2Item {
   srNo: number; // Auto-generate starting from 1
-  partWarrantyTag: string; // Job Card Line Name
+  partWarrantyTag: boolean; // Warranty status (true = under warranty, false = not under warranty)
   partName: string; // Clean name from description
   partCode: string; // First alphanumeric block from description
   qty: number; // Quantity
@@ -159,22 +159,30 @@ export interface JobCard {
   // Warranty information (legacy)
   warrantyStatus?: string;
   warrantyDetails?: string;
-  sourceAppointmentId?: number;
+  sourceAppointmentId?: number | string;
   isTemporary?: boolean;
   customerArrivalTimestamp?: string;
   draftIntake?: Record<string, any>;
-  
+
   // Service Advisor submission to manager
   submittedToManager?: boolean;
   submittedAt?: string;
-  
+
+  // Manager Approval Workflow
+  passedToManager?: boolean;
+  passedToManagerAt?: Date | string;
+  managerId?: string;
+  managerReviewStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  managerReviewNotes?: string;
+  managerReviewedAt?: Date | string;
+
   // Invoice workflow
   invoiceNumber?: string;
   invoiceCreatedAt?: string;
   invoiceSentToAdvisor?: boolean;
   invoiceSentToCustomer?: boolean;
   invoiceSentAt?: string;
-  
+
   // Additional appointment data fields
   customerWhatsappNumber?: string;
   customerAlternateMobile?: string;
@@ -200,7 +208,7 @@ export interface JobCard {
   checkInSlipNumber?: string;
   checkInDate?: string;
   checkInTime?: string;
-  
+
   // NEW STRUCTURED DATA (PART 1, PART 2, PART 2A, PART 3)
   part1?: JobCardPart1; // Customer & Vehicle Information
   part2?: JobCardPart2Item[]; // Parts & Work Items List
@@ -213,4 +221,9 @@ export interface KanbanColumn {
   title: string;
   status: JobCardStatus;
 }
+
+// ViewType is exported from common.types.ts
+// Job cards support list, kanban, and table views
+export type JobCardViewType = "kanban" | "list" | "table";
+export type JobCardFilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
 

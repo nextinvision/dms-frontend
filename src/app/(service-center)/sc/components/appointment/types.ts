@@ -1,5 +1,17 @@
-import { defaultServiceCenters } from "@/__mocks__/data/service-centers.mock";
-import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+
+const safeStorage = {
+  getItem: <T,>(key: string, defaultValue: T): T => {
+    if (typeof window === "undefined") return defaultValue;
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch (error) {
+      console.error(`Error reading ${key} from localStorage:`, error);
+      return defaultValue;
+    }
+  }
+};
+import { staticServiceCenters } from "@/shared/types";
 
 export type AppointmentStatus = "Confirmed" | "Pending" | "Cancelled";
 
@@ -13,10 +25,10 @@ export interface Appointment {
   time: string;
   duration: string;
   status: string;
-  serviceCenterId?: number;
+  serviceCenterId?: string | number;
   serviceCenterName?: string;
   customerType?: "B2C" | "B2B";
-  customerComplaintIssue?: string;
+  customerComplaint?: string;
   previousServiceHistory?: string;
   estimatedServiceTime?: string;
   estimatedCost?: string;
@@ -43,10 +55,10 @@ export interface Appointment {
   feedbackRating?: number; // Customer feedback rating (1-5 stars)
 }
 
-export interface DocumentationFiles {
-  files: File[];
-  urls: string[];
-}
+// Import and re-export from shared types
+import type { DocumentationFiles } from '@/shared/types/documentation.types';
+export type { DocumentationFiles };
+export { INITIAL_DOCUMENTATION_FILES } from '@/shared/types/documentation.types';
 
 export interface AppointmentForm {
   customerName: string;
@@ -56,10 +68,10 @@ export interface AppointmentForm {
   date: string;
   time: string;
   duration: string;
-  serviceCenterId?: number;
+  serviceCenterId?: string | number;
   serviceCenterName?: string;
   customerType?: "B2C" | "B2B";
-  customerComplaintIssue?: string;
+  customerComplaint?: string;
   previousServiceHistory?: string;
   estimatedServiceTime?: string;
   estimatedCost?: string;
@@ -81,15 +93,15 @@ export interface AppointmentForm {
   dropCity?: string;
   dropPincode?: string;
   preferredCommunicationMode?: "Phone" | "Email" | "SMS" | "WhatsApp";
-  
+
   // Customer Contact & Address Fields
   whatsappNumber?: string;
-  alternateMobile?: string;
+  alternateNumber?: string;
   email?: string;
   address?: string;
   cityState?: string;
   pincode?: string;
-  
+
   // Vehicle Information Fields
   vehicleBrand?: string;
   vehicleModel?: string;
@@ -105,14 +117,14 @@ export interface AppointmentForm {
   insuranceEndDate?: string;
   insuranceCompanyName?: string;
   vehicleColor?: string;
-  
+
   // Job Card Conversion Fields
   batterySerialNumber?: string;
   mcuSerialNumber?: string;
   vcuSerialNumber?: string;
   otherPartSerialNumber?: string;
   technicianObservation?: string;
-  
+
   // Service Intake/Check-in Fields
   arrivalMode?: "vehicle_present" | "vehicle_absent" | "check_in_only";
   checkInNotes?: string;
@@ -120,11 +132,6 @@ export interface AppointmentForm {
   checkInDate?: string;
   checkInTime?: string;
 }
-
-export const INITIAL_DOCUMENTATION_FILES: DocumentationFiles = {
-  files: [],
-  urls: [],
-};
 
 export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   customerName: "",
@@ -137,7 +144,7 @@ export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   serviceCenterId: undefined,
   serviceCenterName: undefined,
   customerType: undefined,
-  customerComplaintIssue: undefined,
+  customerComplaint: undefined,
   previousServiceHistory: undefined,
   estimatedServiceTime: undefined,
   estimatedCost: undefined,
@@ -161,7 +168,7 @@ export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
   preferredCommunicationMode: undefined,
   // Customer Contact & Address Fields
   whatsappNumber: undefined,
-  alternateMobile: undefined,
+  alternateNumber: undefined,
   email: undefined,
   address: undefined,
   cityState: undefined,
@@ -244,7 +251,7 @@ export const findNearestServiceCenter = (customerAddress: string | undefined): n
     }
   }
 
-  const activeCenters = defaultServiceCenters.filter((sc) => sc.status === "Active");
-  return activeCenters.length > 0 ? activeCenters[0].id : null;
+  const activeCenters = staticServiceCenters.filter((sc) => sc.status === "Active");
+  return activeCenters.length > 0 ? Number(activeCenters[0].id) : null;
 };
 

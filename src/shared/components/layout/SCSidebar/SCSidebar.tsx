@@ -24,7 +24,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import type { UserRole } from "@/shared/types";
 import { useRole } from "@/shared/hooks";
-import { safeStorage } from "@/shared/lib/localStorage";
+// safeStorage import removed
 
 interface MenuItem {
   name: string;
@@ -41,7 +41,7 @@ export interface SCSidebarProps {
 const roleMenus: Record<UserRole, MenuItem[]> = {
   sc_manager: [
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
+    { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
     { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
     { name: "Workshop", icon: Wrench, href: "/sc/workshop" },
@@ -63,7 +63,7 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
   ],
   service_advisor: [
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
+    { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
     { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
     { name: "Leads", icon: Users, href: "/sc/leads" },
@@ -72,12 +72,11 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
   ],
   call_center: [
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
-    { name: "Customer Find", icon: UserCircle, href: "/sc/customer-find" },
+    { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
     { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
   ],
   admin: [],
-  super_admin: [],
   inventory_manager: [],
   central_inventory_manager: [],
 };
@@ -99,7 +98,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
   // Use role from hook (most reliable) - it reads directly from localStorage
   // Use consistent role during SSR to avoid hydration mismatch
   // Default to sc_manager during SSR, then use actual role after mount
-  const effectiveRole = (isMounted && userRole && userRole !== "admin" && userRole !== "super_admin")
+  const effectiveRole = (isMounted && userRole && userRole !== "admin")
     ? userRole
     : (roleProp || "sc_manager");
   // Always use the same menu structure - roleProp should be provided from parent
@@ -114,25 +113,32 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
   };
 
   const handleLogout = () => {
-    safeStorage.removeItem("userRole");
-    safeStorage.removeItem("userInfo");
-    safeStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userInfo");
+    localStorage.removeItem("isLoggedIn");
     router.push("/");
   };
+
+  // Hydration-safe open state
+  const [isOpen, setIsOpen] = useState(true);
+
+  useEffect(() => {
+    // Only update to prop value after mount to prevent hydration mismatch
+    setIsOpen(open);
+  }, [open]);
 
   return (
     <aside
       className={clsx(
         "fixed left-0 bg-white/95 backdrop-blur-md text-gray-900 flex flex-col justify-between shadow-lg z-40 transition-all duration-300 ease-in-out",
         "w-64 top-16 h-[calc(100vh-4rem)]",
-        open ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-        open ? "md:w-64" : "md:w-20"
+        isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        isOpen ? "md:w-64" : "md:w-20"
       )}
     >
       <nav className="mt-2 flex flex-col flex-grow overflow-y-auto px-2 py-2">
         {menu.length > 0 && menu.map((item) => {
           const Icon = item.icon;
-          // Check active state - pathname is available on both server and client
           const active = pathname === item.href;
           return (
             <Link
@@ -145,22 +151,22 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
               }}
               className={clsx(
                 "flex items-center text-sm transition-all duration-200 rounded-lg",
-                open ? "gap-3 px-4 py-2.5" : "justify-center px-0 py-2.5 md:px-0",
+                isOpen ? "gap-3 px-4 py-2.5" : "justify-center px-0 py-2.5 md:px-0",
                 active
                   ? "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-medium shadow-sm"
                   : "text-gray-600 hover:bg-gray-50 hover:text-indigo-600"
               )}
-              title={!open ? item.name : ""}
+              title={!isOpen ? item.name : ""}
             >
-              <Icon 
-                size={18} 
+              <Icon
+                size={18}
                 className={clsx(
                   "flex-shrink-0 transition-colors",
                   active ? "text-white" : "text-gray-500"
                 )}
                 strokeWidth={active ? 2.5 : 2}
               />
-              {open && <span className="whitespace-nowrap font-medium">{item.name}</span>}
+              {isOpen && <span className="whitespace-nowrap font-medium">{item.name}</span>}
             </Link>
           );
         })}
@@ -169,10 +175,10 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
       <div
         className={clsx(
           "bg-gradient-to-br from-gray-50/50 to-white transition-all duration-300",
-          open ? "p-5" : "p-4 md:p-4"
+          isOpen ? "p-5" : "p-4 md:p-4"
         )}
       >
-        {open ? (
+        {isOpen ? (
           <>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-600 to-indigo-700 flex items-center justify-center text-white font-semibold shadow-sm">
