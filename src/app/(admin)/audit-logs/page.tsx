@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   ClipboardList,
   Search,
@@ -13,112 +13,39 @@ import {
   XCircle,
   AlertTriangle,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
-
-interface AuditLog {
-  id: string;
-  userId: string;
-  userName: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  status: "success" | "failure" | "warning";
-  ipAddress: string;
-  userAgent: string;
-  timestamp: string;
-  details?: string;
-}
+import { useQuery } from "@tanstack/react-query";
+import { auditLogRepository } from "@/core/repositories/audit-log.repository";
+import type { AuditLog } from "@/shared/types/audit-log.types";
 
 export default function AuditLogsPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([
-    {
-      id: "1",
-      userId: "user1",
-      userName: "Rajesh Kumar Singh",
-      action: "CREATE",
-      entityType: "User",
-      entityId: "user123",
-      status: "success",
-      ipAddress: "192.168.1.100",
-      userAgent: "Chrome/120.0",
-      timestamp: "2024-11-15 10:30:25",
-      details: "Created new user: Delhi Manager",
-    },
-    {
-      id: "2",
-      userId: "user2",
-      userName: "Delhi Manager",
-      action: "UPDATE",
-      entityType: "JobCard",
-      entityId: "jc456",
-      status: "success",
-      ipAddress: "192.168.1.101",
-      userAgent: "Firefox/121.0",
-      timestamp: "2024-11-15 11:15:42",
-      details: "Updated job card status to In Progress",
-    },
-    {
-      id: "3",
-      userId: "user1",
-      userName: "Rajesh Kumar Singh",
-      action: "DELETE",
-      entityType: "Inventory",
-      entityId: "inv789",
-      status: "warning",
-      ipAddress: "192.168.1.100",
-      userAgent: "Chrome/120.0",
-      timestamp: "2024-11-15 09:20:10",
-      details: "Deleted inventory item: Engine Oil",
-    },
-    {
-      id: "4",
-      userId: "user3",
-      userName: "Finance Manager",
-      action: "LOGIN",
-      entityType: "Auth",
-      entityId: "auth001",
-      status: "failure",
-      ipAddress: "192.168.1.102",
-      userAgent: "Safari/17.0",
-      timestamp: "2024-11-15 08:45:33",
-      details: "Failed login attempt - Invalid password",
-    },
-  ]);
-
-  const [filteredLogs, setFilteredLogs] = useState<AuditLog[]>(logs);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
-  const handleSearch = (value: string) => {
-    setSearchTerm(value);
-    applyFilters(value, statusFilter, actionFilter);
-  };
+  // Fetch Logs
+  const { data: logs = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['auditLogs'],
+    queryFn: () => auditLogRepository.getAll(),
+  });
 
-  const applyFilters = (search: string, status: string, action: string) => {
-    let filtered = [...logs];
+  // Derived filtered logs
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      const matchesSearch = searchTerm.trim() === "" ||
+        log.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        log.entityType.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        log.details?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    if (search.trim()) {
-      filtered = filtered.filter(
-        (log) =>
-          log.userName.toLowerCase().includes(search.toLowerCase()) ||
-          log.action.toLowerCase().includes(search.toLowerCase()) ||
-          log.entityType.toLowerCase().includes(search.toLowerCase()) ||
-          log.details?.toLowerCase().includes(search.toLowerCase())
-      );
-    }
+      const matchesStatus = statusFilter === "all" || log.status === statusFilter;
+      const matchesAction = actionFilter === "all" || log.action === actionFilter;
 
-    if (status !== "all") {
-      filtered = filtered.filter((log) => log.status === status);
-    }
-
-    if (action !== "all") {
-      filtered = filtered.filter((log) => log.action === action);
-    }
-
-    setFilteredLogs(filtered);
-  };
+      return matchesSearch && matchesStatus && matchesAction;
+    });
+  }, [logs, searchTerm, statusFilter, actionFilter]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -137,6 +64,21 @@ export default function AuditLogsPage() {
     // TODO: Implement CSV/Excel export
     alert("Exporting audit logs...");
   };
+
+  const handleReset = () => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setActionFilter("all");
+    refetch(); // Also refresh data
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex bg-gray-50 min-h-screen items-center justify-center">
+        <Loader2 className="animate-spin text-indigo-600 w-8 h-8" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 min-h-screen bg-gray-50">
@@ -165,16 +107,13 @@ export default function AuditLogsPage() {
               type="text"
               placeholder="Search logs..."
               value={searchTerm}
-              onChange={(e) => handleSearch(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             />
           </div>
           <select
             value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              applyFilters(searchTerm, e.target.value, actionFilter);
-            }}
+            onChange={(e) => setStatusFilter(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
           >
             <option value="all">All Status</option>
@@ -184,10 +123,7 @@ export default function AuditLogsPage() {
           </select>
           <select
             value={actionFilter}
-            onChange={(e) => {
-              setActionFilter(e.target.value);
-              applyFilters(searchTerm, statusFilter, e.target.value);
-            }}
+            onChange={(e) => setActionFilter(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
           >
             <option value="all">All Actions</option>
@@ -198,12 +134,7 @@ export default function AuditLogsPage() {
             <option value="LOGOUT">Logout</option>
           </select>
           <button
-            onClick={() => {
-              setSearchTerm("");
-              setStatusFilter("all");
-              setActionFilter("all");
-              setFilteredLogs(logs);
-            }}
+            onClick={handleReset}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center justify-center gap-2"
           >
             <RefreshCw size={18} />
@@ -248,7 +179,7 @@ export default function AuditLogsPage() {
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                       <div className="flex items-center gap-2">
                         <Calendar size={14} className="text-gray-400" />
-                        {log.timestamp}
+                        {new Date(log.timestamp).toLocaleString()}
                       </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">
@@ -271,7 +202,7 @@ export default function AuditLogsPage() {
                         <span className="text-sm font-medium capitalize">{log.status}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{log.ipAddress}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{log.ipAddress || '-'}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <button
                         onClick={() => setSelectedLog(log)}
@@ -331,15 +262,15 @@ export default function AuditLogsPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">Timestamp</p>
-                  <p className="text-sm text-gray-800">{selectedLog.timestamp}</p>
+                  <p className="text-sm text-gray-800">{new Date(selectedLog.timestamp).toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">IP Address</p>
-                  <p className="text-sm text-gray-800">{selectedLog.ipAddress}</p>
+                  <p className="text-sm text-gray-800">{selectedLog.ipAddress || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">User Agent</p>
-                  <p className="text-sm text-gray-800">{selectedLog.userAgent}</p>
+                  <p className="text-sm text-gray-800">{selectedLog.userAgent || '-'}</p>
                 </div>
               </div>
               {selectedLog.details && (

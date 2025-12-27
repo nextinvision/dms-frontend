@@ -325,9 +325,143 @@ export default function SCDashboard() {
         ],
       },
       admin: {
-        cards: [],
-        alerts: [],
-        quickActions: [],
+        cards: [
+          {
+            title: "Total Revenue (SC)",
+            value: "₹45,000",
+            change: "+12.5%",
+            icon: DollarSign,
+            color: "from-purple-400/20 to-purple-100",
+            text: "text-purple-600",
+          },
+          {
+            title: "Services Completed",
+            value: "5",
+            change: "+2",
+            icon: CheckCircle,
+            color: "from-emerald-400/20 to-emerald-100",
+            text: "text-emerald-600",
+          },
+          {
+            title: "Active Job Cards",
+            value: "12",
+            change: "+2",
+            icon: ClipboardList,
+            color: "from-blue-400/20 to-blue-100",
+            text: "text-blue-600",
+          },
+          {
+            title: "Pending Approvals",
+            value: "3",
+            change: "Urgent",
+            icon: CheckCircle,
+            color: "from-orange-400/20 to-orange-100",
+            text: "text-orange-600",
+          },
+          {
+            title: "Workshop Capacity",
+            value: "4/6",
+            change: "2 Available",
+            icon: Building2,
+            color: "from-indigo-400/20 to-indigo-100",
+            text: "text-indigo-600",
+          },
+          {
+            title: "Overdue Payments",
+            value: "₹16,500",
+            change: "3 invoices",
+            icon: AlertCircle,
+            color: "from-red-400/20 to-red-100",
+            text: "text-red-600",
+          },
+          {
+            title: "Low Stock Items",
+            value: "4",
+            change: "Alert",
+            icon: Package,
+            color: "from-red-400/20 to-red-100",
+            text: "text-red-600",
+          },
+        ],
+        alerts: [
+          {
+            icon: AlertTriangle,
+            color: "text-red-500 border-red-500",
+            title: "Low stock alert - Brake pads (2 units remaining)",
+            time: "30 min ago",
+            action: "Request Parts",
+          },
+          {
+            icon: UserCheck,
+            color: "text-cyan-500 border-cyan-500",
+            title: "8 pending customer requests need attention",
+            time: "1 hour ago",
+            action: "View",
+          },
+          {
+            icon: CheckCircle,
+            color: "text-blue-500 border-blue-500",
+            title: "Appointment pending approval - ₹3,500",
+            time: "1 hour ago",
+            action: "Review",
+          },
+          {
+            icon: Wrench,
+            color: "text-amber-500 border-amber-500",
+            title: "6 parts needed for active jobs",
+            time: "2 hours ago",
+            action: "View",
+          },
+          {
+            icon: ArrowRightLeft,
+            color: "text-violet-500 border-violet-500",
+            title: "2 pending transfer requests from central",
+            time: "3 hours ago",
+            action: "Review",
+          },
+          {
+            icon: Clock,
+            color: "text-yellow-500 border-yellow-500",
+            title: "Job Card #JC-2025-045 delayed - Parts pending",
+            time: "2 hours ago",
+            action: "View",
+          },
+        ],
+        quickActions: [
+          {
+            label: "Create Job Card",
+            icon: PlusCircle,
+            bg: "bg-gradient-to-r from-green-500 to-green-700",
+            link: "/sc/job-cards?action=create",
+          },
+
+          {
+            label: "Generate Invoice",
+            icon: FileText,
+            bg: "bg-gradient-to-r from-purple-500 to-pink-500",
+            link: "/sc/invoices?action=create",
+          },
+          {
+            label: "View Pending Approvals",
+            icon: CheckCircle,
+            bg: "bg-gradient-to-r from-orange-500 to-yellow-500",
+            link: "/sc/approvals",
+          },
+          {
+            label: "Check Appointments",
+            icon: Calendar,
+            bg: "bg-gradient-to-r from-teal-500 to-cyan-500",
+            link: "/sc/appointments",
+          },
+        ],
+        stats: {
+          jobsCompletedToday: 5,
+          jobsInProgress: 8,
+          jobsPending: 4,
+          revenueToday: "₹45,000",
+          revenueThisWeek: "₹2,45,000",
+          revenueThisMonth: "₹8,90,000",
+        }
       },
       inventory_manager: {
         cards: [],
@@ -355,7 +489,7 @@ export default function SCDashboard() {
         </div>
 
         {/* Revenue Summary Section */}
-        {dashboardData.stats && userRole === "sc_manager" && (
+        {dashboardData.stats && (userRole === "sc_manager" || userRole === "admin") && (
           <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200/80 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <TrendingUp className="text-emerald-600" size={20} strokeWidth={2} />

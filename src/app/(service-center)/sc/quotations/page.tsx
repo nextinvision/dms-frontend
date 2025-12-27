@@ -30,36 +30,7 @@ import {
   ShieldX,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
-// import { localStorage as safeStorage } from "@/shared/lib/localStorage"; // Removed
-
-const safeStorage = {
-  getItem: <T,>(key: string, defaultValue: T): T => {
-    if (typeof window === "undefined") return defaultValue;
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading ${key} from localStorage:`, error);
-      return defaultValue;
-    }
-  },
-  setItem: <T,>(key: string, value: T): void => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Error writing ${key} to localStorage:`, error);
-    }
-  },
-  removeItem: (key: string): void => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.removeItem(key);
-    } catch (error) {
-      console.error(`Error removing ${key} from localStorage:`, error);
-    }
-  }
-};
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { useSearchParams } from "next/navigation";
 import type {
   Quotation,
@@ -72,38 +43,26 @@ import type {
   Vehicle,
 } from "@/shared/types";
 import { useCustomerSearch } from "../../../../hooks/api";
-import { customerService } from "@/features/customers/services/customer.service";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import type { CheckInSlipFormData } from "@/shared/types/check-in-slip.types";
 import { CheckInSlipForm } from "../components/check-in-slip/CheckInSlipForm";
 import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/components/check-in-slip/CheckInSlip";
-
-const defaultInsurers: Insurer[] = [
-  { id: "1", name: "HDFC Ergo", isActive: true },
-  { id: "2", name: "ICICI Lombard", isActive: true },
-  { id: "3", name: "Bajaj Allianz", isActive: true },
-];
-
-const defaultNoteTemplates: NoteTemplate[] = [
-  { id: "1", name: "Standard Service", content: "Standard service check completed.", isActive: true, category: "General" },
-  { id: "2", name: "Oil Change", content: "Oil change and filter replacement.", isActive: true, category: "Maintenance" },
-];
-
-const staticServiceCenters = [
-  { id: "sc-1", name: "Main Center", location: "Mumbai" },
-  { id: "sc-2", name: "City Branch", location: "Mumbai" },
-];
 import type { EnhancedCheckInSlipData } from "@/shared/types/check-in-slip.types";
 import { convertCheckInSlipFormToData } from "../components/check-in-slip/utils";
 import { SERVICE_CENTER_CODE_MAP } from "../appointments/constants";
 import { generateQuotationNumber } from "@/shared/utils/quotation.utils";
 import { getServiceCenterCode, normalizeServiceCenterId } from "@/shared/utils/service-center.utils";
-import { quotationsService } from "@/features/quotations/services/quotations.service";
-import { appointmentsService } from "@/features/appointments/services/appointments.service";
-import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { CreateQuotationModal } from "../components/quotations/CreateQuotationModal";
 import { ViewQuotationModal } from "../components/quotations/ViewQuotationModal";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { quotationRepository } from "@/core/repositories/quotation.repository";
+import { serviceCenterRepository } from "@/core/repositories/service-center.repository";
+import { jobCardRepository } from "@/core/repositories/job-card.repository";
+
+import { defaultInsurers, defaultNoteTemplates } from "./defaults";
+
+
 
 const createEmptyCustomer = (): CustomerWithVehicles => ({
   id: "",
@@ -131,7 +90,31 @@ function QuotationsContent() {
   );
   const [activeCustomerId, setActiveCustomerId] = useState<string>("");
 
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const queryClient = useQueryClient();
+  const { data: quotations = [], isLoading: isLoadingQuotations } = useQuery({
+    queryKey: ['quotations'],
+    queryFn: () => quotationRepository.getAll(),
+  });
+
+  const { data: serviceCenters = [] } = useQuery({
+    queryKey: ['service-centers'],
+    queryFn: () => serviceCenterRepository.getAll(),
+  });
+
+  const createQuotationMutation = useMutation({
+    mutationFn: (data: Partial<Quotation>) => quotationRepository.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    }
+  });
+
+  const updateQuotationMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Quotation> }) => quotationRepository.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    }
+  });
+
   const [filter, setFilter] = useState<QuotationFilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
@@ -173,31 +156,27 @@ function QuotationsContent() {
   const performCustomerSearch = customerSearch.search;
   const clearCustomerSearch = customerSearch.clear;
 
-  // Load quotations from service
-  const loadQuotations = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await quotationsService.getAll();
-      setQuotations(data);
-    } catch (error) {
-      console.error("Failed to load quotations:", error);
-    } finally {
-      setLoading(false);
+
+  // Load insurers from localStorage or use mock data
+  useEffect(() => {
+    const storedInsurers = safeStorage.getItem<Insurer[]>("insurers", []);
+    if (storedInsurers.length > 0) {
+      setInsurers(storedInsurers);
+    } else {
+      setInsurers(defaultInsurers);
+      safeStorage.setItem("insurers", defaultInsurers);
     }
   }, []);
 
+  // Load note templates from localStorage or use mock data
   useEffect(() => {
-    loadQuotations();
-  }, [loadQuotations]);
-
-  // Load insurers (Local defaults for now)
-  useEffect(() => {
-    setInsurers(defaultInsurers);
-  }, []);
-
-  // Load note templates (Local defaults for now)
-  useEffect(() => {
-    setNoteTemplates(defaultNoteTemplates);
+    const storedTemplates = safeStorage.getItem<NoteTemplate[]>("noteTemplates", []);
+    if (storedTemplates.length > 0) {
+      setNoteTemplates(storedTemplates);
+    } else {
+      setNoteTemplates(defaultNoteTemplates);
+      safeStorage.setItem("noteTemplates", defaultNoteTemplates);
+    }
   }, []);
 
   // Handle customer search
@@ -215,96 +194,215 @@ function QuotationsContent() {
   // Handle pre-filling form from appointment data
   useEffect(() => {
     if (fromAppointment && typeof window !== "undefined") {
-      // Old local storage logic removed
-      const appointmentId = searchParams.get("appointmentId");
-      if (!appointmentId) return;
+      const quotationData = safeStorage.getItem<any>("pendingQuotationFromAppointment", null);
 
-      const loadAppointment = async () => {
-        try {
-          const appointment = await appointmentsService.getById(appointmentId);
-          if (appointment) {
-            // Check if Customer exists or use the one from appointment
-            if (appointment.customerId) {
-              setActiveCustomerId(appointment.customerId);
-              try {
-                // Direct service call instead of hook search
-                const customer = await customerService.getById(appointment.customerId);
-                if (customer) {
-                  setSelectedCustomer(customer);
+      if (quotationData && quotationData.appointmentData) {
+        const appointmentData = quotationData.appointmentData;
+        const normalizedCenterId = normalizeServiceCenterId(
+          quotationData.serviceCenterId ?? serviceCenterContext.serviceCenterId
+        );
+        setActiveServiceCenterId(normalizedCenterId);
+
+        // Find customer by phone or name
+        const findCustomer = async () => {
+          try {
+            await performCustomerSearch(quotationData.customerName || quotationData.phone, "auto");
+            // Wait a bit for search results
+            setTimeout(() => {
+              const customers = customerSearchResults;
+              const customer = customers.find(
+                (c) => c.phone === quotationData.phone || c.name === quotationData.customerName
+              );
+
+              if (customer) {
+                setSelectedCustomer(customer);
+                setActiveCustomerId(customer.id?.toString() || "");
+
+                // Extract insurance data from appointment
+                const insuranceCompanyName = appointmentData.insuranceCompanyName || "";
+                const insuranceStartDate = appointmentData.insuranceStartDate || "";
+                const insuranceEndDate = appointmentData.insuranceEndDate || "";
+                const hasInsuranceData = !!(insuranceCompanyName || insuranceStartDate || insuranceEndDate);
+
+                // Try to match insurance company name to insurer list
+                let matchedInsurerId = "";
+                if (insuranceCompanyName && insurers.length > 0) {
+                  const matchedInsurer = insurers.find((insurer) => {
+                    const insurerNameLower = insurer.name.toLowerCase().trim();
+                    const companyNameLower = insuranceCompanyName.toLowerCase().trim();
+                    return (
+                      insurerNameLower === companyNameLower ||
+                      insurerNameLower.includes(companyNameLower) ||
+                      companyNameLower.includes(insurerNameLower)
+                    );
+                  });
+                  if (matchedInsurer) {
+                    matchedInsurerId = matchedInsurer.id;
+                  }
                 }
-              } catch (err) {
-                // If customer fetch fails, we might still proceed with appointment data
-                console.warn("Could not fetch full customer data", err);
-              }
-            }
 
-            setForm((prev) => ({
-              ...prev,
-              customerId: appointment.customerId,
-              documentType: "Quotation",
-              notes: appointment.customerComplaint || "",
-              customNotes: appointment.previousServiceHistory || "",
-              // types might differ, ensure fail-safe
-              batterySerialNumber: (appointment as any).batterySerialNumber || "",
-              hasInsurance: false, // Default to false unless extra logic
-              vehicleId: appointment.vehicleId,
-            }));
-            setShowCreateModal(true);
+                setForm((prev) => ({
+                  ...prev,
+                  customerId: String(customer.id),
+                  documentType: "Quotation",
+                  notes: appointmentData.customerComplaintIssue || "",
+                  customNotes: appointmentData.previousServiceHistory || "",
+                  batterySerialNumber: appointmentData.batterySerialNumber || appointmentData.chargerSerialNumber || "",
+                  hasInsurance: hasInsuranceData,
+                  insurerId: matchedInsurerId,
+                  insuranceCompanyName: insuranceCompanyName || "",
+                  insuranceStartDate: insuranceStartDate || "",
+                  insuranceEndDate: insuranceEndDate || "",
+                }));
+
+                // Find matching vehicle
+                if (customer.vehicles && customer.vehicles.length > 0) {
+                  const vehicle = customer.vehicles.find(
+                    (v) => v.registration === appointmentData.registrationNumber
+                  ) || customer.vehicles[0];
+
+                  if (vehicle) {
+                    setForm((prev) => ({
+                      ...prev,
+                      vehicleId: String(vehicle.id),
+                    }));
+                  }
+                }
+
+                // Open create modal
+                setShowCreateModal(true);
+
+                // Clear the stored data
+                safeStorage.removeItem("pendingQuotationFromAppointment");
+              }
+              else if (quotationData.customerId) {
+                const decodedCustomerId = String(quotationData.customerId);
+                setForm((prev) => ({ ...prev, customerId: decodedCustomerId }));
+                setActiveCustomerId(decodedCustomerId);
+                setShowCreateModal(true);
+                safeStorage.removeItem("pendingQuotationFromAppointment");
+              }
+            }, 500);
+          } catch (error) {
+            console.error("Error finding customer:", error);
           }
-        } catch (e) {
-          console.error("Failed to load appointment for quotation", e);
-        }
-      };
-      loadAppointment();
+        };
+
+        findCustomer();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromAppointment, searchParams]);
+  }, [fromAppointment]);
 
   // Handle pre-filling form from job card data
   useEffect(() => {
     if (fromJobCard && typeof window !== "undefined") {
-      const jobCardId = searchParams.get("jobCardId");
-      if (!jobCardId) return;
+      const quotationData = safeStorage.getItem<any>("pendingQuotationFromJobCard", null);
 
-      const loadJobCard = async () => {
-        try {
-          // Try to fetch specific if available (or use getAll fallback if getById missing in types)
-          /* 
-             NOTE: We recently added getById to JobCardService. 
-             If this still fails, likely the type definition in the project needs a restart or we can use getAll().
-          */
-          let jobCard = null;
+      if (quotationData && quotationData.jobCardData) {
+        const jobCard = quotationData.jobCardData;
+        const normalizedCenterId = normalizeServiceCenterId(
+          quotationData.serviceCenterId ?? serviceCenterContext.serviceCenterId
+        );
+        setActiveServiceCenterId(normalizedCenterId);
+
+        // Find customer by ID or phone
+        const findCustomer = async () => {
           try {
-            jobCard = await jobCardService.getById(jobCardId);
-          } catch {
-            // Fallback
-            const all = await jobCardService.getAll();
-            jobCard = all.find((j) => j.id === jobCardId) || null;
-          }
-          if (jobCard) {
-            setActiveServiceCenterId(jobCard.serviceCenterId);
-            setActiveCustomerId(jobCard.customerId);
-            // Fetch customer details if needed for display
-            // ...
+            if (quotationData.customerId) {
+              await performCustomerSearch(quotationData.customerId, "auto");
+            } else if (jobCard.part1?.mobilePrimary) {
+              await performCustomerSearch(jobCard.part1.mobilePrimary, "auto");
+            }
 
-            setForm((prev) => ({
-              ...prev,
-              customerId: jobCard.customerId,
-              vehicleId: jobCard.vehicleId,
-              documentType: "Quotation",
-              notes: jobCard.description || "",
-              // Map other fields as necessary
-            }));
-            setShowCreateModal(true);
+            // Wait a bit for search results
+            setTimeout(() => {
+              const customers = customerSearchResults;
+              const customer = customers.find(
+                (c) => c.id === quotationData.customerId ||
+                  c.phone === jobCard.part1?.mobilePrimary ||
+                  c.name === quotationData.customerName
+              );
+
+              if (customer) {
+                setSelectedCustomer(customer);
+                setActiveCustomerId(customer.id?.toString() || "");
+
+                // Extract insurance data from job card PART 1
+                const insuranceCompanyName = jobCard.part1?.insuranceCompanyName || "";
+                const insuranceStartDate = jobCard.part1?.insuranceStartDate || "";
+                const insuranceEndDate = jobCard.part1?.insuranceEndDate || "";
+                const hasInsuranceData = !!(insuranceCompanyName || insuranceStartDate || insuranceEndDate);
+
+                // Try to match insurance company name to insurer list
+                let matchedInsurerId = "";
+                if (insuranceCompanyName && insurers.length > 0) {
+                  const matchedInsurer = insurers.find((insurer) => {
+                    const insurerNameLower = insurer.name.toLowerCase().trim();
+                    const companyNameLower = insuranceCompanyName.toLowerCase().trim();
+                    return (
+                      insurerNameLower === companyNameLower ||
+                      insurerNameLower.includes(companyNameLower) ||
+                      companyNameLower.includes(insurerNameLower)
+                    );
+                  });
+                  if (matchedInsurer) {
+                    matchedInsurerId = matchedInsurer.id;
+                  }
+                }
+
+                setForm((prev) => ({
+                  ...prev,
+                  customerId: String(customer.id),
+                  documentType: "Quotation",
+                  notes: jobCard.part1?.customerFeedback || jobCard.description || "",
+                  customNotes: jobCard.part1?.technicianObservation || "",
+                  batterySerialNumber: jobCard.part1?.batterySerialNumber || "",
+                  hasInsurance: hasInsuranceData,
+                  insurerId: matchedInsurerId,
+                  insuranceCompanyName: insuranceCompanyName || "",
+                  insuranceStartDate: insuranceStartDate || "",
+                  insuranceEndDate: insuranceEndDate || "",
+                }));
+
+                // Find matching vehicle
+                if (customer.vehicles && customer.vehicles.length > 0) {
+                  const vehicle = customer.vehicles.find(
+                    (v) => v.registration === jobCard.part1?.registrationNumber ||
+                      v.id === quotationData.vehicleId
+                  ) || customer.vehicles[0];
+
+                  if (vehicle) {
+                    setForm((prev) => ({
+                      ...prev,
+                      vehicleId: String(vehicle.id),
+                    }));
+                  }
+                }
+
+                // Open create modal
+                setShowCreateModal(true);
+
+                // Clear the stored data
+                safeStorage.removeItem("pendingQuotationFromJobCard");
+              } else if (quotationData.customerId) {
+                const decodedCustomerId = String(quotationData.customerId);
+                setForm((prev) => ({ ...prev, customerId: decodedCustomerId }));
+                setActiveCustomerId(decodedCustomerId);
+                setShowCreateModal(true);
+                safeStorage.removeItem("pendingQuotationFromJobCard");
+              }
+            }, 500);
+          } catch (error) {
+            console.error("Error finding customer from job card:", error);
           }
-        } catch (e) {
-          console.error("Failed to load job card for quotation", e);
-        }
-      };
-      loadJobCard();
+        };
+
+        findCustomer();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromJobCard, jobCardIdParam, searchParams]);
+  }, [fromJobCard, jobCardIdParam]);
 
   // Calculate totals
   const calculateTotals = useCallback(() => {
@@ -374,7 +472,7 @@ function QuotationsContent() {
     const selectedInsurer = insurers.find((i) => i.id === form.insurerId);
     const selectedTemplate = noteTemplates.find((t) => t.id === form.noteTemplateId);
     const vehicle = customer.vehicles?.find((v) => v.id.toString() === form.vehicleId);
-    const centerMeta = staticServiceCenters.find(
+    const centerMeta = serviceCenters.find(
       (center) => normalizeServiceCenterId(center.id) === resolvedServiceCenterId
     );
 
@@ -414,7 +512,7 @@ function QuotationsContent() {
       batterySerialNumber: form.batterySerialNumber,
       customNotes: form.customNotes,
       noteTemplateId: form.noteTemplateId,
-      status: "DRAFT",
+      status: "draft",
       passedToManager: false,
       passedToManagerAt: undefined,
       managerId: undefined,
@@ -452,25 +550,34 @@ function QuotationsContent() {
           serviceCenterContext.serviceCenterName ??
           "Service Center",
         code: serviceCenterCode,
-        address: centerMeta?.location ?? "",
-        city: centerMeta?.location ?? "",
-        state: "",
-        pincode: "",
-        phone: "",
-        gstNumber: "",
-        panNumber: "",
+        address: centerMeta?.address ?? "",
+        city: centerMeta?.city ?? "",
+        state: centerMeta?.state ?? "",
+        pincode: centerMeta?.pinCode ?? "",
+        phone: centerMeta?.phone ?? "",
+        gstNumber: centerMeta?.gstNumber ?? "",
+        panNumber: centerMeta?.panNumber ?? "",
       },
     };
   };
 
-  const persistQuotation = async (quotation: any) => {
-    try {
-      const newQuotation = await quotationsService.create(quotation);
-      setQuotations(prev => [newQuotation, ...prev]);
-      return newQuotation;
-    } catch (error) {
-      console.error("Failed to persist quotation:", error);
-      throw error;
+  const updateLocalAppointmentStatus = (quotation: Quotation) => {
+    // Update appointment status if quotation is linked to an appointment
+    if (quotation.appointmentId) {
+      const appointments = safeStorage.getItem<any[]>("appointments", []);
+      const appointmentIndex = appointments.findIndex((apt) => apt.id === quotation.appointmentId);
+
+      if (appointmentIndex !== -1) {
+        const appointment = appointments[appointmentIndex];
+        // Update appointment status to "Quotation Created" if not already
+        if (appointment.status !== "Quotation Created") {
+          appointments[appointmentIndex] = {
+            ...appointment,
+            status: "Quotation Created",
+          };
+          safeStorage.setItem("appointments", appointments);
+        }
+      }
     }
   };
 
@@ -1003,9 +1110,22 @@ Or reply with "APPROVE" or "REJECT"
         setLoading(true);
       }
 
-      const updatedQuotation = await quotationsService.updateStatus(quotationId, "SENT_TO_CUSTOMER");
+      const updatedQuotationData = {
+        status: "sent_to_customer" as const,
+        sentToCustomer: true,
+        sentToCustomerAt: new Date().toISOString(),
+        whatsappSent: true,
+        whatsappSentAt: new Date().toISOString(),
+      };
 
-      setQuotations(prev => prev.map(q => q.id === quotationId ? updatedQuotation : q));
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: updatedQuotationData
+      });
+
+      // Update local object for use in PDF generation (since query might not invalidate instantly in this closure)
+      const updatedQuotation = { ...quotation, ...updatedQuotationData };
+
 
       // Get service center and advisor details
       const serviceCenterData: any = quotation.serviceCenter || {
@@ -1176,13 +1296,12 @@ Or reply with "APPROVE" or "REJECT"
         const vehicle = selectedCustomer.vehicles?.find((v) => String(v.id) === form.vehicleId) || selectedCustomer.vehicles?.[0] || null;
 
         // Get appointment data if available
-        // const quotationDataFromStorage = safeStorage.getItem<any>("pendingQuotationFromAppointment", null); 
-        // const appointmentData = quotationDataFromStorage?.appointmentData;
-        const appointmentData: any = null; // Revisit if we need to fetch appointment data here again
+        const quotationDataFromStorage = safeStorage.getItem<any>("pendingQuotationFromAppointment", null);
+        const appointmentData = quotationDataFromStorage?.appointmentData;
 
         // Get service center info
         const normalizedServiceCenterId = activeServiceCenterId || serviceCenterContext.serviceCenterId?.toString() || "sc-001";
-        const serviceCenter = staticServiceCenters.find(
+        const serviceCenter = serviceCenters.find(
           (sc) => (sc as any).serviceCenterId === normalizedServiceCenterId || sc.id?.toString() === normalizedServiceCenterId
         );
         const serviceCenterName = serviceCenter?.name || serviceCenterContext.serviceCenterName || "Service Center";
@@ -1207,7 +1326,7 @@ Or reply with "APPROVE" or "REJECT"
           customerId: selectedCustomer.id?.toString() || "",
           vehicleId: vehicle?.id?.toString(),
           serviceAdvisorId: userInfo?.id || "",
-          appointmentId: appointmentData?.id || undefined,
+          appointmentId: appointmentData?.id || quotationDataFromStorage?.appointmentId,
           documentType: "Check-in Slip",
           quotationDate: enhancedData.checkInDate,
           validUntil: undefined,
@@ -1225,7 +1344,7 @@ Or reply with "APPROVE" or "REJECT"
           batterySerialNumber: enhancedData.batterySerialNumber,
           customNotes: enhancedData.technicalObservation || "",
           noteTemplateId: undefined,
-          status: "DRAFT",
+          status: "draft",
           passedToManager: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1247,7 +1366,7 @@ Or reply with "APPROVE" or "REJECT"
             model: vehicle.vehicleModel || "",
             registration: vehicle.registration || "",
             vin: vehicle.vin || "",
-          } as any : undefined,
+          } : undefined,
           serviceCenter: {
             id: normalizedServiceCenterId,
             name: serviceCenterName,
@@ -1261,19 +1380,20 @@ Or reply with "APPROVE" or "REJECT"
         };
 
         // Save check-in slip as quotation
-        persistQuotation(checkInSlipQuotation);
+        const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
+        updateLocalAppointmentStatus(createdQuotation);
 
         // Store enhanced check-in slip data for display
-        // safeStorage.setItem(`checkInSlip_${checkInSlipQuotation.id}`, enhancedData); 
-        // Note: For now, avoiding local storage. We might want to persist this to backend if needed.
-        console.log("Check In Slip Data Validated", enhancedData);
+        safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
 
         setShowCheckInSlipModal(true);
         // Keep form open so user can send via WhatsApp
         // setShowCreateModal(false);
 
-        // Clear stored appointment data if exists (handled by URL state usually now)
-
+        // Clear stored appointment data if exists
+        if (quotationDataFromStorage) {
+          safeStorage.removeItem("pendingQuotationFromAppointment");
+        }
 
         alert("Check-in slip generated successfully! You can now send it to the customer via WhatsApp.");
       } catch (error) {
@@ -1292,12 +1412,10 @@ Or reply with "APPROVE" or "REJECT"
 
     try {
       setLoading(true);
-      const quotationPayload = {
-        ...form,
-        serviceCenterId: normalizeServiceCenterId(activeServiceCenterId || serviceCenterContext.serviceCenterId),
-      };
-      await persistQuotation(quotationPayload);
-      setFilter("DRAFT");
+      const newQuotation = buildQuotationFromForm();
+      const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
+      updateLocalAppointmentStatus(createdQuotation);
+      setFilter("draft");
 
       alert("Quotation created successfully!");
       setShowCreateModal(false);
@@ -1317,14 +1435,12 @@ Or reply with "APPROVE" or "REJECT"
 
     try {
       setLoading(true);
-      const quotationPayload = {
-        ...form,
-        serviceCenterId: normalizeServiceCenterId(activeServiceCenterId || serviceCenterContext.serviceCenterId),
-      };
-      const newQuotation = await persistQuotation(quotationPayload);
-      setFilter("SENT_TO_CUSTOMER");
+      const newQuotation = buildQuotationFromForm();
+      const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
+      updateLocalAppointmentStatus(createdQuotation);
+      setFilter("sent_to_customer");
 
-      await sendQuotationToCustomerById(newQuotation.id, { manageLoading: false });
+      await sendQuotationToCustomerById(createdQuotation.id, { manageLoading: false });
 
       setShowCreateModal(false);
       resetForm();
@@ -1354,7 +1470,7 @@ Or reply with "APPROVE" or "REJECT"
 
       // Get service center info
       const normalizedServiceCenterId = activeServiceCenterId || serviceCenterContext.serviceCenterId?.toString() || "sc-001";
-      const serviceCenter = staticServiceCenters.find(
+      const serviceCenter = serviceCenters.find(
         (sc) => (sc as any).serviceCenterId === normalizedServiceCenterId || sc.id?.toString() === normalizedServiceCenterId
       );
       const serviceCenterName = serviceCenter?.name || serviceCenterContext.serviceCenterName || "Service Center";
@@ -1379,7 +1495,7 @@ Or reply with "APPROVE" or "REJECT"
         customerId: selectedCustomer.id?.toString() || "",
         vehicleId: vehicle?.id?.toString(),
         serviceAdvisorId: userInfo?.id || "",
-        appointmentId: appointmentData?.id,
+        appointmentId: appointmentData?.id || quotationDataFromStorage?.appointmentId,
         documentType: "Check-in Slip",
         quotationDate: enhancedData.checkInDate,
         validUntil: undefined,
@@ -1397,7 +1513,7 @@ Or reply with "APPROVE" or "REJECT"
         batterySerialNumber: enhancedData.batterySerialNumber,
         customNotes: enhancedData.technicalObservation || "",
         noteTemplateId: undefined,
-        status: "DRAFT",
+        status: "draft",
         passedToManager: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -1419,7 +1535,7 @@ Or reply with "APPROVE" or "REJECT"
           model: vehicle.vehicleModel || "",
           registration: vehicle.registration || "",
           vin: vehicle.vin || "",
-        } as any : undefined,
+        } : undefined,
         serviceCenter: {
           id: normalizedServiceCenterId,
           name: serviceCenterName,
@@ -1433,10 +1549,11 @@ Or reply with "APPROVE" or "REJECT"
       };
 
       // Save check-in slip as quotation
-      persistQuotation(checkInSlipQuotation);
+      const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
+      updateLocalAppointmentStatus(createdQuotation);
 
       // Store enhanced check-in slip data for display
-      safeStorage.setItem(`checkInSlip_${checkInSlipQuotation.id}`, enhancedData);
+      safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
 
       // Clear stored appointment data if exists
       if (quotationDataFromStorage) {
@@ -1566,21 +1683,18 @@ Please keep this slip safe for vehicle collection.`;
       setLoading(true);
 
       // Update quotation status
-      const updatedQuotations = quotations.map((q) =>
-        q.id === quotationId
-          ? {
-            ...q,
-            status: "SENT_TO_CUSTOMER" as const,
-            sentToCustomer: true,
-            sentToCustomerAt: new Date().toISOString(),
-            whatsappSent: true,
-            whatsappSentAt: new Date().toISOString(),
-          }
-          : q
-      );
+      const updateData = {
+        status: "sent_to_customer" as const,
+        sentToCustomer: true,
+        sentToCustomerAt: new Date().toISOString(),
+        whatsappSent: true,
+        whatsappSentAt: new Date().toISOString(),
+      };
+      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
 
-      setQuotations(updatedQuotations);
-      safeStorage.setItem("quotations", updatedQuotations);
+      // Update local reference for lead creation
+      const updatedQuotationForLead = { ...quotation, ...updateData };
+
 
       // Create or update lead when quotation is sent to customer
       createOrUpdateLeadFromQuotation(quotation);
@@ -1680,33 +1794,23 @@ Please keep this slip safe for vehicle collection.`;
   };
 
   // Convert Quotation to Job Card
-  const convertQuotationToJobCard = (quotation: Quotation) => {
+  const convertQuotationToJobCard = async (quotation: Quotation) => {
     const resolvedServiceCenterId = normalizeServiceCenterId(quotation.serviceCenterId);
     const serviceCenterCode = getServiceCenterCode(resolvedServiceCenterId);
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
 
-    // Get next sequence number
-    const existingJobCards = safeStorage.getItem<any[]>("jobCards", []);
-    const lastJobCard = existingJobCards
-      .filter((jc) => jc.jobCardNumber?.startsWith(`${serviceCenterCode}-${year}-${month}`))
-      .sort((a, b) => {
-        const aSeq = parseInt(a.jobCardNumber?.split("-")[3] || "0");
-        const bSeq = parseInt(b.jobCardNumber?.split("-")[3] || "0");
-        return bSeq - aSeq;
-      })[0];
-
-    const nextSequence = lastJobCard
-      ? parseInt(lastJobCard.jobCardNumber?.split("-")[3] || "0") + 1
-      : 1;
-
-    const jobCardNumber = `${serviceCenterCode}-${year}-${month}-${String(nextSequence).padStart(4, "0")}`;
+    // We can't easily get next sequence synchronously from API without fetching all or using a special endpoint.
+    // Ideally backend handles this.
+    // For now, we will construct a payload without specific number if possible, or use a dummy.
+    // But since the current Logic tries to calculate it, we might try to fetch latest job card?
+    // Using simple creation payload and letting backend handle logic is best.
 
     // Create job card from quotation
     const newJobCard = {
-      id: `JC-${Date.now()}`,
-      jobCardNumber,
+      // id: `JC-${Date.now()}`, // Let backend handle ID
+      // jobCardNumber, // Let backend handle Number
       serviceCenterId: quotation.serviceCenterId || resolvedServiceCenterId,
       serviceCenterCode,
       customerId: quotation.customerId,
@@ -1725,17 +1829,21 @@ Please keep this slip safe for vehicle collection.`;
       estimatedTime: "To be determined",
       createdAt: new Date().toISOString(),
       parts: quotation.items?.map((item) => item.partName) || [],
-      location: "Station" as const,
+      location: "STATION" as const,
       quotationId: quotation.id,
       hasInsurance: quotation.hasInsurance,
       insurerName: quotation.insurer?.name,
     };
 
-    // Save job card
-    const updatedJobCards = [...existingJobCards, newJobCard];
-    safeStorage.setItem("jobCards", updatedJobCards);
-
-    return newJobCard;
+    // Save job card via API
+    try {
+      const createdJobCard = await jobCardRepository.create(newJobCard);
+      return createdJobCard;
+    } catch (e) {
+      console.error("Failed to create job card via API", e);
+      // Fallback or rethrow? Rethrow to alert user.
+      throw e;
+    }
   };
 
   // Create or Update Lead from Quotation (when sent to customer)
@@ -1892,17 +2000,39 @@ Please keep this slip safe for vehicle collection.`;
         return;
       }
 
-      // 1. Update quotation status in backend
-      await quotationsService.updateCustomerApproval(quotationId, { status: "APPROVED" });
+      // Update quotation status
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "customer_approved" as const,
+          customerApproved: true,
+          customerApprovedAt: new Date().toISOString(),
+        }
+      });
 
-      // 2. Trigger Job Card Creation (Backend likely handles this or we call explicit)
-      // For now, assuming we might need to explicitly create it if backend doesn't trigger automatically on approval.
-      // Checking if convert to job card endpoint exists or we do it manually.
-      // Let's assume manual creation for safety:
-      alert("Quotation Approved. You should now create/update the Job Card.");
 
-      // Update local state
-      await loadQuotations();
+      // Create job card (we skip looking for temp job card in local storage as we migrated)
+      const jobCard = await convertQuotationToJobCard(quotation);
+
+      // Update lead status to job_card_in_progress or converted
+      updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
+
+      // Show notification to advisor
+      alert(`✅ Customer Approved!\n\nQuotation ${quotation.quotationNumber} has been approved by the customer.\n\nJob Card: ${jobCard.jobCardNumber}\n\nJob card has been automatically sent to Service Manager for technician assignment and parts monitoring.`);
+
+      // In production, you would send a notification/email to the advisor and manager here
+      console.log("Notification to advisor:", {
+        advisorId: quotation.serviceAdvisorId,
+        message: `Quotation ${quotation.quotationNumber} approved by customer. Job Card ${jobCard.jobCardNumber} created and sent to manager.`,
+        quotationId: quotation.id,
+        jobCardId: jobCard.id,
+      });
+
+      console.log("Notification to manager:", {
+        message: `New job card ${jobCard.jobCardNumber} requires technician assignment and parts monitoring.`,
+        jobCardId: jobCard.id,
+        jobCardNumber: jobCard.jobCardNumber,
+      });
 
     } catch (error) {
       console.error("Error approving quotation:", error);
@@ -1927,10 +2057,29 @@ Please keep this slip safe for vehicle collection.`;
         return;
       }
 
-      await quotationsService.updateCustomerApproval(quotationId, { status: "REJECTED" });
+      // Update quotation status
+      const updateData = {
+        status: "customer_rejected" as const,
+        customerRejected: true,
+        customerRejectedAt: new Date().toISOString(),
+      };
+      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
 
-      // Update local state
-      await loadQuotations();
+      const updatedQuotation = { ...quotation, ...updateData };
+
+      // Add to leads for follow-up
+      const lead = addRejectedQuotationToLeads(updatedQuotation);
+
+      // Show notification to advisor
+      alert(`⚠️ Customer Rejected Quotation\n\nQuotation ${quotation.quotationNumber} has been rejected by the customer.\n\nAdded to Leads for follow-up.\n\nLead ID: ${lead.id}\n\nPlease follow up with the customer to understand their concerns.`);
+
+      // In production, you would send a notification/email to the advisor here
+      console.log("Notification to advisor:", {
+        advisorId: quotation.serviceAdvisorId,
+        message: `Quotation ${quotation.quotationNumber} rejected by customer. Added to leads for follow-up.`,
+        quotationId: quotation.id,
+        leadId: lead.id,
+      });
 
       alert("Quotation marked as customer rejected.");
     } catch (error) {
@@ -1949,11 +2098,15 @@ Please keep this slip safe for vehicle collection.`;
 
     try {
       setLoading(true);
-      // Assuming manager ID is available or handled by backend logic (e.g. random or assigned)
-      const managerId = "sc-manager-1"; // Placeholder or from context
-      await quotationsService.passToManager(quotationId, managerId);
 
-      await loadQuotations();
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "sent_to_manager" as const,
+          sentToManager: true,
+          sentToManagerAt: new Date().toISOString(),
+        }
+      });
 
       alert("Quotation sent to manager!");
     } catch (error) {
@@ -1972,12 +2125,21 @@ Please keep this slip safe for vehicle collection.`;
 
     try {
       setLoading(true);
-      await quotationsService.approve(quotationId);
-      await loadQuotations();
-      alert("Quotation Approved.");
+
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "manager_approved" as const,
+          managerApproved: true,
+          managerApprovedAt: new Date().toISOString(),
+          managerId: userInfo?.id || "",
+        }
+      });
+
+      alert("Quotation approved by manager!");
     } catch (error) {
       console.error("Error approving quotation:", error);
-      alert("Failed to approve quotation.");
+      alert("Failed to approve quotation. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1991,8 +2153,17 @@ Please keep this slip safe for vehicle collection.`;
 
     try {
       setLoading(true);
-      await quotationsService.managerReview(quotationId, { status: "REJECTED" });
-      await loadQuotations();
+
+      await updateQuotationMutation.mutateAsync({
+        id: quotationId,
+        data: {
+          status: "manager_rejected" as const,
+          managerRejected: true,
+          managerRejectedAt: new Date().toISOString(),
+          managerId: userInfo?.id || "",
+        }
+      });
+
       alert("Quotation rejected by manager.");
     } catch (error) {
       console.error("Error rejecting quotation:", error);
@@ -2046,19 +2217,19 @@ Please keep this slip safe for vehicle collection.`;
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "DRAFT":
+      case "draft":
         return "bg-gray-100 text-gray-700 border-gray-300";
-      case "SENT_TO_CUSTOMER":
+      case "sent_to_customer":
         return "bg-blue-100 text-blue-700 border-blue-300";
-      case "CUSTOMER_APPROVED":
+      case "customer_approved":
         return "bg-green-100 text-green-700 border-green-300";
-      case "CUSTOMER_REJECTED":
+      case "customer_rejected":
         return "bg-red-100 text-red-700 border-red-300";
-      case "SENT_TO_MANAGER":
+      case "sent_to_manager":
         return "bg-purple-100 text-purple-700 border-purple-300";
-      case "MANAGER_APPROVED":
+      case "manager_approved":
         return "bg-green-100 text-green-700 border-green-300";
-      case "MANAGER_REJECTED":
+      case "manager_rejected":
         return "bg-red-100 text-red-700 border-red-300";
       default:
         return "bg-gray-100 text-gray-700 border-gray-300";
@@ -2100,7 +2271,7 @@ Please keep this slip safe for vehicle collection.`;
               />
             </div>
             <div className="flex gap-2">
-              {(["all", "DRAFT", "SENT_TO_CUSTOMER", "CUSTOMER_APPROVED", "CUSTOMER_REJECTED", "SENT_TO_MANAGER", "MANAGER_APPROVED", "MANAGER_REJECTED"] as QuotationFilterType[]).map((f) => (
+              {(["all", "draft", "sent_to_customer", "customer_approved", "customer_rejected", "sent_to_manager", "manager_approved", "manager_rejected"] as QuotationFilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -2186,45 +2357,46 @@ Please keep this slip safe for vehicle collection.`;
                             <>
                               <button
                                 onClick={() => {
-                                  // Reconstruct from quotation data (Server state is source of truth)
-                                  const reconstructedData: EnhancedCheckInSlipData = {
-                                    slipNumber: quotation.quotationNumber,
-                                    customerName: `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim(),
-                                    phone: quotation.customer?.phone || "",
-                                    email: quotation.customer?.email,
-                                    vehicleMake: quotation.vehicle?.make || "",
-                                    vehicleModel: quotation.vehicle?.model || "",
-                                    registrationNumber: quotation.vehicle?.registration || "",
-                                    vin: quotation.vehicle?.vin,
-                                    checkInDate: quotation.quotationDate,
-                                    checkInTime: new Date().toTimeString().slice(0, 5),
-                                    serviceCenterName: quotation.serviceCenter?.name || "",
-                                    serviceCenterAddress: quotation.serviceCenter?.address || "",
-                                    serviceCenterCity: quotation.serviceCenter?.city || "",
-                                    serviceCenterState: quotation.serviceCenter?.state || "",
-                                    serviceCenterPincode: quotation.serviceCenter?.pincode || "",
-                                    serviceCenterPhone: quotation.serviceCenter?.phone,
-                                    notes: quotation.notes,
-                                  };
-                                  setCheckInSlipData(reconstructedData);
-
-                                  // Set selected customer for context if needed
-                                  if (quotation.customer) { // Use embed customer
-                                    const cust: CustomerWithVehicles = {
-                                      id: quotation.customerId,
-                                      customerNumber: "", // Not always available in embed
-                                      name: `${quotation.customer.firstName} ${quotation.customer.lastName}`,
-                                      phone: quotation.customer.phone,
-                                      email: quotation.customer.email,
-                                      address: quotation.customer.address,
-                                      cityState: `${quotation.customer.city || ""}, ${quotation.customer.state || ""}`,
-                                      pincode: quotation.customer.pincode,
-                                      createdAt: "",
-                                      vehicles: quotation.vehicle ? [quotation.vehicle] : []
+                                  // Load check-in slip data and display
+                                  const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
+                                  if (storedCheckInSlipData) {
+                                    setCheckInSlipData(storedCheckInSlipData);
+                                    // Find and set customer for WhatsApp sending
+                                    const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
+                                    const customer = customers.find(c => c.id?.toString() === quotation.customerId);
+                                    if (customer) {
+                                      setSelectedCustomer(customer);
+                                    }
+                                    setShowCheckInSlipModal(true);
+                                  } else {
+                                    // Fallback: reconstruct from quotation data
+                                    const reconstructedData: EnhancedCheckInSlipData = {
+                                      slipNumber: quotation.quotationNumber,
+                                      customerName: `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim(),
+                                      phone: quotation.customer?.phone || "",
+                                      email: quotation.customer?.email,
+                                      vehicleMake: quotation.vehicle?.make || "",
+                                      vehicleModel: quotation.vehicle?.model || "",
+                                      registrationNumber: quotation.vehicle?.registration || "",
+                                      vin: quotation.vehicle?.vin,
+                                      checkInDate: quotation.quotationDate,
+                                      checkInTime: new Date().toTimeString().slice(0, 5),
+                                      serviceCenterName: quotation.serviceCenter?.name || "",
+                                      serviceCenterAddress: quotation.serviceCenter?.address || "",
+                                      serviceCenterCity: quotation.serviceCenter?.city || "",
+                                      serviceCenterState: quotation.serviceCenter?.state || "",
+                                      serviceCenterPincode: quotation.serviceCenter?.pincode || "",
+                                      serviceCenterPhone: quotation.serviceCenter?.phone,
+                                      notes: quotation.notes,
                                     };
-                                    setSelectedCustomer(cust);
+                                    setCheckInSlipData(reconstructedData);
+                                    const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
+                                    const customer = customers.find(c => c.id?.toString() === quotation.customerId);
+                                    if (customer) {
+                                      setSelectedCustomer(customer);
+                                    }
+                                    setShowCheckInSlipModal(true);
                                   }
-                                  setShowCheckInSlipModal(true);
                                 }}
                                 className="text-blue-600 hover:text-blue-900"
                                 title="View Check-in Slip"
@@ -2233,45 +2405,21 @@ Please keep this slip safe for vehicle collection.`;
                               </button>
                               <button
                                 onClick={() => {
-                                  // Reconstruct data for sending
-                                  const reconstructedData: EnhancedCheckInSlipData = {
-                                    slipNumber: quotation.quotationNumber,
-                                    customerName: `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim(),
-                                    phone: quotation.customer?.phone || "",
-                                    email: quotation.customer?.email,
-                                    vehicleMake: quotation.vehicle?.make || "",
-                                    vehicleModel: quotation.vehicle?.model || "",
-                                    registrationNumber: quotation.vehicle?.registration || "",
-                                    vin: quotation.vehicle?.vin,
-                                    checkInDate: quotation.quotationDate,
-                                    checkInTime: new Date().toTimeString().slice(0, 5),
-                                    serviceCenterName: quotation.serviceCenter?.name || "",
-                                    serviceCenterAddress: quotation.serviceCenter?.address || "",
-                                    serviceCenterCity: quotation.serviceCenter?.city || "",
-                                    serviceCenterState: quotation.serviceCenter?.state || "",
-                                    serviceCenterPincode: quotation.serviceCenter?.pincode || "",
-                                    serviceCenterPhone: quotation.serviceCenter?.phone,
-                                    notes: quotation.notes,
-                                  };
-                                  setCheckInSlipData(reconstructedData);
-
-                                  if (quotation.customer) {
-                                    const cust: CustomerWithVehicles = {
-                                      id: quotation.customerId,
-                                      customerNumber: "",
-                                      name: `${quotation.customer.firstName} ${quotation.customer.lastName}`,
-                                      phone: quotation.customer.phone,
-                                      email: quotation.customer.email,
-                                      address: quotation.customer.address,
-                                      cityState: `${quotation.customer.city || ""}, ${quotation.customer.state || ""}`,
-                                      pincode: quotation.customer.pincode,
-                                      createdAt: "",
-                                      vehicles: quotation.vehicle ? [quotation.vehicle] : []
-                                    };
-                                    setSelectedCustomer(cust);
-                                    handleSendCheckInSlipToCustomer();
+                                  // Load check-in slip data and send
+                                  const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
+                                  if (storedCheckInSlipData) {
+                                    setCheckInSlipData(storedCheckInSlipData);
+                                    // Find customer from storage
+                                    const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
+                                    const customer = customers.find(c => c.id?.toString() === quotation.customerId);
+                                    if (customer) {
+                                      setSelectedCustomer(customer);
+                                      handleSendCheckInSlipToCustomer();
+                                    } else {
+                                      alert("Customer not found");
+                                    }
                                   } else {
-                                    alert("Customer details missing");
+                                    alert("Check-in slip data not found");
                                   }
                                 }}
                                 className="text-green-600 hover:text-green-900"
@@ -2292,7 +2440,7 @@ Please keep this slip safe for vehicle collection.`;
                               >
                                 <Eye size={18} />
                               </button>
-                              {isServiceAdvisor && quotation.status === "DRAFT" && (
+                              {isServiceAdvisor && quotation.status === "draft" && (
                                 <button
                                   onClick={() => handleSendToCustomer(quotation.id)}
                                   className="text-green-600 hover:text-green-900"
@@ -2301,7 +2449,7 @@ Please keep this slip safe for vehicle collection.`;
                                   <MessageCircle size={18} />
                                 </button>
                               )}
-                              {isServiceAdvisor && quotation.status === "CUSTOMER_APPROVED" && (
+                              {isServiceAdvisor && quotation.status === "customer_approved" && (
                                 <button
                                   onClick={() => handleSendToManager(quotation.id)}
                                   className="text-purple-600 hover:text-purple-900"

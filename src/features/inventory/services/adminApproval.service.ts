@@ -30,7 +30,7 @@ class AdminApprovalService {
     ).padStart(3, "0")}`;
 
     // Calculate total amount
-    const stock = await centralInventoryRepository.getAll();
+    const stock = await centralInventoryRepository.getAllStock();
     const totalAmount = formData.items.reduce((sum, item) => {
       const stockItem = stock.find((s) => s.id === item.fromStock);
       if (!stockItem) return sum;
@@ -56,7 +56,7 @@ class AdminApprovalService {
         partId: item.partId,
         partName: stockItem.partName,
         partNumber: stockItem.partNumber,
-        hsnCode: (stockItem as any).hsnCode || "",
+        hsnCode: stockItem.hsnCode || '',
         quantity: item.quantity,
         unitPrice: stockItem.unitPrice,
         totalPrice: stockItem.unitPrice * item.quantity,
@@ -136,7 +136,7 @@ class AdminApprovalService {
    */
   async getAllIssues(): Promise<PartsIssue[]> {
     const storageRequests = this.getAllRequests();
-    const repositoryIssues = await centralIssueService.getAllPartsIssues();
+    const repositoryIssues = await centralInventoryRepository.getAllPartsIssues();
 
     // Prioritize storage requests (pending approvals) over repository issues
     // Merge and deduplicate by ID, but storage requests take precedence
@@ -295,7 +295,7 @@ class AdminApprovalService {
     };
 
     // Issue parts (this will decrease stock)
-    const result = await centralIssueService.createPartsIssue(
+    const result = await centralInventoryRepository.createPartsIssue(
       formData,
       issuedBy
     );

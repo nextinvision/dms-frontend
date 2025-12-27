@@ -11,6 +11,7 @@ import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { validatePhone, validateEmail, cleanPhone } from "@/shared/utils/validation";
 import { initialCustomerForm } from "../constants/form.constants";
 import type { NewCustomerForm, CustomerWithVehicles, UserRole } from "@/shared/types";
+import { staticServiceCenters } from "@/shared/types";
 
 export interface UseCustomerFormReturn {
   newCustomerForm: NewCustomerForm;
@@ -172,7 +173,7 @@ export function useCustomerForm(
       const preferredServiceCenterId = serviceCenterContext.serviceCenterId ?? fallbackCenterId;
       const preferredServiceCenterName =
         serviceCenterContext.serviceCenterName ??
-        staticServiceCenters.find((center) => center.id === serviceCenterFilterId)?.name;
+        staticServiceCenters.find((center) => center.id === serviceCenterFilterId?.toString())?.name;
 
       // Combine city and state into cityState for backend compatibility
       const cityState = selectedCity && selectedState ? `${selectedCity}, ${selectedState}` : "";

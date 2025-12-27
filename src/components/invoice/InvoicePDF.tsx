@@ -84,7 +84,8 @@ export default function InvoicePDF({ invoice, onClose, showActions = true, onSen
 
         {/* Invoice Content */}
         <div ref={invoiceRef} className="p-8 bg-white">
-          <style dangerouslySetInnerHTML={{__html: `
+          <style dangerouslySetInnerHTML={{
+            __html: `
             @media print {
               .no-print {
                 display: none !important;
@@ -165,7 +166,11 @@ export default function InvoicePDF({ invoice, onClose, showActions = true, onSen
                 Vehicle Details:
               </h3>
               <div className="text-sm text-gray-700">
-                <p>{invoice.vehicle}</p>
+                <p>
+                  {typeof invoice.vehicle === 'string'
+                    ? invoice.vehicle
+                    : `${(invoice.vehicle as any).model || ''} ${(invoice.vehicle as any).registration || ''}`}
+                </p>
                 {invoice.jobCardId && (
                   <p className="mt-2"><strong>Job Card:</strong> {invoice.jobCardId}</p>
                 )}
@@ -232,7 +237,7 @@ export default function InvoicePDF({ invoice, onClose, showActions = true, onSen
                   ))
                 ) : (
                   // Fallback to legacy items
-                  invoice.items.map((item, index) => (
+                  (invoice.items || []).map((item, index) => (
                     <tr key={index}>
                       <td className="border border-gray-800 px-3 py-2">{index + 1}</td>
                       <td className="border border-gray-800 px-3 py-2">-</td>
