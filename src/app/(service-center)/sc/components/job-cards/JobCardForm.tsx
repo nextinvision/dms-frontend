@@ -130,7 +130,7 @@ export default function JobCardForm({
                 // 2. Search Approved Quotations
                 const allQuotations = safeStorage.getItem<Quotation[]>("quotations", []);
                 const approvedQuotations = allQuotations.filter(
-                    q => q.status === "customer_approved" || q.customerApproved === true
+                    q => q.customerApproved === true
                 );
 
                 const quotationResults = approvedQuotations
@@ -192,14 +192,14 @@ export default function JobCardForm({
                 customerType: form.customerType as any,
                 serviceType: "General Service",
                 description: form.customerFeedback || "",
-                status: "Created",
-                priority: "Normal",
+                status: "CREATED",
+                priority: "NORMAL",
                 assignedEngineer: null,
                 estimatedCost: "",
                 estimatedTime: "",
                 createdAt: mode === "edit" && existingJobCard ? existingJobCard.createdAt : new Date().toISOString(),
                 parts: form.part2Items.map((item) => item.partName),
-                location: "Station",
+                location: "STATION",
                 part1: {
                     fullName: form.customerName,
                     mobilePrimary: form.mobilePrimary,

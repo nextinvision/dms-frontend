@@ -1080,7 +1080,7 @@ export const AppointmentForm = ({
                                 </p>
                               </div>
                               <a
-                                href={url}
+                                href={metadata?.url || url}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
@@ -1284,7 +1284,7 @@ export const AppointmentForm = ({
                           <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
                             {isImage && url ? (
                               <Image
-                                src={url}
+                                src={metadata?.url || url}
                                 alt={`Upload ${index + 1}`}
                                 width={128}
                                 height={128}
@@ -1298,7 +1298,7 @@ export const AppointmentForm = ({
                             )}
                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <a
-                                href={url}
+                                href={metadata?.url || url}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-white hover:text-blue-300 p-2 rounded transition mr-2"
