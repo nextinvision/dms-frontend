@@ -252,6 +252,8 @@ export const useAppointmentLogic = () => {
                     metadata: categoryFiles.map((f: any) => ({
                         url: f.url,
                         publicId: f.publicId,
+                        filename: f.filename,
+                        fileId: f.id,
                         secureUrl: f.url,
                         resourceType: ['jpg', 'jpeg', 'png', 'webp'].includes(f.format) ? 'image' : 'raw',
                         format: f.format,
@@ -342,6 +344,9 @@ export const useAppointmentLogic = () => {
     const handleDeleteAppointment = useCallback(async (id: number | string) => {
         try {
             await appointmentsService.delete(id.toString());
+
+            // Invalidate cache
+            apiClient.clearCache();
 
             showToast("Appointment deleted successfully!", "success");
 
@@ -491,7 +496,8 @@ export const useAppointmentLogic = () => {
                 showToast(`Appointment scheduled successfully!`, "success");
             }
 
-            // Refresh list
+            // Invalidate cache and run refresh
+            apiClient.clearCache();
             loadAppointments();
             handleCloseAppointmentForm();
 
@@ -512,6 +518,7 @@ export const useAppointmentLogic = () => {
             };
 
             await appointmentsService.update(selectedAppointment.id.toString(), updatePayload);
+            apiClient.clearCache(); // Invalidate cache after status change
 
             // Step 2: Create Temporary Job Card in Database
             let createdJobCardId: string | null = null;

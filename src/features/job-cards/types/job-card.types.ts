@@ -277,6 +277,12 @@ export type CreateJobCardForm = {
   numberOfObservations: string;
   symptom: string;
   defectPart: string;
+
+  // Documentation Files
+  customerIdProof?: DocumentationFiles;
+  vehicleRCCopy?: DocumentationFiles;
+  warrantyCardServiceBook?: DocumentationFiles;
+  photosVideos?: DocumentationFiles;
 };
 
 // ViewType is exported from common.types.ts

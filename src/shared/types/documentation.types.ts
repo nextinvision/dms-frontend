@@ -6,12 +6,15 @@
 export interface DocumentationFiles {
   urls: string[]; // Cloudinary secure URLs
   publicIds: string[]; // Cloudinary public IDs for management
+  fileMetadata?: any[]; // FileMetadata objects from the database
   metadata?: Array<{
     publicId: string;
     url: string;
+    filename: string;
     format: string;
     bytes: number;
     uploadedAt: string;
+    fileId: string; // Database ID for deletion
   }>;
 }
 

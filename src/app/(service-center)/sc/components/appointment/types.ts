@@ -61,6 +61,7 @@ export type { DocumentationFiles };
 export { INITIAL_DOCUMENTATION_FILES } from '@/shared/types/documentation.types';
 
 export interface AppointmentForm {
+  id?: string | number; // Optional ID for edit mode
   customerName: string;
   vehicle: string;
   phone: string;

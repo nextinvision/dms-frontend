@@ -26,7 +26,7 @@ export const AppointmentGrid = React.memo<AppointmentGridProps>(({ appointments,
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {appointments.map((apt) => {
-        const isInProgress = apt.status === "In Progress";
+        const isInProgress = apt.status === "IN_PROGRESS";
         const jobCardId = isInProgress && getJobCardId ? getJobCardId(apt.id) : null;
         const hasJobCard = jobCardId !== null && jobCardId !== undefined;
 
