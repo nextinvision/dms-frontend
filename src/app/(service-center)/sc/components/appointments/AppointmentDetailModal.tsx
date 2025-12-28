@@ -247,14 +247,14 @@ export function AppointmentDetailModal({
       // Update appointment status to "In Progress"
       const updatedAppointments = appointments.map((apt) =>
         apt.id === appointment.id
-          ? { ...apt, status: "In Progress" }
+          ? { ...apt, status: "IN_PROGRESS" as const }
           : apt
       );
       setAppointments(updatedAppointments);
       safeStorage.setItem("appointments", updatedAppointments);
 
       // Update selectedAppointment state
-      setSelectedAppointment({ ...appointment, status: "In Progress" });
+      setSelectedAppointment({ ...appointment, status: "IN_PROGRESS" as const });
 
       // Create job card automatically when customer arrives
       // The job card will be created in the parent component via convertAppointmentToJobCard
@@ -636,8 +636,8 @@ export function AppointmentDetailModal({
         {/* Customer Arrival Section (Service Advisor Only) - Only show if customer hasn't arrived yet */}
         {isServiceAdvisor &&
           customerArrivalStatus !== "arrived" &&
-          appointment.status !== "In Progress" &&
-          appointment.status !== "Sent to Manager" && (
+          appointment.status !== "IN_PROGRESS" &&
+          appointment.status !== "SENT_TO_MANAGER" && (
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
               <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <CheckCircle size={20} className="text-blue-600" />
@@ -669,9 +669,9 @@ export function AppointmentDetailModal({
         {isServiceAdvisor &&
           appointment &&
           (customerArrivalStatus === "arrived" ||
-            appointment.status === "In Progress" ||
-            appointment.status === "Sent to Manager" ||
-            appointment.status === "Quotation Created") && (
+            appointment.status === "IN_PROGRESS" ||
+            appointment.status === "SENT_TO_MANAGER" ||
+            appointment.status === "QUOTATION_CREATED") && (
             <div className="space-y-4">
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                 <div className="flex items-center gap-3">

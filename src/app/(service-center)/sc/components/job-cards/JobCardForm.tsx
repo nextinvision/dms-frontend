@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Search, UserPlus, Car, FileText, CheckCircle, ArrowLeft } from "lucide-react";
+import { DocumentsSection } from "./sections/DocumentsSection";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -349,10 +350,19 @@ export default function JobCardForm({
 
                 {/* Main Form */}
                 <form onSubmit={handleSubmit}>
+
+
                     <CustomerVehicleSection
                         form={form}
                         updateField={updateFormField}
                         previewJobCardNumber={previewJobCardNumber}
+                    />
+
+                    <DocumentsSection
+                        form={form}
+                        updateField={updateFormField}
+                        jobCardId={jobCardId || existingJobCard?.id}
+                        userId={userInfo?.id}
                     />
 
                     <Part2ItemsSection

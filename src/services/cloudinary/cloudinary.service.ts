@@ -159,13 +159,14 @@ export async function uploadWithRetry(
   file: File,
   folder: string,
   options: CloudinaryUploadOptions = {},
-  maxRetries = 3
+  maxRetries = 3,
+  onProgress?: UploadProgressCallback
 ): Promise<CloudinaryUploadResult> {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await uploadToCloudinary(file, { folder, ...options });
+      return await uploadToCloudinary(file, { folder, ...options }, onProgress);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Upload failed');
 
@@ -220,9 +221,11 @@ export async function uploadMultipleToCloudinary(
     const batchResults = await Promise.all(
       batch.map((file, batchIndex) => {
         const fileIndex = i + batchIndex;
-        return uploadToCloudinary(
+        return uploadWithRetry(
           file,
-          { folder, ...options },
+          folder,
+          options,
+          3, // maxRetries
           (progress) => {
             if (onProgress) {
               onProgress(fileIndex, progress);

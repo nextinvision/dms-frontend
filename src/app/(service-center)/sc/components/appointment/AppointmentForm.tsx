@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
 import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
+import { useCloudinaryUploadWithMetadata } from "@/shared/hooks/useCloudinaryUploadWithMetadata";
 import { staticServiceCenters } from "../service-center";
 import { apiClient } from "@/core/api";
 import { API_ENDPOINTS } from "@/config/api.config";
@@ -36,9 +37,27 @@ import {
 } from "@/shared/utils/date";
 import { validatePhone } from "@/shared/utils/validation";
 import { getInitialAppointmentForm, mapVehicleToFormData, mapCustomerToFormData } from "./utils";
-import { saveFileMetadata, saveFileMetadataFromArray } from "@/services/files/fileMetadata.service";
-import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import {
+  generateTempEntityId,
+  FileCategory,
+  RelatedEntityType,
+  deleteFile,
+  updateFileEntityAssociation,
+  FileMetadata,
+} from "@/services/cloudinary/fileMetadata.service";
+import { fileUploadQueue } from "@/services/cloudinary/fileUploadQueue";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+
+// Type for document metadata stored in form
+interface DocumentMetadata {
+  publicId: string;
+  url: string;
+  filename: string;
+  format: string;
+  bytes: number;
+  uploadedAt: string;
+  fileId?: string; // Database ID for deletion (optional string from FileMetadata)
+}
 
 export interface AppointmentFormProps {
   initialData?: Partial<AppointmentFormType>;
@@ -92,7 +111,7 @@ export const AppointmentForm = ({
   const canAccessServiceDetails = hasRoleAccess(["call_center", "service_advisor", "sc_manager", "service_engineer"]);
   const canAccessEstimatedCost = hasRoleAccess(["service_advisor", "sc_manager"]);
   const canAccessOdometer = hasRoleAccess(["service_advisor"]);
-  const hasDocUploadAccess = hasRoleAccess(["call_center", "service_advisor"]);
+  const hasDocUploadAccess = hasRoleAccess(["call_center", "service_advisor", "sc_manager"]);
   const hasDropoffMediaAccess = hasRoleAccess(["call_center", "service_advisor", "sc_manager"]);
   const canAccessOperationalDetails = hasRoleAccess(["call_center", "service_advisor", "sc_manager"]);
   const canAssignTechnician = hasRoleAccess(["service_advisor", "sc_manager", "service_engineer"]);
@@ -341,6 +360,16 @@ export const AppointmentForm = ({
   }, [selectedCustomer, availableServiceCenters]);
 
   const handleSubmit = useCallback(() => {
+    // Check if selected vehicle has an active job card
+    if (selectedVehicle && (selectedVehicle.currentStatus === "Active Job Card" || selectedVehicle.activeJobCardId)) {
+      setValidationError(
+        `Cannot schedule appointment for vehicle ${selectedVehicle.registration || formData.vehicle}. ` +
+        `This vehicle has an active job card (${selectedVehicle.activeJobCardId}). ` +
+        `Please complete or close the existing job card first.`
+      );
+      return;
+    }
+
     // Ensure all state values are synced to formData before submission
     const finalFormData: AppointmentFormType = {
       ...formData,
@@ -409,7 +438,7 @@ export const AppointmentForm = ({
     setValidationError("");
     setFieldErrors({});
     onSubmit(finalFormData);
-  }, [formData, pickupState, pickupCity, dropState, dropCity, isCallCenter, onSubmit]);
+  }, [formData, pickupState, pickupCity, dropState, dropCity, isCallCenter, onSubmit, selectedVehicle]);
 
   const updateFormData = useCallback((updates: Partial<AppointmentFormType>) => {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -424,8 +453,10 @@ export const AppointmentForm = ({
     }
   }, [fieldErrors]);
 
-  // Document handlers with Cloudinary
-  const { uploadMultiple, uploadFile, isUploading: isUploadingFiles } = useCloudinaryUpload();
+  // Document handlers with Cloudinary - NEW METADATA-AWARE IMPLEMENTATION
+  const { uploadMultipleWithMetadata, uploadFileWithMetadata, isUploading: isUploadingFiles, progress } = useCloudinaryUploadWithMetadata();
+  const [tempEntityId] = useState(() => generateTempEntityId());
+  const [uploadQueueId, setUploadQueueId] = useState<string | null>(null);
   const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
 
@@ -435,129 +466,136 @@ export const AppointmentForm = ({
 
       const fileArray = Array.from(files);
 
-      // Determine folder based on field and entity IDs
+      // Get user info for uploadedBy field
+      const userInfo = safeStorage.getItem<any>('userInfo', null);
+
+      // Determine folder and category based on field
       let folder: string;
-      const customerId = formData.customerName || 'temp';
-      const vehicleId = formData.vehicle || 'temp';
-      const appointmentId = formData.date || 'temp'; // Use date as temporary ID if no appointment ID
+      let category: FileCategory;
+
+      // Use actual entity ID if in edit mode, otherwise use temp ID
+      // Try initialData.id first, then formData.id, finally fall back to tempEntityId
+      const entityId = mode === 'edit' && (initialData?.id || formData.id)
+        ? String(initialData?.id || formData.id)
+        : tempEntityId;
 
       switch (field) {
         case 'customerIdProof':
-          folder = CLOUDINARY_FOLDERS.customerIdProof(customerId);
+          folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
+          category = FileCategory.CUSTOMER_ID_PROOF;
           break;
         case 'vehicleRCCopy':
-          folder = CLOUDINARY_FOLDERS.vehicleRC(vehicleId);
+          folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
+          category = FileCategory.VEHICLE_RC;
           break;
         case 'photosVideos':
-          folder = CLOUDINARY_FOLDERS.vehiclePhotos(vehicleId);
+          folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
+          category = FileCategory.VEHICLE_PHOTOS;
           break;
         case 'warrantyCardServiceBook':
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+          category = FileCategory.WARRANTY_CARD;
           break;
         default:
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+          category = FileCategory.PHOTOS_VIDEOS;
       }
 
       try {
-        // Upload files to Cloudinary
-        const uploadResults = await uploadMultiple(fileArray, folder, {
-          tags: [field, 'appointment'],
-          context: {
-            field,
-            customerId: customerId,
-            vehicleId: vehicleId,
+        // Upload files to Cloudinary AND save metadata to database
+        const fileMetadataList = await uploadMultipleWithMetadata(fileArray, {
+          folder,
+          category,
+          entityId,
+          entityType: RelatedEntityType.APPOINTMENT,
+          uploadedBy: userInfo?.id,
+          cloudinaryOptions: {
+            tags: [field, 'appointment'],
+            context: {
+              field,
+              appointmentId: entityId,
+            },
           },
         });
 
-        // Store Cloudinary URLs and public IDs
-        const newUrls = uploadResults.map(result => result.secureUrl);
-        const newPublicIds = uploadResults.map(result => result.publicId);
-        const existingUrls = formData[field]?.urls || [];
-        const existingPublicIds = formData[field]?.publicIds || [];
+        // Store complete FileMetadata objects in form data
+        const existingMetadata = formData[field]?.fileMetadata || [];
 
         updateFormData({
           [field]: {
-            urls: [...existingUrls, ...newUrls],
-            publicIds: [...existingPublicIds, ...newPublicIds],
+            fileMetadata: [...existingMetadata, ...fileMetadataList],
+            // Keep urls and publicIds for backward compatibility with display logic
+            urls: [...(formData[field]?.urls || []), ...fileMetadataList.map(f => f.url)],
+            publicIds: [...(formData[field]?.publicIds || []), ...fileMetadataList.map(f => f.publicId)],
             metadata: [
-              ...(formData[field]?.metadata || []),
-              ...uploadResults.map(result => ({
-                publicId: result.publicId,
-                url: result.secureUrl,
-                format: result.format,
-                bytes: result.bytes,
+              ...(formData[field]?.metadata || [] as DocumentMetadata[]),
+              ...fileMetadataList.map(f => ({
+                publicId: f.publicId,
+                url: f.url,
+                format: f.format,
+                bytes: f.bytes,
                 uploadedAt: new Date().toISOString(),
-              })),
-            ],
+                fileId: String(f.id), // Convert database ID to string for DocumentMetadata
+              } as DocumentMetadata)),
+            ] as DocumentMetadata[],
           },
         });
 
-        // Save file metadata to backend if appointment ID exists
-        /* 
-        if (mode === 'edit') {
-          const categoryMap: Record<string, FileCategory> = {
-            customerIdProof: FileCategory.CUSTOMER_ID_PROOF,
-            vehicleRCCopy: FileCategory.VEHICLE_RC,
-            warrantyCardServiceBook: FileCategory.WARRANTY_CARD,
-            photosVideos: FileCategory.PHOTOS_VIDEOS,
-          };
-
-          // Note: Appointment ID should be passed separately or retrieved from form submission
-          // For now, we'll skip saving metadata here and let it be saved during form submission
-          const appointmentId = 'temp'; // Will be replaced with actual ID during submission
-          const authToken = safeStorage.getItem<string | null>('authToken', null);
-
-          // Save metadata to backend (non-blocking)
-          saveFileMetadata(
-            uploadResults,
-            fileArray,
-            {
-              category: categoryMap[field],
-              relatedEntityId: appointmentId,
-              relatedEntityType: RelatedEntityType.APPOINTMENT,
-              uploadedBy: userInfo?.id,
-            },
-            authToken || undefined
-          ).catch(err => {
-            console.error('Failed to save file metadata to backend:', err);
-            // Don't block user - metadata can be saved later
-          });
-        }
-        */
+        console.log(`✅ Successfully uploaded and saved ${fileMetadataList.length} files for ${field}`);
       } catch (err) {
         console.error('Upload failed:', err);
         alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     },
-    [formData, uploadMultiple, updateFormData, initialData, mode, userInfo]
+    [formData, uploadMultipleWithMetadata, updateFormData, mode, initialData?.id, tempEntityId]
   );
 
   const handleRemoveDocument = useCallback(
-    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
-      const existingUrls = formData[field]?.urls || [];
-      const existingPublicIds = formData[field]?.publicIds || [];
-      const publicId = existingPublicIds[index];
+    async (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
+      const fileMetadata = formData[field]?.fileMetadata || [];
+      const urls = formData[field]?.urls || [];
+      const publicIds = formData[field]?.publicIds || [];
+      const metadata = (formData[field]?.metadata || []) as DocumentMetadata[];
+
+      const fileToDelete = fileMetadata[index];
+      const fileId = metadata[index]?.fileId; // Database ID
 
       // Remove from state immediately (optimistic update)
-      const newUrls = existingUrls.filter((_: string, i: number) => i !== index);
-      const newPublicIds = existingPublicIds.filter((_: string, i: number) => i !== index);
-      const newMetadata = (formData[field]?.metadata || []).filter((_: any, i: number) => i !== index);
+      const newFileMetadata = fileMetadata.filter((_: FileMetadata, i: number) => i !== index);
+      const newUrls = urls.filter((_: string, i: number) => i !== index);
+      const newPublicIds = publicIds.filter((_: string, i: number) => i !== index);
+      const newMetadata = metadata.filter((_: DocumentMetadata, i: number) => i !== index);
 
       updateFormData({
         [field]: {
+          fileMetadata: newFileMetadata,
           urls: newUrls,
           publicIds: newPublicIds,
           metadata: newMetadata,
         },
       });
 
-      // Optionally delete from Cloudinary via backend API
-      if (publicId) {
-        // Note: Deletion should be handled by backend for security
-        // Frontend can request deletion via API endpoint
-        fetch(`/api/files/${publicId}`, { method: 'DELETE' }).catch((err) => {
-          console.error('Failed to delete from Cloudinary:', err);
-        });
+      // Delete from backend (Cloudinary + Database)
+      if (fileId || fileToDelete?.id) {
+        try {
+          const idToDelete = fileId || fileToDelete?.id;
+          await deleteFile(idToDelete);
+          console.log(`✅ Successfully deleted file: ${idToDelete}`);
+        } catch (error) {
+          console.error('Failed to delete file:', error);
+          // Optionally revert the optimistic update here
+          alert(`Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+          // Revert the optimistic update
+          updateFormData({
+            [field]: {
+              fileMetadata,
+              urls,
+              publicIds,
+              metadata,
+            },
+          });
+        }
       }
     },
     [formData, updateFormData]
@@ -575,70 +613,90 @@ export const AppointmentForm = ({
     async (file: File) => {
       if (!cameraDocumentType) return;
 
-      // Determine folder
+      // Get user info for uploadedBy field
+      const userInfo = safeStorage.getItem<any>('userInfo', null);
+
+      // Determine folder and category
       let folder: string;
-      const customerId = formData.customerName || 'temp';
-      const vehicleId = formData.vehicle || 'temp';
-      const appointmentId = formData.date || 'temp';
+      let category: FileCategory;
+
+      // Use actual entity ID if in edit mode, otherwise use temp ID
+      const entityId = mode === 'edit' && initialData?.id ? String(initialData.id) : tempEntityId;
 
       switch (cameraDocumentType) {
         case 'customerIdProof':
-          folder = CLOUDINARY_FOLDERS.customerIdProof(customerId);
+          folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
+          category = FileCategory.CUSTOMER_ID_PROOF;
           break;
         case 'vehicleRCCopy':
-          folder = CLOUDINARY_FOLDERS.vehicleRC(vehicleId);
+          folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
+          category = FileCategory.VEHICLE_RC;
           break;
         case 'photosVideos':
-          folder = CLOUDINARY_FOLDERS.vehiclePhotos(vehicleId);
+          folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
+          category = FileCategory.VEHICLE_PHOTOS;
           break;
         case 'warrantyCardServiceBook':
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+          category = FileCategory.WARRANTY_CARD;
           break;
         default:
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(appointmentId);
+          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+          category = FileCategory.PHOTOS_VIDEOS;
       }
 
       try {
-        // Upload immediately to Cloudinary
-        const result = await uploadFile(file, folder, {
-          tags: [cameraDocumentType, 'appointment', 'camera'],
-          context: {
-            field: cameraDocumentType,
-            customerId: customerId,
-            vehicleId: vehicleId,
-            source: 'camera',
+        // Upload to Cloudinary AND save metadata to database
+        const fileMetadata = await uploadFileWithMetadata(file, {
+          folder,
+          category,
+          entityId,
+          entityType: RelatedEntityType.APPOINTMENT,
+          uploadedBy: userInfo?.id,
+          cloudinaryOptions: {
+            tags: [cameraDocumentType, 'appointment', 'camera'],
+            context: {
+              field: cameraDocumentType,
+              appointmentId: entityId,
+              source: 'camera',
+            },
           },
         });
 
         // Store in form data
+        const existingMetadata = formData[cameraDocumentType]?.fileMetadata || [];
         const existingUrls = formData[cameraDocumentType]?.urls || [];
         const existingPublicIds = formData[cameraDocumentType]?.publicIds || [];
 
         updateFormData({
           [cameraDocumentType]: {
-            urls: [...existingUrls, result.secureUrl],
-            publicIds: [...existingPublicIds, result.publicId],
+            fileMetadata: [...existingMetadata, fileMetadata],
+            urls: [...existingUrls, fileMetadata.url],
+            publicIds: [...existingPublicIds, fileMetadata.publicId],
             metadata: [
-              ...(formData[cameraDocumentType]?.metadata || []),
+              ...(formData[cameraDocumentType]?.metadata || [] as DocumentMetadata[]),
               {
-                publicId: result.publicId,
-                url: result.secureUrl,
-                format: result.format,
-                bytes: result.bytes,
+                publicId: fileMetadata.publicId,
+                url: fileMetadata.url,
+                filename: fileMetadata.filename,
+                format: fileMetadata.format,
+                bytes: fileMetadata.bytes,
                 uploadedAt: new Date().toISOString(),
-              },
-            ],
+                fileId: String(fileMetadata.id), // Convert database ID to string for DocumentMetadata
+              } as DocumentMetadata,
+            ] as DocumentMetadata[],
           },
         });
 
         setCameraModalOpen(false);
         setCameraDocumentType(null);
+        console.log(`✅ Successfully captured and uploaded file for ${cameraDocumentType}`);
       } catch (err) {
         console.error('Camera capture upload failed:', err);
         alert(`Failed to upload: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     },
-    [cameraDocumentType, formData, uploadFile, updateFormData]
+    [cameraDocumentType, formData, uploadFileWithMetadata, updateFormData, mode, initialData?.id, tempEntityId]
   );
 
   return (
@@ -677,10 +735,14 @@ export const AppointmentForm = ({
               }
             }}
             placeholder="Select vehicle"
-            options={selectedCustomer.vehicles.map((v) => ({
-              value: formatVehicleString(v),
-              label: `${formatVehicleString(v)}${v.registration ? ` - ${v.registration}` : ""}`,
-            }))}
+            options={selectedCustomer.vehicles.map((v) => {
+              const hasActiveJobCard = v.currentStatus === "Active Job Card" || v.activeJobCardId;
+              return {
+                value: formatVehicleString(v),
+                label: `${formatVehicleString(v)}${v.registration ? ` - ${v.registration}` : ""}${hasActiveJobCard ? " ⚠️ (Active Job Card)" : ""}`,
+                disabled: hasActiveJobCard
+              };
+            })}
             error={fieldErrors.vehicle}
           />
         ) : (
@@ -693,6 +755,23 @@ export const AppointmentForm = ({
             error={fieldErrors.vehicle}
           />
         )}
+
+        {/* Active Job Card Warning */}
+        {selectedVehicle && (selectedVehicle.currentStatus === "Active Job Card" || selectedVehicle.activeJobCardId) && (
+          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={18} />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-red-800">Cannot Schedule Appointment</p>
+                <p className="text-xs text-red-700 mt-1">
+                  This vehicle has an active job card ({selectedVehicle.activeJobCardId}).
+                  Please complete or close the existing job card before scheduling a new appointment.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {selectedCustomer && formData.vehicle && selectedVehicle?.lastServiceCenterName && (
           <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
             <Building2 size={12} />

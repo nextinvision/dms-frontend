@@ -18,7 +18,7 @@ import { ApiError } from './errors';
 import { API_CONFIG } from '@/config/api.config';
 
 // Base API URL
-const API_BASE_URL = API_CONFIG.BASE_URL;
+const API_BASE_URL = API_CONFIG.BASE_URL || '';
 
 class ApiClient {
     private baseURL: string;
@@ -282,6 +282,13 @@ class ApiClient {
      */
     async delete<T = any>(path: string, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
         return this.request<T>('DELETE', path, undefined, config);
+    }
+
+    /**
+     * Clear response cache
+     */
+    clearCache() {
+        this.cache.clear();
     }
 }
 

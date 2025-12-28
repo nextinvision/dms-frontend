@@ -42,6 +42,10 @@ export const jobCardAdapter = {
         vinImage: { urls: [], publicIds: [], metadata: [] },
         odoImage: { urls: [], publicIds: [], metadata: [] },
         damageImages: { urls: [], publicIds: [], metadata: [] },
+        customerIdProof: { urls: [], publicIds: [], metadata: [] },
+        vehicleRCCopy: { urls: [], publicIds: [], metadata: [] },
+        warrantyCardServiceBook: { urls: [], publicIds: [], metadata: [] },
+        photosVideos: { urls: [], publicIds: [], metadata: [] },
         issueDescription: "",
         numberOfObservations: "",
         symptom: "",
@@ -251,7 +255,31 @@ export const jobCardAdapter = {
      * Map a JobCard object back to Form data for editing
      */
     mapJobCardToForm: (jobCard: any): Partial<CreateJobCardForm> => {
+        const { mapFilesToCategory } = require("@/app/(service-center)/sc/appointments/hooks/useAppointmentLogic"); // Assume similar logic or duplicate it.
+        // Actually, let's implement inline to avoid dependency on a hook file.
+
+        const mapFiles = (category: string) => {
+            if (!jobCard.files || !Array.isArray(jobCard.files)) return { urls: [], publicIds: [], metadata: [] };
+
+            const filtered = jobCard.files.filter((f: any) => f.category === category);
+            return {
+                urls: filtered.map((f: any) => f.url),
+                publicIds: filtered.map((f: any) => f.publicId),
+                metadata: filtered.map((f: any) => ({
+                    filename: f.filename,
+                    format: f.format,
+                    bytes: f.bytes,
+                    fileId: f.id,
+                    uploadedAt: f.createdAt ? f.createdAt.toString() : new Date().toISOString()
+                }))
+            };
+        };
+
         return {
+            customerIdProof: mapFiles('customer_id_proof'),
+            vehicleRCCopy: mapFiles('vehicle_rc'),
+            warrantyCardServiceBook: mapFiles('warranty_card'),
+            photosVideos: mapFiles('photos_videos'),
             customerId: jobCard.customerId || "",
             customerName: jobCard.customerName || "",
             fullName: jobCard.part1?.fullName || jobCard.customerName || "",

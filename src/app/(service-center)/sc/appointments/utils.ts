@@ -10,6 +10,7 @@ export const convertAppointmentToFormData = (appointment: AppointmentRecord): Pa
   const timeIn24Hour = parseTime12To24(appointment.time);
 
   return {
+    id: appointment.id, // Include ID for edit mode
     customerName: appointment.customerName,
     vehicle: appointment.vehicle,
     phone: appointment.phone,
