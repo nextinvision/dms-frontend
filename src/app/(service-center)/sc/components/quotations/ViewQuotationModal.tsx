@@ -287,7 +287,7 @@ export function ViewQuotationModal({
                                     <div>
                                         <p className="text-sm font-semibold text-gray-700 mb-1">Brand and Model</p>
                                         <p className="text-gray-900">
-                                            {quotation.vehicle.make || ""} {quotation.vehicle.model || ""}
+                                            {quotation.vehicle.make || "N/A"} {quotation.vehicle.model || ""}
                                         </p>
                                     </div>
                                 </>
@@ -374,9 +374,6 @@ export function ViewQuotationModal({
                                         <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold text-gray-700">
                                             Part Number
                                         </th>
-                                        <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                                            HSN/SAC Code
-                                        </th>
                                         <th className="border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-700">
                                             Quantity
                                         </th>
@@ -404,9 +401,6 @@ export function ViewQuotationModal({
                                                 <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
                                                     {item.partNumber || "-"}
                                                 </td>
-                                                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
-                                                    {item.hsnSacCode || "-"}
-                                                </td>
                                                 <td className="border border-gray-300 px-4 py-2 text-sm text-center text-gray-900">
                                                     {item.quantity}
                                                 </td>
@@ -423,7 +417,7 @@ export function ViewQuotationModal({
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={8} className="border border-gray-300 px-4 py-4 text-center text-gray-500">
+                                            <td colSpan={7} className="border border-gray-300 px-4 py-4 text-center text-gray-500">
                                                 No items added
                                             </td>
                                         </tr>
@@ -597,7 +591,7 @@ export function ViewQuotationModal({
                     {/* Service Advisor Actions (shown for all roles for now so feature is visible) */}
                     {(
                         <>
-                            {quotation.status === "draft" && onSendToCustomer && (
+                            {quotation.status?.toUpperCase() === "DRAFT" && onSendToCustomer && (
                                 <button
                                     onClick={() => onSendToCustomer(quotation.id)}
                                     className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
@@ -606,7 +600,7 @@ export function ViewQuotationModal({
                                     Send to Customer (WhatsApp)
                                 </button>
                             )}
-                            {quotation.status === "sent_to_customer" && onCustomerApproval && onCustomerRejection && (
+                            {quotation.status?.toUpperCase() === "SENT_TO_CUSTOMER" && onCustomerApproval && onCustomerRejection && (
                                 <>
                                     <button
                                         onClick={() => onCustomerRejection(quotation.id)}
@@ -624,7 +618,7 @@ export function ViewQuotationModal({
                                     </button>
                                 </>
                             )}
-                            {quotation.status === "customer_approved" && onSendToManager && (
+                            {quotation.status?.toUpperCase() === "CUSTOMER_APPROVED" && onSendToManager && (
                                 <button
                                     onClick={() => onSendToManager(quotation.id)}
                                     className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium inline-flex items-center gap-2"
@@ -639,7 +633,7 @@ export function ViewQuotationModal({
                     {/* Service Manager Actions */}
                     {isServiceManager && onManagerApproval && onManagerRejection && (
                         <>
-                            {quotation.status === "sent_to_manager" && (
+                            {quotation.status?.toUpperCase() === "SENT_TO_MANAGER" && (
                                 <>
                                     <button
                                         onClick={() => onManagerRejection(quotation.id)}

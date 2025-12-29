@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Upload, Video, Image as ImageIcon, FileText, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
-import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
+import { useCloudinaryUploadWithMetadata } from "@/shared/hooks/useCloudinaryUploadWithMetadata";
 import { optimizeCloudinaryUrl } from "@/services/cloudinary/cloudinary.service";
 import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
-import { saveFileMetadata } from "@/services/files/fileMetadata.service";
-import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import {
+    FileCategory,
+    RelatedEntityType,
+    deleteFile,
+    FileMetadata
+} from "@/services/cloudinary/fileMetadata.service";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 interface WarrantyDocumentationData {
@@ -18,6 +22,8 @@ interface WarrantyDocumentationData {
     numberOfObservations: string;
     symptom: string;
     defectPart: string;
+    // Store full metadata for persistence tracking
+    fileMetadata?: Record<string, FileMetadata[]>;
 }
 
 interface WarrantyDocumentationModalProps {
@@ -43,7 +49,7 @@ export default function WarrantyDocumentationModal({
     itemIndex = 0,
     userId,
 }: WarrantyDocumentationModalProps) {
-    const { uploadMultiple } = useCloudinaryUpload();
+    const { uploadMultipleWithMetadata, isUploading, progress } = useCloudinaryUploadWithMetadata();
     const [formData, setFormData] = useState<WarrantyDocumentationData>({
         videoEvidence: [],
         vinImage: [],
@@ -53,11 +59,15 @@ export default function WarrantyDocumentationModal({
         numberOfObservations: "",
         symptom: "",
         defectPart: "",
+        fileMetadata: {},
     });
 
     useEffect(() => {
         if (initialData) {
-            setFormData(initialData);
+            setFormData({
+                ...initialData,
+                fileMetadata: initialData.fileMetadata || {},
+            });
         }
     }, [initialData]);
 
@@ -70,92 +80,100 @@ export default function WarrantyDocumentationModal({
 
             const fileArray = Array.from(files);
 
-            // Determine folder based on field type
+            // Determine folder and category based on field type
             let folder: string;
+            let category: FileCategory;
             switch (field) {
                 case 'videoEvidence':
                     folder = CLOUDINARY_FOLDERS.warrantyVideo(jobCardId, itemIndex);
+                    category = FileCategory.WARRANTY_VIDEO;
                     break;
                 case 'vinImage':
                     folder = CLOUDINARY_FOLDERS.warrantyVIN(jobCardId, itemIndex);
+                    category = FileCategory.WARRANTY_VIN;
                     break;
                 case 'odoImage':
                     folder = CLOUDINARY_FOLDERS.warrantyODO(jobCardId, itemIndex);
+                    category = FileCategory.WARRANTY_ODO;
                     break;
                 case 'damageImages':
                     folder = CLOUDINARY_FOLDERS.warrantyDamage(jobCardId, itemIndex);
+                    category = FileCategory.WARRANTY_DAMAGE;
                     break;
                 default:
                     folder = CLOUDINARY_FOLDERS.jobCardWarranty(jobCardId);
+                    category = FileCategory.PHOTOS_VIDEOS;
             }
 
             try {
-                // Upload files to Cloudinary
-                const uploadResults = await uploadMultiple(fileArray, folder, {
-                    tags: [field, 'warranty', 'job-card'],
-                    context: {
-                        field,
-                        jobCardId,
-                        itemIndex: itemIndex.toString(),
-                        itemDescription,
+                // Upload files to Cloudinary AND save metadata to backend
+                const fileMetadatas = await uploadMultipleWithMetadata(fileArray, {
+                    folder,
+                    category,
+                    entityId: jobCardId,
+                    entityType: RelatedEntityType.JOB_CARD,
+                    uploadedBy: userId,
+                    cloudinaryOptions: {
+                        tags: [field, 'warranty', 'job-card'],
+                        context: {
+                            field,
+                            jobCardId,
+                            itemIndex: itemIndex.toString(),
+                            itemDescription,
+                        },
                     },
                 });
 
-                // Store Cloudinary URLs
-                const newUrls = uploadResults.map(result => result.secureUrl);
+                // Store Cloudinary URLs and metadata
+                const newUrls = fileMetadatas.map(result => result.url);
                 setFormData((prev) => ({
                     ...prev,
-                    [field]: [...prev[field], ...newUrls],
+                    [field]: [...(prev[field] || []), ...newUrls],
+                    fileMetadata: {
+                        ...(prev.fileMetadata || {}),
+                        [field]: [...(prev.fileMetadata?.[field] || []), ...fileMetadatas],
+                    }
                 }));
 
-                // Save file metadata to backend if job card ID exists
-                if (jobCardId && jobCardId !== "temp") {
-                    const categoryMap: Record<string, FileCategory> = {
-                        videoEvidence: FileCategory.WARRANTY_VIDEO,
-                        vinImage: FileCategory.WARRANTY_VIN,
-                        odoImage: FileCategory.WARRANTY_ODO,
-                        damageImages: FileCategory.WARRANTY_DAMAGE,
-                    };
-
-                    const authToken = safeStorage.getItem<string | null>('authToken', null);
-
-                    // Save metadata to backend (non-blocking)
-                    saveFileMetadata(
-                        uploadResults,
-                        fileArray,
-                        {
-                            category: categoryMap[field],
-                            relatedEntityId: jobCardId,
-                            relatedEntityType: RelatedEntityType.JOB_CARD,
-                            uploadedBy: userId,
-                        },
-                        authToken || undefined
-                    ).catch(err => {
-                        console.error('Failed to save file metadata to backend:', err);
-                    });
-                }
+                console.log(`✅ Successfully uploaded and saved ${fileMetadatas.length} files for ${field}`);
             } catch (err) {
                 console.error('Upload failed:', err);
                 alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
             }
         },
-        [jobCardId, itemIndex, itemDescription, uploadMultiple, userId]
+        [jobCardId, itemIndex, itemDescription, uploadMultipleWithMetadata, userId]
     );
 
     const handleRemoveFile = useCallback(
-        (
+        async (
             field: keyof Pick<WarrantyDocumentationData, "videoEvidence" | "vinImage" | "odoImage" | "damageImages">,
             index: number
         ) => {
+            const fileMetadata = formData.fileMetadata?.[field]?.[index];
+            const fileUrl = formData[field][index];
+
+            // Optimistic update
             setFormData((prev) => ({
                 ...prev,
                 [field]: prev[field].filter((_, i) => i !== index),
+                fileMetadata: {
+                    ...prev.fileMetadata,
+                    [field]: prev.fileMetadata?.[field]?.filter((_, i) => i !== index) || [],
+                }
             }));
 
-            // Note: Deletion from Cloudinary should be handled by backend API
-            // Frontend can request deletion via API endpoint if needed
+            // Delete from backend if we have a file ID
+            if (fileMetadata?.id) {
+                try {
+                    await deleteFile(fileMetadata.id);
+                    console.log(`✅ Successfully deleted file: ${fileMetadata.id}`);
+                } catch (error) {
+                    console.error('Failed to delete file from backend:', error);
+                    // Optionally revert optimistic update
+                }
+            }
         },
-        []
+        [formData]
     );
 
     const handleSave = () => {

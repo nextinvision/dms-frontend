@@ -55,11 +55,11 @@ export function useJobCardView() {
     const filteredJobs = useMemo(() => {
         return visibleJobCards.filter((job) => {
             // Status filter
-            if (filter === "draft" && !(job.draftIntake && job.status === "Created")) return false;
-            if (filter === "created" && job.status !== "Created" && job.status !== "Awaiting Quotation Approval") return false;
-            if (filter === "assigned" && job.status !== "Assigned") return false;
-            if (filter === "in_progress" && job.status !== "In Progress") return false;
-            if (filter === "completed" && job.status !== "Completed") return false;
+            if (filter === "draft" && !(job.draftIntake && job.status === "CREATED")) return false;
+            if (filter === "created" && job.status !== "CREATED" && job.status !== "AWAITING_QUOTATION_APPROVAL") return false;
+            if (filter === "assigned" && job.status !== "ASSIGNED") return false;
+            if (filter === "in_progress" && job.status !== "IN_PROGRESS") return false;
+            if (filter === "completed" && job.status !== "COMPLETED") return false;
 
             // Search filter
             if (searchQuery) {
@@ -91,16 +91,16 @@ export function useJobCardView() {
     }, [visibleJobCards, filter, searchQuery]);
 
     const draftCount = useMemo(
-        () => visibleJobCards.filter((card) => card.draftIntake && card.status === "Created").length,
+        () => visibleJobCards.filter((card) => card.draftIntake && card.status === "CREATED").length,
         [visibleJobCards]
     );
 
     const kanbanColumns: KanbanColumn[] = [
-        { id: "created", title: "Created", status: "Created" },
-        { id: "assigned", title: "Assigned", status: "Assigned" },
-        { id: "in_progress", title: "In Progress", status: "In Progress" },
-        { id: "parts_pending", title: "Parts Pending", status: "Parts Pending" },
-        { id: "completed", title: "Completed", status: "Completed" },
+        { id: "created", title: "Created", status: "CREATED" },
+        { id: "assigned", title: "Assigned", status: "ASSIGNED" },
+        { id: "in_progress", title: "In Progress", status: "IN_PROGRESS" },
+        { id: "parts_pending", title: "Parts Pending", status: "PARTS_PENDING" },
+        { id: "completed", title: "Completed", status: "COMPLETED" },
     ];
 
     const getJobsByStatus = (status: JobCardStatus): JobCard[] => {

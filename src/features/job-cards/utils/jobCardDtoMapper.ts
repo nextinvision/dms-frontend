@@ -79,7 +79,12 @@ export function mapJobCardToDto(jobCard: any, userId?: string, isUpdate = false)
             numberOfObservations: jobCard.part2A.numberOfObservations,
             symptom: jobCard.part2A.symptom,
             defectPart: jobCard.part2A.defectPart,
-            // Files will be handled separately if needed
+            files: {
+                videoEvidence: mapFilesToDto(jobCard.part2A.videoEvidenceMetadata || jobCard.videoEvidence?.metadata),
+                vinImage: mapFilesToDto(jobCard.part2A.vinImageMetadata || jobCard.vinImage?.metadata),
+                odoImage: mapFilesToDto(jobCard.part2A.odoImageMetadata || jobCard.odoImage?.metadata),
+                damageImages: mapFilesToDto(jobCard.part2A.damageImagesMetadata || jobCard.damageImages?.metadata),
+            }
         };
     }
 
@@ -89,6 +94,23 @@ export function mapJobCardToDto(jobCard: any, userId?: string, isUpdate = false)
     }
 
     return dto;
+}
+
+/**
+ * Helper to map file metadata to DTO format
+ */
+function mapFilesToDto(metadata: any[]) {
+    if (!metadata || !Array.isArray(metadata)) return [];
+    return metadata.map(m => ({
+        url: m.url,
+        publicId: m.publicId,
+        filename: m.filename,
+        format: m.format,
+        bytes: m.bytes,
+        duration: m.duration,
+        width: m.width,
+        height: m.height
+    }));
 }
 
 /**

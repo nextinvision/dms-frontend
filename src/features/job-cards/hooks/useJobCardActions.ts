@@ -293,8 +293,17 @@ export function useJobCardActions(
         showSuccess("Work completion notified to manager.");
     };
 
-    const handleSubmitToManager = async (job?: JobCard) => {
-        const targetJob = job || selectedJob;
+    const handleSubmitToManager = async (jobOrId?: JobCard | string) => {
+        let targetJob: JobCard | null = null;
+
+        if (typeof jobOrId === 'string') {
+            targetJob = jobCards.find(j => j.id === jobOrId) || null;
+        } else if (jobOrId) {
+            targetJob = jobOrId;
+        } else {
+            targetJob = selectedJob;
+        }
+
         if (!targetJob) {
             showWarning("Please select a job card to submit.");
             return;
