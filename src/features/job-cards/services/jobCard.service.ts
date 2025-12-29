@@ -5,6 +5,7 @@
 import { apiClient } from "@/core/api";
 import { API_ENDPOINTS } from "@/config/api.config";
 import type { JobCard } from "@/shared/types/job-card.types";
+import { mapJobCardToDto } from "../utils/jobCardDtoMapper";
 
 class JobCardService {
   async getAll(params?: any): Promise<JobCard[]> {
@@ -22,15 +23,21 @@ class JobCardService {
     }
   }
 
-  async create(jobCard: Partial<JobCard>): Promise<JobCard> {
-    const response = await apiClient.post<JobCard>(API_ENDPOINTS.JOB_CARDS, jobCard);
+  async create(jobCard: Partial<JobCard>, userId?: string): Promise<JobCard> {
+    // Convert to DTO format expected by backend
+    const dto = mapJobCardToDto(jobCard, userId);
+    console.log('Creating job card with DTO:', dto);
+    const response = await apiClient.post<JobCard>(API_ENDPOINTS.JOB_CARDS, dto);
     return response.data;
   }
 
-  async update(jobCardId: string, jobCard: Partial<JobCard>): Promise<JobCard> {
+  async update(jobCardId: string, jobCard: Partial<JobCard>, userId?: string): Promise<JobCard> {
+    // Convert to DTO format expected by backend
+    const dto = mapJobCardToDto(jobCard, userId);
+    console.log('Updating job card with DTO:', dto);
     const response = await apiClient.patch<JobCard>(
       `${API_ENDPOINTS.JOB_CARDS}/${jobCardId}`,
-      jobCard
+      dto
     );
     return response.data;
   }

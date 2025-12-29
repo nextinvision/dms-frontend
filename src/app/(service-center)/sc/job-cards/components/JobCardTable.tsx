@@ -95,6 +95,71 @@ const JobCardTable = React.memo<JobCardTableProps>(({
         });
     }, [currentJobs, sortColumn, sortDirection]);
 
+    // Helper to get customer name from job card
+    const getCustomerName = (job: JobCard): string => {
+        // Try relation first
+        if (job.customer) {
+            return `${job.customer.name || ''}`.trim() || job.customer.phone || 'Unknown Customer';
+        }
+        // Fall back to direct field
+        return job.customerName || job.part1?.fullName || 'Unknown Customer';
+    };
+
+    // Helper to get vehicle display string
+    const getVehicleDisplay = (job: JobCard): string => {
+        // Debug: Log the job object to see what data we have
+        console.log('Job vehicle data:', { vehicle: job.vehicle, vehicleObject: job.vehicleObject, vehicleMake: job.vehicleMake, vehicleModel: job.vehicleModel, part1: job.part1, part1Data: (job as any).part1Data });
+
+        // Try relation first
+        if (job.vehicleObject) {
+            const display = `${job.vehicleObject.vehicleMake || ''} ${job.vehicleObject.vehicleModel || ''}`.trim();
+            if (display) return display;
+        }
+
+        // Try legacy fields
+        if (job.vehicleMake || job.vehicleModel) {
+            const display = `${job.vehicleMake || ''} ${job.vehicleModel || ''}`.trim();
+            if (display) return display;
+        }
+
+        // Try part1 data (camelCase)
+        if (job.part1) {
+            const display = `${job.part1.vehicleBrand || ''} ${job.part1.vehicleModel || ''}`.trim();
+            if (display) return display;
+        }
+
+        // Try part1Data (snake_case from backend)
+        const part1Data = (job as any).part1Data;
+        if (part1Data) {
+            const display = `${part1Data.vehicleBrand || part1Data.vehicle_brand || ''} ${part1Data.vehicleModel || part1Data.vehicle_model || ''}`.trim();
+            if (display) return display;
+        }
+
+        // Last resort: use vehicle string if it exists
+        if (typeof job.vehicle === 'string' && job.vehicle) {
+            return job.vehicle;
+        }
+
+        // Fallback to just the registration if available
+        const reg = job.registration || part1Data?.registrationNumber || part1Data?.registration_number;
+        if (reg) return `Vehicle ${reg}`;
+
+        return 'Unknown Vehicle';
+    };
+
+    // Helper to get registration number
+    const getRegistration = (job: JobCard): string => {
+        if (job.vehicleObject?.registration) {
+            return job.vehicleObject.registration;
+        }
+        if (job.registration) return job.registration;
+        if (job.part1?.registrationNumber) return job.part1.registrationNumber;
+        const part1Data = (job as any).part1Data;
+        if (part1Data?.registrationNumber) return part1Data.registrationNumber;
+        if (part1Data?.registration_number) return part1Data.registration_number;
+        return 'N/A';
+    };
+
     const getVehicleString = (vehicle: any): string => {
         if (typeof vehicle === 'string') return vehicle;
         if (typeof vehicle === 'object' && vehicle !== null) {
@@ -168,7 +233,192 @@ const JobCardTable = React.memo<JobCardTableProps>(({
 
                             return (
                                 <React.Fragment key={job.id}>
-                                    <tr className="hover:bg-gray-50 transition cursor-pointer" onClick={() => !isServiceManager && !isServiceAdvisor && onJobClick(job)}><td className="px-4 py-3 whitespace-nowrap"><button onClick={(e) => { e.stopPropagation(); toggleRowExpansion(job.id); }} className="text-gray-400 hover:text-gray-600 transition">{isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button></td><td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-2"><span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">{job.jobCardNumber || job.id}</span></div></td><td className="px-4 py-3 whitespace-nowrap"><span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(job.status)}`}>{job.status}</span>{hasRequest && (<span className="ml-2 px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium border border-orange-200">Parts Pending</span>)}{request?.inventoryManagerAssigned && (<span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium border border-green-200">✓ Parts Assigned</span>)}</td><td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-2"><span className={`w-3 h-3 rounded-full ${getPriorityColor(job.priority)}`}></span><span className="text-sm text-gray-700">{job.priority}</span></div></td><td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-2"><User size={14} className="text-gray-400" /><span className="text-sm font-medium text-gray-900">{job.customerName}</span></div></td><td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-2"><Car size={14} className="text-gray-400" /><div className="text-sm"><div className="text-gray-900">{getVehicleString(job.vehicle)}</div><div className="text-gray-500 text-xs">{job.registration}</div></div></div></td><td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-2"><Wrench size={14} className="text-gray-400" /><span className="text-sm text-gray-700">{job.serviceType}</span></div></td><td className="px-4 py-3 whitespace-nowrap"><span className="text-sm text-gray-700">{getEngineerName(job.assignedEngineer)}</span></td><td className="px-4 py-3 whitespace-nowrap"><div className="text-sm"><div className="text-gray-900 font-medium">{job.estimatedCost}</div><div className="text-gray-500 text-xs flex items-center gap-1"><Clock size={12} />{job.estimatedTime}</div></div></td><td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-2"><Calendar size={14} className="text-gray-400" /><span className="text-sm text-gray-700">{formatDate(job.createdAt)}</span></div></td><td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-2">{onView && (<button onClick={(e) => { e.stopPropagation(); onView(job.id); }} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition" title="View Details"><Eye size={16} /></button>)}{isServiceAdvisor && job.status === "Awaiting Quotation Approval" && job.isTemporary && !hasQuotation?.(job.id) && onCreateQuotation && (<button onClick={(e) => { e.stopPropagation(); onCreateQuotation(job); }} className="p-2 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded transition" title="Create Quotation"><FileText size={16} /></button>)}{isServiceAdvisor && job.draftIntake && job.sourceAppointmentId && onEditDraft && (<button onClick={(e) => { e.stopPropagation(); onEditDraft(job); }} className="p-2 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded transition" title="Edit Draft"><Edit size={16} /></button>)}{isServiceManager && onEdit && (<button onClick={(e) => { e.stopPropagation(); onEdit(job.id); }} className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition" title="Edit"><Edit size={16} /></button>)}{isServiceManager && job.status === "Created" && onAssignEngineer && (<button onClick={(e) => { e.stopPropagation(); onAssignEngineer(job.id); }} className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition" title="Assign Engineer"><UserPlus size={16} /></button>)}{isServiceManager && getNextStatus && getNextStatus(job.status).length > 0 && onUpdateStatus && (<button onClick={(e) => { e.stopPropagation(); onUpdateStatus(job.id, job.status); }} className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition" title="Update Status"><RefreshCw size={16} /></button>)}</div></td></tr>
+                                    <tr
+                                        className="hover:bg-gray-50 transition cursor-pointer"
+                                        onClick={() => !isServiceManager && !isServiceAdvisor && onJobClick(job)}
+                                    >
+                                        {/* Expand/Collapse */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleRowExpansion(job.id);
+                                                }}
+                                                className="text-gray-400 hover:text-gray-600 transition"
+                                            >
+                                                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                            </button>
+                                        </td>
+
+                                        {/* Job Card Number */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
+                                                    {job.jobCardNumber || job.id}
+                                                </span>
+                                            </div>
+                                        </td>
+
+                                        {/* Status */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(job.status)}`}>
+                                                {job.status}
+                                            </span>
+                                            {hasRequest && (
+                                                <span className="ml-2 px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium border border-orange-200">
+                                                    Parts Pending
+                                                </span>
+                                            )}
+                                            {request?.inventoryManagerAssigned && (
+                                                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium border border-green-200">
+                                                    ✓ Parts Assigned
+                                                </span>
+                                            )}
+                                        </td>
+
+                                        {/* Priority */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`w-3 h-3 rounded-full ${getPriorityColor(job.priority)}`}></span>
+                                                <span className="text-sm text-gray-700">{job.priority}</span>
+                                            </div>
+                                        </td>
+
+                                        {/* Customer */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <User size={14} className="text-gray-400" />
+                                                <span className="text-sm font-medium text-gray-900">
+                                                    {getCustomerName(job)}
+                                                </span>
+                                            </div>
+                                        </td>
+
+                                        {/* Vehicle */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <Car size={14} className="text-gray-400" />
+                                                <div className="text-sm">
+                                                    <div className="text-gray-900 font-medium">{getVehicleDisplay(job)}</div>
+                                                    <div className="text-gray-500 text-xs">{getRegistration(job)}</div>
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* Service Type */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <Wrench size={14} className="text-gray-400" />
+                                                <span className="text-sm text-gray-700">{job.serviceType}</span>
+                                            </div>
+                                        </td>
+
+                                        {/* Engineer */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="text-sm text-gray-700">
+                                                {getEngineerName(job.assignedEngineer)}
+                                            </span>
+                                        </td>
+
+                                        {/* Estimated Cost & Time */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="text-sm">
+                                                <div className="text-gray-900 font-medium">
+                                                    {job.estimatedCost || 'N/A'}
+                                                </div>
+                                                <div className="text-gray-500 text-xs flex items-center gap-1">
+                                                    <Clock size={12} />
+                                                    {job.estimatedTime || 'N/A'}
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* Created Date */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <Calendar size={14} className="text-gray-400" />
+                                                <span className="text-sm text-gray-700">{formatDate(job.createdAt)}</span>
+                                            </div>
+                                        </td>
+
+                                        {/* Actions */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                {onView && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onView(job.id);
+                                                        }}
+                                                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                                                        title="View Details"
+                                                    >
+                                                        <Eye size={16} />
+                                                    </button>
+                                                )}
+                                                {isServiceAdvisor && job.status === "AWAITING_QUOTATION_APPROVAL" && job.isTemporary && !hasQuotation?.(job.id) && onCreateQuotation && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onCreateQuotation(job);
+                                                        }}
+                                                        className="p-2 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded transition"
+                                                        title="Create Quotation"
+                                                    >
+                                                        <FileText size={16} />
+                                                    </button>
+                                                )}
+                                                {isServiceAdvisor && job.draftIntake && job.sourceAppointmentId && onEditDraft && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onEditDraft(job);
+                                                        }}
+                                                        className="p-2 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded transition"
+                                                        title="Edit Draft"
+                                                    >
+                                                        <Edit size={16} />
+                                                    </button>
+                                                )}
+                                                {isServiceManager && onEdit && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onEdit(job.id);
+                                                        }}
+                                                        className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition"
+                                                        title="Edit"
+                                                    >
+                                                        <Edit size={16} />
+                                                    </button>
+                                                )}
+                                                {isServiceManager && job.status === "CREATED" && onAssignEngineer && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onAssignEngineer(job.id);
+                                                        }}
+                                                        className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition"
+                                                        title="Assign Engineer"
+                                                    >
+                                                        <UserPlus size={16} />
+                                                    </button>
+                                                )}
+                                                {isServiceManager && getNextStatus && getNextStatus(job.status).length > 0 && onUpdateStatus && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onUpdateStatus(job.id, job.status);
+                                                        }}
+                                                        className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition"
+                                                        title="Update Status"
+                                                    >
+                                                        <RefreshCw size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
                                     {isExpanded && (
                                         <tr className="bg-gray-50"><td colSpan={11} className="px-4 py-4"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-white rounded-lg border border-gray-200"><div className="lg:col-span-2"><label className="text-xs font-semibold text-gray-500 uppercase">Description</label><p className="mt-1 text-sm text-gray-700">{job.description || 'No description provided'}</p></div><div><label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-1"><MapPin size={12} />Location</label><p className="mt-1 text-sm text-gray-700">{job.location === 'DOORSTEP' ? 'Home Service' : 'Station'}</p></div>{job.customerType && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Customer Type</label><p className="mt-1 text-sm text-gray-700">{job.customerType}</p></div>)}<div><label className="text-xs font-semibold text-gray-500 uppercase">Vehicle Details</label><p className="mt-1 text-sm text-gray-700">{job.vehicleMake} {job.vehicleModel}</p></div>{job.serviceCenterName && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Service Center</label><p className="mt-1 text-sm text-gray-700">{job.serviceCenterName}</p></div>)}{job.customerArrivalTimestamp && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Customer Arrival</label><p className="mt-1 text-sm text-gray-700">{formatDate(job.customerArrivalTimestamp)}</p></div>)}{job.parts && job.parts.length > 0 && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Parts</label><p className="mt-1 text-sm text-gray-700">{job.parts.length} parts requested</p></div>)}<div className="lg:col-span-3"><label className="text-xs font-semibold text-gray-500 uppercase">Job Card ID</label><p className="mt-1 text-xs text-gray-500 font-mono">{job.id}</p></div></div></td></tr>
                                     )}

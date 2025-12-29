@@ -330,7 +330,7 @@ export default function InventoryManagerDashboard() {
                     {request.status === "pending" && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <p className="text-xs text-gray-600">
-                          <span className="font-medium">Requested by:</span> {request.requestedBy}
+                          <span className="font-medium">Requested by:</span> {typeof request.requestedBy === 'object' && request.requestedBy !== null ? (request.requestedBy as any).name || 'Unknown' : request.requestedBy}
                         </p>
                       </div>
                     )}
