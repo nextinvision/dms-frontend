@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle } from "lucide-react";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
@@ -51,6 +52,7 @@ export default function JobCardFormModal({
   const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
   const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
   const serviceCenterCode = getServiceCenterCode(serviceCenterId);
+  const router = useRouter();
 
   const {
     form,
@@ -118,7 +120,7 @@ export default function JobCardFormModal({
         // 1. Search Approved Quotations
         const allQuotations = await quotationsService.getAll();
         const approvedQuotations = allQuotations.filter(
-          (q: Quotation) => q.status === "customer_approved" || q.customerApproved === true
+          (q: Quotation) => q.status === "CUSTOMER_APPROVED" || q.customerApproved === true
         );
 
         const quotationResults = approvedQuotations
@@ -235,6 +237,93 @@ export default function JobCardFormModal({
     setShowCheckInSlip(true);
   };
 
+  const handleCreateQuotation = async () => {
+    if (!form.customerId || !form.vehicleId) {
+      onError?.("Please select a customer and vehicle first.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      // Generate quotation number
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = (now.getMonth() + 1).toString().padStart(2, '0');
+      const prefix = `${serviceCenterCode}-QT-${year}${month}-`;
+
+      // Get last quotation to generate sequential number
+      const allQuotations = await quotationsService.getAll();
+      const quotationsWithPrefix = allQuotations.filter((q: Quotation) =>
+        q.quotationNumber?.startsWith(prefix)
+      );
+
+      let seq = 1;
+      if (quotationsWithPrefix.length > 0) {
+        const lastQuotation = quotationsWithPrefix[quotationsWithPrefix.length - 1];
+        const parts = lastQuotation.quotationNumber!.split('-');
+        const lastSeq = parseInt(parts[parts.length - 1]);
+        if (!isNaN(lastSeq)) {
+          seq = lastSeq + 1;
+        }
+      }
+
+      const quotationNumber = `${prefix}${seq.toString().padStart(4, '0')}`;
+
+      // Create quotation from job card data - matching backend CreateQuotationDto
+      const quotationData = {
+        serviceCenterId,
+        customerId: form.customerId,
+        vehicleId: form.vehicleId!, // Required by backend
+        quotationDate: now.toISOString().split('T')[0],
+        documentType: "Quotation",
+        hasInsurance: false,
+        discount: 0,
+        // Map items from job card to match QuotationItemDto structure
+        items: form.part2Items?.map((item) => ({
+          partName: item.partName || "Service Item",
+          partNumber: item.partCode || undefined,
+          quantity: item.qty || 1,
+          rate: item.amount || 0,
+          gstPercent: 18, // Default GST
+        })) || [],
+        customNotes: form.description || undefined,
+      };
+
+      // Detailed validation logging
+      console.log("=== QUOTATION CREATION DEBUG ===");
+      console.log("serviceCenterId:", serviceCenterId);
+      console.log("customerId:", form.customerId);
+      console.log("vehicleId:", form.vehicleId);
+      console.log("items count:", quotationData.items.length);
+      console.log("Full quotationData:", JSON.stringify(quotationData, null, 2));
+      console.log("=== END DEBUG ===");
+
+      // Create the quotation
+      try {
+        const createdQuotation = await quotationsService.create(quotationData as any);
+        console.log("Quotation created successfully:", createdQuotation);
+
+        // Close modal and navigate to quotations page
+        onClose();
+        router.push(`/sc/quotations?highlight=${createdQuotation.id || quotationNumber}`);
+      } catch (apiError: any) {
+        console.error("Quotation creation failed:", apiError);
+        console.error("Error response:", apiError.response?.data);
+        const errorMessage = apiError.response?.data?.message || apiError.message || "Unknown error";
+        throw new Error(`Quotation creation failed: ${errorMessage}`);
+      }
+
+
+
+    } catch (error) {
+      console.error("Error creating quotation:", error);
+      onError?.("Failed to create quotation. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!open) return null;
 
   // Content wrapper - different styling for modal vs full page
@@ -345,10 +434,11 @@ export default function JobCardFormModal({
             userId={undefined}
           />
 
-          <CheckInSection
+          {/* CheckInSection moved to Check-in Slip only - not shown in Job Card */}
+          {/* <CheckInSection
             form={form}
             updateField={updateFormField}
-          />
+          /> */}
         </form>
       </div>
 
@@ -357,11 +447,21 @@ export default function JobCardFormModal({
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={handleGenerateCheckInSlip}
-            className="flex items-center gap-2 px-6 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+            onClick={handleCreateQuotation}
+            disabled={isSubmitting}
+            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <FileText size={20} className="text-blue-600" />
-            Generate Check-in Slip
+            {isSubmitting ? (
+              <>
+                <Loader2 className="animate-spin" size={20} />
+                Creating...
+              </>
+            ) : (
+              <>
+                <FileText size={20} />
+                Create Quotation
+              </>
+            )}
           </button>
         </div>
 

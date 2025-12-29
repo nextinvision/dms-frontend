@@ -633,33 +633,36 @@ export function AppointmentDetailModal({
           </div>
         </div>
 
-        {/* Customer Arrival Section (Service Advisor Only) - Only show if customer hasn't arrived yet */}
+        {/* Convert to Job Card Section (Service Advisor Only) - Only show if customer hasn't arrived yet */}
         {isServiceAdvisor &&
           customerArrivalStatus !== "arrived" &&
           appointment.status !== "IN_PROGRESS" &&
           appointment.status !== "SENT_TO_MANAGER" && (
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
               <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <CheckCircle size={20} className="text-blue-600" />
-                Customer Arrival Status
+                <FileText size={20} className="text-indigo-600" />
+                Create Job Card
               </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Convert this appointment to a job card and begin the service process.
+              </p>
               <div className="flex gap-3">
                 <button
                   onClick={handleCustomerArrived}
-                  className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-white text-gray-700 border border-gray-300 hover:bg-green-50"
+                  className="flex-1 px-6 py-3 rounded-lg font-semibold transition bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90 shadow-lg shadow-indigo-200 flex items-center justify-center gap-2"
                 >
-                  <CheckCircle size={18} className="inline mr-2" />
-                  Customer Arrived
+                  <FileText size={18} />
+                  Convert to Job Card
                 </button>
                 <button
                   onClick={handleCustomerNotArrived}
-                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition ${customerArrivalStatus === "not_arrived"
+                  className={`px-6 py-3 rounded-lg font-medium transition ${customerArrivalStatus === "not_arrived"
                     ? "bg-red-600 text-white"
                     : "bg-white text-gray-700 border border-gray-300 hover:bg-red-50"
                     }`}
                 >
                   <AlertCircle size={18} className="inline mr-2" />
-                  Customer Not Arrived
+                  Cancel
                 </button>
               </div>
             </div>

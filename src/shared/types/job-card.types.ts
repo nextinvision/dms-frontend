@@ -4,6 +4,7 @@
  */
 
 import type { ServiceLocation, Priority } from './common.types';
+import type { Customer, Vehicle } from './vehicle.types';
 
 export type JobCardStatus =
   | "ARRIVAL_PENDING"
@@ -118,8 +119,10 @@ export interface JobCard {
   serviceCenterCode?: string; // e.g., "SC001"
   serviceCenterName?: string;
   customerId: string;
+  customer?: Customer; // Optional: populated when backend includes customer relation
   customerName: string;
   vehicleId?: string;
+  vehicleObject?: Vehicle; // Optional: populated when backend includes vehicle relation
   vehicle: string; // Legacy field for backward compatibility
   registration: string; // Legacy field for backward compatibility
   vehicleMake?: string; // Legacy field for backward compatibility
