@@ -36,10 +36,12 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         if (!fileList || fileList.length === 0) return;
 
         const files = Array.from(fileList);
+        // Use the passed jobCardId (could be temp ID or real ID)
         const entityId = jobCardId || `TEMP_JC_${Date.now()}`;
         const category = getCategoryForField(field);
 
         try {
+            console.log(`📤 Uploading ${files.length} files for ${field} with entityId: ${entityId}`);
             const result = await uploadMultipleWithMetadata(files, {
                 folder: 'job-cards',
                 category,
@@ -55,6 +57,7 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                     publicId: f.publicId,
                     filename: f.filename,
                     fileId: f.id || "",
+                    id: f.id,
                     secureUrl: f.url,
                     resourceType: f.format && ['jpg', 'jpeg', 'png', 'webp'].includes(f.format) ? 'image' : 'raw',
                     format: f.format,
@@ -78,22 +81,38 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 };
 
                 updateField(field, newDoc);
+                console.log(`✅ Successfully uploaded and saved files for ${field}`);
             }
         } catch (error) {
             console.error("Upload failed", error);
         }
     };
 
-    const handleRemoveDocument = (field: keyof CreateJobCardForm, index: number) => {
+    const handleRemoveDocument = async (field: keyof CreateJobCardForm, index: number) => {
         const currentDoc = form[field] as DocumentationFiles;
         if (!currentDoc) return;
 
+        const metadata = currentDoc.metadata?.[index];
+        const fileId = metadata?.fileId || (metadata as any)?.id;
+
+        // Optimistic update
         const newDoc: DocumentationFiles = {
             urls: currentDoc.urls.filter((_, i) => i !== index),
             publicIds: currentDoc.publicIds.filter((_, i) => i !== index),
             metadata: currentDoc.metadata?.filter((_, i) => i !== index) || [],
         };
         updateField(field, newDoc);
+
+        // Delete from backend if we have a file ID
+        if (fileId) {
+            try {
+                const { deleteFile } = await import("@/services/cloudinary/fileMetadata.service");
+                await deleteFile(fileId);
+                console.log(`✅ Successfully deleted file: ${fileId}`);
+            } catch (error) {
+                console.error('Failed to delete file from backend:', error);
+            }
+        }
     };
 
     return (

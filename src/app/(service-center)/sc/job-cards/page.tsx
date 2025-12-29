@@ -546,6 +546,7 @@ export default function JobCards() {
             onCreateQuotation={(job) => {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
             }}
+            onPassToManager={(jobId) => handleSubmitToManager(jobId)}
           />
         )}
 

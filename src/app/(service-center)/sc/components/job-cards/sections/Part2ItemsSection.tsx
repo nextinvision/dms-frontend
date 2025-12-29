@@ -11,6 +11,8 @@ import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { apiClient } from "@/core/api/client";
 import type { Part } from "@/features/inventory/types/inventory.types";
 
+import { FileMetadata } from "@/services/cloudinary/fileMetadata.service";
+
 interface WarrantyDocumentationData {
     videoEvidence: string[];
     vinImage: string[];
@@ -20,6 +22,7 @@ interface WarrantyDocumentationData {
     numberOfObservations: string;
     symptom: string;
     defectPart: string;
+    fileMetadata?: Record<string, FileMetadata[]>;
 }
 
 interface Part2ItemsSectionProps {
@@ -56,7 +59,6 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
 
     // Store warranty documentation for each item by index
     const [warrantyDocuments, setWarrantyDocuments] = useState<Record<number, WarrantyDocumentationData>>({});
-    const { uploadMultiple } = useCloudinaryUpload();
     const jobCardId = propJobCardId || form.vehicleId || "temp";
 
     // Search state
@@ -119,94 +121,48 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
     };
 
 
-    const handleFileUpload = useCallback(
-        async (field: 'videoEvidence' | 'vinImage' | 'odoImage' | 'damageImages', files: FileList | null) => {
-            if (!files) return;
-            const newFiles = Array.from(files);
+    const handleSaveWarrantyDoc = (index: number, data: WarrantyDocumentationData) => {
+        // 1. Update local state for this item
+        setWarrantyDocuments(prev => ({
+            ...prev,
+            [index]: data
+        }));
 
-            // Determine folder based on field type (using default item index 0)
-            let folder: string;
-            switch (field) {
-                case 'videoEvidence':
-                    folder = CLOUDINARY_FOLDERS.warrantyVideo(jobCardId, 0);
-                    break;
-                case 'vinImage':
-                    folder = CLOUDINARY_FOLDERS.warrantyVIN(jobCardId, 0);
-                    break;
-                case 'odoImage':
-                    folder = CLOUDINARY_FOLDERS.warrantyODO(jobCardId, 0);
-                    break;
-                case 'damageImages':
-                    folder = CLOUDINARY_FOLDERS.warrantyDamage(jobCardId, 0);
-                    break;
-                default:
-                    folder = CLOUDINARY_FOLDERS.jobCardWarranty(jobCardId);
-            }
+        // 2. Sync Case Details with top-level form fields for submission
+        if (data.issueDescription) updateField('issueDescription', data.issueDescription);
+        if (data.numberOfObservations) updateField('numberOfObservations', data.numberOfObservations);
+        if (data.symptom) updateField('symptom', data.symptom);
+        if (data.defectPart) updateField('defectPart', data.defectPart);
 
-            try {
-                // Upload files to Cloudinary
-                const uploadResults = await uploadMultiple(newFiles, folder, {
-                    tags: [field, 'warranty', 'job-card'],
-                    context: {
-                        field,
-                        jobCardId,
-                    },
-                });
+        // 3. Sync Files with top-level form fields
+        if (data.fileMetadata) {
+            const mapToDocumentationFiles = (field: string) => {
+                const metadatas = (data.fileMetadata as any)[field] || [];
+                if (metadatas.length === 0) return { urls: [], publicIds: [], metadata: [] };
 
-                // Store Cloudinary URLs and public IDs
-                const newUrls = uploadResults.map(result => result.secureUrl);
-                const newPublicIds = uploadResults.map(result => result.publicId);
-                const existingUrls = form[field]?.urls || [];
-                const existingPublicIds = form[field]?.publicIds || [];
+                return {
+                    urls: metadatas.map((m: any) => m.url),
+                    publicIds: metadatas.map((m: any) => m.publicId),
+                    metadata: metadatas.map((m: any) => ({
+                        url: m.url,
+                        publicId: m.publicId,
+                        filename: m.filename,
+                        format: m.format,
+                        bytes: m.bytes,
+                        fileId: m.id || "",
+                        uploadedAt: new Date().toISOString()
+                    }))
+                };
+            };
 
-                updateField(field, {
-                    urls: [...existingUrls, ...newUrls],
-                    publicIds: [...existingPublicIds, ...newPublicIds],
-                    metadata: [
-                        ...(form[field]?.metadata || []),
-                        ...uploadResults.map(result => ({
-                            publicId: result.publicId,
-                            url: result.secureUrl,
-                            format: result.format,
-                            bytes: result.bytes,
-                            uploadedAt: new Date().toISOString(),
-                        })),
-                    ],
-                });
+            updateField('videoEvidence', mapToDocumentationFiles('videoEvidence'));
+            updateField('vinImage', mapToDocumentationFiles('vinImage'));
+            updateField('odoImage', mapToDocumentationFiles('odoImage'));
+            updateField('damageImages', mapToDocumentationFiles('damageImages'));
+        }
 
-                // Save file metadata to backend if job card ID exists
-                if (jobCardId && jobCardId !== "temp") {
-                    const categoryMap: Record<string, FileCategory> = {
-                        videoEvidence: FileCategory.WARRANTY_VIDEO,
-                        vinImage: FileCategory.WARRANTY_VIN,
-                        odoImage: FileCategory.WARRANTY_ODO,
-                        damageImages: FileCategory.WARRANTY_DAMAGE,
-                    };
-
-                    const authToken = safeStorage.getItem<string | null>('authToken', null);
-
-                    // Save metadata to backend (non-blocking)
-                    saveFileMetadata(
-                        uploadResults,
-                        newFiles,
-                        {
-                            category: categoryMap[field],
-                            relatedEntityId: jobCardId,
-                            relatedEntityType: RelatedEntityType.JOB_CARD,
-                            uploadedBy: userId,
-                        },
-                        authToken || undefined
-                    ).catch(err => {
-                        console.error('Failed to save file metadata to backend:', err);
-                    });
-                }
-            } catch (err) {
-                console.error('Upload failed:', err);
-                onError?.(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
-            }
-        },
-        [jobCardId, uploadMultiple, form, updateField, onError, userId]
-    );
+        console.log(`✅ Synced warranty documentation for item ${index} to form`);
+    };
 
 
 
@@ -610,12 +566,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                         }}
                         itemDescription={form.part2Items[selectedItemIndex]?.partName || ""}
                         initialData={warrantyDocuments[selectedItemIndex]}
-                        onSave={(data) => {
-                            setWarrantyDocuments(prev => ({
-                                ...prev,
-                                [selectedItemIndex]: data
-                            }));
-                        }}
+                        onSave={(data) => handleSaveWarrantyDoc(selectedItemIndex, data)}
                         mode={warrantyModalMode}
                         jobCardId={propJobCardId || form.vehicleId || "temp"}
                         itemIndex={selectedItemIndex}

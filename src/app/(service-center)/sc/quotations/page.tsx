@@ -404,6 +404,28 @@ function QuotationsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromJobCard, jobCardIdParam]);
 
+  // Auto-open quotation modal when redirected with highlight parameter
+  useEffect(() => {
+    const highlightParam = searchParams.get("highlight");
+    if (highlightParam && quotations.length > 0) {
+      const quotationToHighlight = quotations.find(
+        (q) => q.id === highlightParam || q.quotationNumber === highlightParam
+      );
+
+      if (quotationToHighlight) {
+        setSelectedQuotation(quotationToHighlight);
+        setShowViewModal(true);
+
+        // Clean up URL by removing the highlight parameter
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("highlight");
+          window.history.replaceState({}, "", url.toString());
+        }
+      }
+    }
+  }, [searchParams, quotations]);
+
   // Calculate totals
   const calculateTotals = useCallback(() => {
     let subtotal = 0;

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle } from "lucide-react";
+import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight } from "lucide-react";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -25,6 +25,7 @@ import { CustomerVehicleSection } from "./sections/CustomerVehicleSection";
 import { Part2ItemsSection } from "./sections/Part2ItemsSection";
 import { CheckInSection } from "./sections/CheckInSection";
 import { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
+import { userRepository } from "@/core/repositories/user.repository";
 
 interface JobCardFormModalProps {
   open: boolean;
@@ -53,6 +54,9 @@ export default function JobCardFormModal({
   const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
   const serviceCenterCode = getServiceCenterCode(serviceCenterId);
   const router = useRouter();
+  const { userRole, userInfo } = useRole();
+  const isServiceAdvisor = userRole === "service_advisor";
+  const isServiceManager = userRole === "sc_manager";
 
   const {
     form,
@@ -198,9 +202,44 @@ export default function JobCardFormModal({
 
       onClose();
       resetForm();
-    } catch (err) {
-      console.error("Save error:", err);
-      onError?.("Failed to save job card.");
+    } catch (error) {
+      console.error("Submit error:", error);
+      onError?.("Failed to save job card. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePassToManager = async () => {
+    if (!jobCardId || !hydratedCard) return;
+
+    if (!confirm("Pass this job card to manager for approval?")) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      // Fetch manager for this service center
+      const managers = await userRepository.getByRole("sc_manager", serviceCenterId);
+
+      if (managers.length === 0) {
+        // Try without service center filter if none found specifically
+        const allManagers = await userRepository.getByRole("sc_manager");
+        if (allManagers.length === 0) {
+          throw new Error("No manager found to pass this job card to.");
+        }
+        await jobCardService.passToManager(jobCardId, allManagers[0].id);
+      } else {
+        await jobCardService.passToManager(jobCardId, managers[0].id);
+      }
+
+      alert("Job card passed to manager successfully!");
+      onClose();
+      router.push("/sc/job-cards");
+    } catch (error: any) {
+      console.error("Error passing to manager:", error);
+      alert(error.message || "Failed to pass to manager. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -245,16 +284,12 @@ export default function JobCardFormModal({
 
     try {
       setIsSubmitting(true);
-
-      // Generate quotation number
       const now = new Date();
-      const year = now.getFullYear();
-      const month = (now.getMonth() + 1).toString().padStart(2, '0');
-      const prefix = `${serviceCenterCode}-QT-${year}${month}-`;
 
-      // Get last quotation to generate sequential number
+      // Fetch all quotations to determine the next quotation number
       const allQuotations = await quotationsService.getAll();
-      const quotationsWithPrefix = allQuotations.filter((q: Quotation) =>
+      const prefix = `${serviceCenterCode}-QT-${now.getFullYear()}-`;
+      const quotationsWithPrefix = allQuotations.filter((q: any) =>
         q.quotationNumber?.startsWith(prefix)
       );
 
@@ -270,9 +305,24 @@ export default function JobCardFormModal({
 
       const quotationNumber = `${prefix}${seq.toString().padStart(4, '0')}`;
 
+      // Fetch the actual job card from API to get the real serviceCenterId UUID
+      let actualServiceCenterId = serviceCenterId; // fallback to prop
+
+      if (jobCardId) {
+        try {
+          const jobCardFromApi = await jobCardService.getById(jobCardId);
+          if (jobCardFromApi?.serviceCenterId) {
+            actualServiceCenterId = jobCardFromApi.serviceCenterId;
+            console.log("DEBUG: Fetched serviceCenterId from API:", actualServiceCenterId);
+          }
+        } catch (err) {
+          console.warn("Could not fetch job card from API, using prop:", err);
+        }
+      }
+
       // Create quotation from job card data - matching backend CreateQuotationDto
       const quotationData = {
-        serviceCenterId,
+        serviceCenterId: actualServiceCenterId, // Use actual UUID from API
         customerId: form.customerId,
         vehicleId: form.vehicleId!, // Required by backend
         quotationDate: now.toISOString().split('T')[0],
@@ -292,7 +342,8 @@ export default function JobCardFormModal({
 
       // Detailed validation logging
       console.log("=== QUOTATION CREATION DEBUG ===");
-      console.log("serviceCenterId:", serviceCenterId);
+      console.log("serviceCenterId (from prop - code):", serviceCenterId);
+      console.log("actualServiceCenterId (from API):", actualServiceCenterId);
       console.log("customerId:", form.customerId);
       console.log("vehicleId:", form.vehicleId);
       console.log("items count:", quotationData.items.length);
@@ -463,6 +514,27 @@ export default function JobCardFormModal({
               </>
             )}
           </button>
+
+          {mode === "edit" && isServiceAdvisor && (
+            <button
+              type="button"
+              onClick={handlePassToManager}
+              disabled={isSubmitting || hydratedCard?.passedToManager}
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <ArrowRight size={20} />
+                  {hydratedCard?.passedToManager ? "Passed to Manager" : "Pass to Manager"}
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         <div className="flex gap-4">

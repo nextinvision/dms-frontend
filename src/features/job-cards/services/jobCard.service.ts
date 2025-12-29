@@ -33,7 +33,8 @@ class JobCardService {
 
   async update(jobCardId: string, jobCard: Partial<JobCard>, userId?: string): Promise<JobCard> {
     // Convert to DTO format expected by backend
-    const dto = mapJobCardToDto(jobCard, userId);
+    // Pass isUpdate=true to exclude immutable foreign keys (serviceCenterId, customerId, vehicleId)
+    const dto = mapJobCardToDto(jobCard, userId, true);
     console.log('Updating job card with DTO:', dto);
     const response = await apiClient.patch<JobCard>(
       `${API_ENDPOINTS.JOB_CARDS}/${jobCardId}`,

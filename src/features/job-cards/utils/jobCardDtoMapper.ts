@@ -32,18 +32,25 @@ export interface CreateJobCardDto {
 
 /**
  * Map JobCard object to CreateJobCardDto for backend API
+ * @param jobCard - The job card object to map
+ * @param userId - Optional user ID for audit trail
+ * @param isUpdate - Whether this is an update operation (excludes immutable fields)
  */
-export function mapJobCardToDto(jobCard: any, userId?: string): CreateJobCardDto {
-    const dto: CreateJobCardDto = {
-        serviceCenterId: jobCard.serviceCenterId,
-        customerId: jobCard.customerId,
-        vehicleId: jobCard.vehicleId,
-        appointmentId: jobCard.sourceAppointmentId || jobCard.appointmentId,
+export function mapJobCardToDto(jobCard: any, userId?: string, isUpdate = false): Partial<CreateJobCardDto> {
+    const dto: Partial<CreateJobCardDto> = {
         serviceType: jobCard.serviceType || jobCard.description,
         priority: mapPriorityToEnum(jobCard.priority),
         location: mapLocationToEnum(jobCard.location),
         isTemporary: jobCard.isTemporary ?? true,
     };
+
+    // Only include immutable foreign keys on creation, not on updates
+    if (!isUpdate) {
+        dto.serviceCenterId = jobCard.serviceCenterId;
+        dto.customerId = jobCard.customerId;
+        dto.vehicleId = jobCard.vehicleId;
+        dto.appointmentId = jobCard.sourceAppointmentId || jobCard.appointmentId;
+    }
 
     // Map Part 1 Data
     if (jobCard.part1) {
@@ -72,7 +79,12 @@ export function mapJobCardToDto(jobCard: any, userId?: string): CreateJobCardDto
             numberOfObservations: jobCard.part2A.numberOfObservations,
             symptom: jobCard.part2A.symptom,
             defectPart: jobCard.part2A.defectPart,
-            // Files will be handled separately if needed
+            files: {
+                videoEvidence: mapFilesToDto(jobCard.part2A.videoEvidenceMetadata || jobCard.videoEvidence?.metadata),
+                vinImage: mapFilesToDto(jobCard.part2A.vinImageMetadata || jobCard.vinImage?.metadata),
+                odoImage: mapFilesToDto(jobCard.part2A.odoImageMetadata || jobCard.odoImage?.metadata),
+                damageImages: mapFilesToDto(jobCard.part2A.damageImagesMetadata || jobCard.damageImages?.metadata),
+            }
         };
     }
 
@@ -82,6 +94,23 @@ export function mapJobCardToDto(jobCard: any, userId?: string): CreateJobCardDto
     }
 
     return dto;
+}
+
+/**
+ * Helper to map file metadata to DTO format
+ */
+function mapFilesToDto(metadata: any[]) {
+    if (!metadata || !Array.isArray(metadata)) return [];
+    return metadata.map(m => ({
+        url: m.url,
+        publicId: m.publicId,
+        filename: m.filename,
+        format: m.format,
+        bytes: m.bytes,
+        duration: m.duration,
+        width: m.width,
+        height: m.height
+    }));
 }
 
 /**

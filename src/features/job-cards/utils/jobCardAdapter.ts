@@ -195,6 +195,11 @@ export const jobCardAdapter = {
             numberOfObservations: form.numberOfObservations || "",
             symptom: form.symptom || "",
             defectPart: form.defectPart || "",
+            // Additional metadata for DTO mapping
+            videoEvidenceMetadata: form.videoEvidence?.metadata || [],
+            vinImageMetadata: form.vinImage?.metadata || [],
+            odoImageMetadata: form.odoImage?.metadata || [],
+            damageImagesMetadata: form.damageImages?.metadata || [],
         };
 
         return {
@@ -255,13 +260,12 @@ export const jobCardAdapter = {
      * Map a JobCard object back to Form data for editing
      */
     mapJobCardToForm: (jobCard: any): Partial<CreateJobCardForm> => {
-        const { mapFilesToCategory } = require("@/app/(service-center)/sc/appointments/hooks/useAppointmentLogic"); // Assume similar logic or duplicate it.
-        // Actually, let's implement inline to avoid dependency on a hook file.
-
-        const mapFiles = (category: string) => {
+        const mapFiles = (categories: string | string[]) => {
             if (!jobCard.files || !Array.isArray(jobCard.files)) return { urls: [], publicIds: [], metadata: [] };
 
-            const filtered = jobCard.files.filter((f: any) => f.category === category);
+            const categoryList = Array.isArray(categories) ? categories : [categories];
+            const filtered = jobCard.files.filter((f: any) => categoryList.includes(f.category));
+
             return {
                 urls: filtered.map((f: any) => f.url),
                 publicIds: filtered.map((f: any) => f.publicId),
@@ -270,16 +274,26 @@ export const jobCardAdapter = {
                     format: f.format,
                     bytes: f.bytes,
                     fileId: f.id,
+                    id: f.id, // Support both fileId and id
                     uploadedAt: f.createdAt ? f.createdAt.toString() : new Date().toISOString()
                 }))
             };
         };
 
         return {
+            // Document sections
             customerIdProof: mapFiles('customer_id_proof'),
             vehicleRCCopy: mapFiles('vehicle_rc'),
-            warrantyCardServiceBook: mapFiles('warranty_card'),
-            photosVideos: mapFiles('photos_videos'),
+            warrantyCardServiceBook: mapFiles(['warranty_card', 'warranty_card_service_book']),
+            photosVideos: mapFiles(['photos_videos', 'vehicle_photos']),
+
+            // Warranty Documentation (Part 2A)
+            videoEvidence: mapFiles('warranty_video'),
+            vinImage: mapFiles(['warranty_vin', 'vehicle_vin_image']),
+            odoImage: mapFiles(['warranty_odo', 'vehicle_odo_image']),
+            damageImages: mapFiles(['warranty_damage', 'vehicle_damage_image']),
+
+            // Basic details
             customerId: jobCard.customerId || "",
             customerName: jobCard.customerName || "",
             fullName: jobCard.part1?.fullName || jobCard.customerName || "",
@@ -302,6 +316,8 @@ export const jobCardAdapter = {
             chargerSerialNumber: jobCard.chargerSerialNumber,
             dateOfPurchase: jobCard.dateOfPurchase,
             vehicleColor: jobCard.vehicleColor,
+
+            // Service details
             description: jobCard.description || "",
             customerFeedback: jobCard.part1?.customerFeedback || "",
             technicianObservation: jobCard.part1?.technicianObservation || "",
@@ -312,15 +328,17 @@ export const jobCardAdapter = {
             mcuSerialNumber: jobCard.part1?.mcuSerialNumber || "",
             vcuSerialNumber: jobCard.part1?.vcuSerialNumber || "",
             otherPartSerialNumber: jobCard.part1?.otherPartSerialNumber || "",
+
+            // Part 2
             part2Items: jobCard.part2 || [],
-            videoEvidence: { urls: [], publicIds: [], metadata: [] },
-            vinImage: { urls: [], publicIds: [], metadata: [] },
-            odoImage: { urls: [], publicIds: [], metadata: [] },
-            damageImages: { urls: [], publicIds: [], metadata: [] },
-            issueDescription: jobCard.part2A?.issueDescription || "",
-            numberOfObservations: jobCard.part2A?.numberOfObservations || "",
-            symptom: jobCard.part2A?.symptom || "",
-            defectPart: jobCard.part2A?.defectPart || "",
+
+            // Part 2A Case details
+            issueDescription: jobCard.part2AData?.issueDescription || jobCard.part2A?.issueDescription || "",
+            numberOfObservations: jobCard.part2AData?.numberOfObservations || jobCard.part2A?.numberOfObservations || "",
+            symptom: jobCard.part2AData?.symptom || jobCard.part2A?.symptom || "",
+            defectPart: jobCard.part2AData?.defectPart || jobCard.part2A?.defectPart || "",
+
+            // Others
             estimatedDeliveryDate: jobCard.part1?.estimatedDeliveryDate || "",
             previousServiceHistory: jobCard.previousServiceHistory || "",
             odometerReading: jobCard.odometerReading || "",

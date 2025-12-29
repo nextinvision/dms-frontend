@@ -2,7 +2,7 @@ import * as React from 'react';
 import {
     Eye, Edit, UserPlus, RefreshCw, FileText, Clock,
     Calendar, Car, User, Phone, MapPin, DollarSign, Wrench,
-    TrendingUp, ChevronDown, ChevronUp
+    TrendingUp, ChevronDown, ChevronUp, ArrowRight
 } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { UserInfo } from '@/shared/types/auth.types';
@@ -26,6 +26,7 @@ interface JobCardTableProps {
     onUpdateStatus?: (jobId: string, status: JobCardStatus) => void;
     getNextStatus?: (status: JobCardStatus) => JobCardStatus[];
     hasQuotation?: (jobId: string) => boolean;
+    onPassToManager?: (jobId: string) => void;
 }
 
 const JobCardTable = React.memo<JobCardTableProps>(({
@@ -46,6 +47,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
     onUpdateStatus,
     getNextStatus,
     hasQuotation,
+    onPassToManager,
 }) => {
     const [sortColumn, setSortColumn] = React.useState<string>('createdAt');
     const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
@@ -378,6 +380,18 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         title="Edit Draft"
                                                     >
                                                         <Edit size={16} />
+                                                    </button>
+                                                )}
+                                                {isServiceAdvisor && job.status === "CREATED" && onPassToManager && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onPassToManager(job.id);
+                                                        }}
+                                                        className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition"
+                                                        title="Pass to Manager"
+                                                    >
+                                                        <ArrowRight size={16} />
                                                     </button>
                                                 )}
                                                 {isServiceManager && onEdit && (

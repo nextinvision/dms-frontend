@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Search, UserPlus, Car, FileText, CheckCircle, ArrowLeft } from "lucide-react";
+import { Loader2, Search, UserPlus, FileText, CheckCircle, ArrowLeft } from "lucide-react";
 import { DocumentsSection } from "./sections/DocumentsSection";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
@@ -14,7 +14,6 @@ import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/
 import { getServiceCenterCode } from "@/shared/utils/service-center.utils";
 import { JobCard } from "@/shared/types/job-card.types";
 import { Quotation } from "@/shared/types/quotation.types";
-import { CustomerWithVehicles, Vehicle } from "@/shared/types/vehicle.types";
 
 // Hooks, Utils and Sections
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
@@ -25,6 +24,8 @@ import { CustomerVehicleSection } from "./sections/CustomerVehicleSection";
 import { Part2ItemsSection } from "./sections/Part2ItemsSection";
 import { CheckInSection } from "./sections/CheckInSection";
 import { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
+
+import { generateTempEntityId, updateFileEntityAssociation, RelatedEntityType } from "@/services/cloudinary/fileMetadata.service";
 
 interface JobCardFormProps {
     initialValues?: Partial<CreateJobCardForm>;
@@ -43,13 +44,17 @@ export default function JobCardForm({
     const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
     const serviceCenterCode = getServiceCenterCode(serviceCenterId);
 
+    // Stable temp ID for new job cards
+    const [tempEntityId] = useState(() => generateTempEntityId());
+    // Active ID is either the real ID (edit mode) or the temp ID (create mode)
+    const activeId = mode === "edit" ? jobCardId : tempEntityId;
+
     const {
         form,
         setForm,
         updateFormField,
         isSubmitting,
         setIsSubmitting,
-        resetForm,
         handleSelectQuotation,
         handleSelectCustomer,
     } = useJobCardForm({
@@ -70,12 +75,12 @@ export default function JobCardForm({
     // Load existing job card if editing
     useEffect(() => {
         if (mode === "edit" && jobCardId) {
-            const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
-            const jc = migrateAllJobCards().find((item: any) => item.id === jobCardId);
-            if (jc) {
-                setExistingJobCard(jc);
-                setPreviewJobCardNumber(jc.jobCardNumber);
-            }
+            jobCardService.getById(jobCardId).then(jc => {
+                if (jc) {
+                    setExistingJobCard(jc);
+                    setPreviewJobCardNumber(jc.jobCardNumber);
+                }
+            });
         }
     }, [mode, jobCardId]);
 
@@ -177,7 +182,7 @@ export default function JobCardForm({
         setIsSubmitting(true);
 
         try {
-            const jobCardData: Omit<JobCard, "id"> = {
+            const jobCardData: Omit<JobCard, "id"> & { part2A?: any } = {
                 jobCardNumber: mode === "edit" && existingJobCard ? existingJobCard.jobCardNumber : previewJobCardNumber,
                 serviceCenterId,
                 serviceCenterCode,
@@ -191,8 +196,8 @@ export default function JobCardForm({
                 vehicleModel: form.vehicleModel,
                 customerType: form.customerType as any,
                 serviceType: "General Service",
-                description: form.customerFeedback || "",
-                status: "CREATED",
+                description: form.description || "",
+                status: mode === "edit" && existingJobCard ? existingJobCard.status : "CREATED",
                 priority: "NORMAL",
                 assignedEngineer: null,
                 estimatedCost: "",
@@ -200,6 +205,7 @@ export default function JobCardForm({
                 createdAt: mode === "edit" && existingJobCard ? existingJobCard.createdAt : new Date().toISOString(),
                 parts: form.part2Items.map((item) => item.partName),
                 location: "STATION",
+                isTemporary: true,
                 part1: {
                     fullName: form.customerName,
                     mobilePrimary: form.mobilePrimary,
@@ -224,19 +230,46 @@ export default function JobCardForm({
                     otherPartSerialNumber: form.otherPartSerialNumber || "",
                 },
                 part2: form.part2Items,
+                part2A: {
+                    issueDescription: form.issueDescription || "",
+                    numberOfObservations: form.numberOfObservations || "",
+                    symptom: form.symptom || "",
+                    defectPart: form.defectPart || "",
+                    videoEvidence: (form.videoEvidence.urls && form.videoEvidence.urls.length > 0) ? "Yes" : "No",
+                    vinImage: (form.vinImage.urls && form.vinImage.urls.length > 0) ? "Yes" : "No",
+                    odoImage: (form.odoImage.urls && form.odoImage.urls.length > 0) ? "Yes" : "No",
+                    damageImages: (form.damageImages.urls && form.damageImages.urls.length > 0) ? "Yes" : "No",
+                    // Include metadata for the DTO mapper
+                    videoEvidenceMetadata: form.videoEvidence?.metadata || [],
+                    vinImageMetadata: form.vinImage?.metadata || [],
+                    odoImageMetadata: form.odoImage?.metadata || [],
+                    damageImagesMetadata: form.damageImages?.metadata || [],
+                }
             };
 
             let savedJobCard: JobCard;
             if (mode === "edit" && jobCardId) {
                 savedJobCard = await jobCardService.update(jobCardId, { ...jobCardData, id: jobCardId });
-                alert("Job card updated successfully!");
+                console.log("✅ Job card updated:", savedJobCard.id);
             } else {
-                savedJobCard = await jobCardService.create({ ...jobCardData, id: `temp_${Date.now()}` });
+                savedJobCard = await jobCardService.create({ ...jobCardData }, userInfo?.id);
+                console.log("✅ Job card created:", savedJobCard.id);
+
+                if (activeId && activeId.startsWith('TEMP_')) {
+                    try {
+                        console.log(`📎 Updating file associations: ${activeId} -> ${savedJobCard.id}`);
+                        await updateFileEntityAssociation(activeId, savedJobCard.id, RelatedEntityType.JOB_CARD);
+                        console.log("✅ File associations updated successfully");
+                    } catch (error) {
+                        console.error("⚠️ Failed to update file associations:", error);
+                    }
+                }
+
                 const requestedBy = `${serviceCenterContext.serviceCenterName || "Service Center"} - Manager`;
                 await createPartsRequestFromJobCard(savedJobCard, requestedBy);
-                alert("Job card created successfully!");
             }
 
+            alert(mode === "edit" ? "Job card updated successfully!" : "Job card created successfully!");
             router.push("/sc/job-cards");
         } catch (error) {
             console.error("Error saving job card:", error);
@@ -350,8 +383,6 @@ export default function JobCardForm({
 
                 {/* Main Form */}
                 <form onSubmit={handleSubmit}>
-
-
                     <CustomerVehicleSection
                         form={form}
                         updateField={updateFormField}
@@ -361,7 +392,7 @@ export default function JobCardForm({
                     <DocumentsSection
                         form={form}
                         updateField={updateFormField}
-                        jobCardId={jobCardId || existingJobCard?.id}
+                        jobCardId={activeId}
                         userId={userInfo?.id}
                     />
 
@@ -369,7 +400,7 @@ export default function JobCardForm({
                         form={form}
                         updateField={updateFormField}
                         onError={(message) => alert(message)}
-                        jobCardId={jobCardId || existingJobCard?.id}
+                        jobCardId={activeId}
                         userId={userInfo?.id}
                     />
 
