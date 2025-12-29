@@ -32,18 +32,25 @@ export interface CreateJobCardDto {
 
 /**
  * Map JobCard object to CreateJobCardDto for backend API
+ * @param jobCard - The job card object to map
+ * @param userId - Optional user ID for audit trail
+ * @param isUpdate - Whether this is an update operation (excludes immutable fields)
  */
-export function mapJobCardToDto(jobCard: any, userId?: string): CreateJobCardDto {
-    const dto: CreateJobCardDto = {
-        serviceCenterId: jobCard.serviceCenterId,
-        customerId: jobCard.customerId,
-        vehicleId: jobCard.vehicleId,
-        appointmentId: jobCard.sourceAppointmentId || jobCard.appointmentId,
+export function mapJobCardToDto(jobCard: any, userId?: string, isUpdate = false): Partial<CreateJobCardDto> {
+    const dto: Partial<CreateJobCardDto> = {
         serviceType: jobCard.serviceType || jobCard.description,
         priority: mapPriorityToEnum(jobCard.priority),
         location: mapLocationToEnum(jobCard.location),
         isTemporary: jobCard.isTemporary ?? true,
     };
+
+    // Only include immutable foreign keys on creation, not on updates
+    if (!isUpdate) {
+        dto.serviceCenterId = jobCard.serviceCenterId;
+        dto.customerId = jobCard.customerId;
+        dto.vehicleId = jobCard.vehicleId;
+        dto.appointmentId = jobCard.sourceAppointmentId || jobCard.appointmentId;
+    }
 
     // Map Part 1 Data
     if (jobCard.part1) {
