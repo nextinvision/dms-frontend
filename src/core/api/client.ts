@@ -18,21 +18,17 @@ import { ApiError } from './errors';
 import { API_CONFIG } from '@/config/api.config';
 
 // Base API URL
-const API_BASE_URL = API_CONFIG.BASE_URL || '';
+const API_BASE_URL = API_CONFIG.BASE_URL;
 
 class ApiClient {
     private baseURL: string;
     private cache = new Map<string, { data: any; expiry: number }>();
     private defaultTimeout = API_CONFIG.TIMEOUT || 30000;
 
-    constructor(baseURL: string = API_BASE_URL) {
-        if (!baseURL) {
-            throw new Error(
-                'API_BASE_URL is not configured. Please set NEXT_PUBLIC_API_URL in your .env file'
-            );
-        }
-        this.baseURL = baseURL;
-    }
+	constructor(baseURL: string = API_CONFIG.BASE_URL) {
+    this.baseURL = baseURL;
+}
+
 
     /**
      * Build full URL with query parameters
@@ -41,25 +37,46 @@ class ApiClient {
      * Build full URL with query parameters
      */
     private buildUrl(path: string, params?: Record<string, any>): string {
-        // Ensure baseURL doesn't have a trailing slash
-        const cleanBaseUrl = this.baseURL.replace(/\/$/, '');
-        // Ensure path starts with a slash
-        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    // Ensure path starts with a slash
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-        // Construct full URL string first to preserve Base URL path segments (like /api)
-        const url = new URL(cleanBaseUrl + cleanPath);
+    let url: string;
+
+    // ✅ Absolute base URL (http / https)
+    if (this.baseURL.startsWith('http')) {
+        const cleanBaseUrl = this.baseURL.replace(/\/$/, '');
+        const u = new URL(cleanBaseUrl + cleanPath);
 
         if (params) {
-            Object.keys(params).forEach(key => {
-                const value = params[key];
+            Object.entries(params).forEach(([key, value]) => {
                 if (value !== undefined && value !== null) {
-                    url.searchParams.append(key, String(value));
+                    u.searchParams.append(key, String(value));
                 }
             });
         }
 
-        return url.toString();
+        url = u.toString();
+    } 
+    // ✅ Relative base URL (e.g. /api)
+    else {
+        url = `${this.baseURL}${cleanPath}`;
+
+        if (params) {
+            const query = new URLSearchParams(
+                Object.entries(params)
+                    .filter(([, v]) => v !== undefined && v !== null)
+                    .map(([k, v]) => [k, String(v)])
+            ).toString();
+
+            if (query) {
+                url += `?${query}`;
+            }
+        }
     }
+
+    return url;
+}
+
 
     /**
      * Apply request interceptors

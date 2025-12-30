@@ -12,7 +12,7 @@ class CentralPurchaseOrderService {
    */
   async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
     const orders = await purchaseOrderRepository.getAll();
-    return orders as unknown as PurchaseOrder[];
+    return (orders || []).map(this.mapBackendOrderToFrontend);
   }
 
   /**
@@ -20,7 +20,7 @@ class CentralPurchaseOrderService {
    */
   async getPurchaseOrderById(id: string): Promise<PurchaseOrder> {
     const order = await purchaseOrderRepository.getById(id);
-    return order as unknown as PurchaseOrder;
+    return this.mapBackendOrderToFrontend(order);
   }
 
   /**
@@ -33,7 +33,7 @@ class CentralPurchaseOrderService {
   ): Promise<PurchaseOrder> {
     // Backend approve endpoint handles the logic
     const approved = await purchaseOrderRepository.approve(id);
-    return approved as unknown as PurchaseOrder;
+    return this.mapBackendOrderToFrontend(approved);
   }
 
   /**
@@ -48,7 +48,7 @@ class CentralPurchaseOrderService {
     const updated = await purchaseOrderRepository.update(id, {
       status: 'Cancelled',
     } as any);
-    return updated as unknown as PurchaseOrder;
+    return this.mapBackendOrderToFrontend(updated);
   }
 
   /**
@@ -56,7 +56,7 @@ class CentralPurchaseOrderService {
    */
   async getPurchaseOrdersByStatus(status: PurchaseOrder["status"]): Promise<PurchaseOrder[]> {
     const orders = await purchaseOrderRepository.getByStatus(status);
-    return orders as unknown as PurchaseOrder[];
+    return (orders || []).map(this.mapBackendOrderToFrontend);
   }
 
   /**
@@ -64,7 +64,31 @@ class CentralPurchaseOrderService {
    */
   async getPurchaseOrdersByServiceCenter(serviceCenterId: string): Promise<PurchaseOrder[]> {
     const orders = await purchaseOrderRepository.getAll({ serviceCenterId });
-    return orders as unknown as PurchaseOrder[];
+    return (orders || []).map(this.mapBackendOrderToFrontend);
+  }
+
+  /**
+   * Map backend order to frontend to ensure totalAmount exists
+   */
+  private mapBackendOrderToFrontend(backendOrder: any): PurchaseOrder {
+    if (!backendOrder) return backendOrder;
+
+    const items = backendOrder.items?.map((item: any) => ({
+      ...item,
+      // Ensure numeric fields are safe
+      unitPrice: Number(item.unitPrice) || 0,
+      requestedQty: Number(item.requestedQty) || 0,
+      totalPrice: (Number(item.unitPrice) || 0) * (Number(item.requestedQty) || 0)
+    })) || [];
+
+    // Calculate total if missing
+    const calculatedTotal = items.reduce((sum: number, item: any) => sum + item.totalPrice, 0);
+
+    return {
+      ...backendOrder,
+      items: items,
+      totalAmount: backendOrder.totalAmount !== undefined ? Number(backendOrder.totalAmount) : calculatedTotal
+    } as PurchaseOrder;
   }
 }
 

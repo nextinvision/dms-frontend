@@ -117,20 +117,27 @@ class AdminApprovalService {
       'COMPLETED': 'received'
     };
 
+    // Map items first to calculate total correctly
+    const items = backendIssue.items?.map((item: any) => ({
+      id: item.id,
+      partId: item.centralInventoryPartId || item.partId,
+      partName: item.centralInventoryPart?.partName || item.partName || "Unknown Part",
+      partNumber: item.centralInventoryPart?.partNumber || item.partNumber || "",
+      hsnCode: item.centralInventoryPart?.hsnCode || "",
+      fromStock: item.centralInventoryPartId || item.fromStock,
+      quantity: item.requestedQty || item.quantity || 0,
+      unitPrice: item.centralInventoryPart?.unitPrice || 0,
+      totalPrice: (item.centralInventoryPart?.unitPrice || 0) * (item.requestedQty || item.quantity || 0),
+    })) || [];
+
+    // Calculate total amount from items to prevent 'toLocaleString' undefined error
+    const totalAmount = items.reduce((sum: number, item: any) => sum + (item.totalPrice || 0), 0);
+
     return {
       ...backendIssue,
       status: statusMap[backendIssue.status] || backendIssue.status?.toLowerCase(),
-      items: backendIssue.items?.map((item: any) => ({
-        id: item.id,
-        partId: item.centralInventoryPartId || item.partId,
-        partName: item.centralInventoryPart?.partName || item.partName || "Unknown Part",
-        partNumber: item.centralInventoryPart?.partNumber || item.partNumber || "",
-        hsnCode: item.centralInventoryPart?.hsnCode || "",
-        fromStock: item.centralInventoryPartId || item.fromStock,
-        quantity: item.requestedQty || item.quantity,
-        unitPrice: item.centralInventoryPart?.unitPrice || 0,
-        totalPrice: (item.centralInventoryPart?.unitPrice || 0) * (item.requestedQty || item.quantity),
-      })) || []
+      items: items,
+      totalAmount: totalAmount || 0, // CRITICAL FIX: Ensure totalAmount is never undefined
     };
   }
 }
