@@ -193,7 +193,7 @@ export default function Dashboard() {
                           {issue.issueNumber}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {issue.serviceCenterName} • ₹{(issue.totalAmount ?? 0).toLocaleString()}
+                         iceCenterName} • ₹{issue.totalAmount.toLocaleString()}
                         </p>
                       </div>
                       <Link href="/parts-issue-approvals">
