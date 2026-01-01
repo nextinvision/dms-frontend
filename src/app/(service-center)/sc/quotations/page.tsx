@@ -30,6 +30,7 @@ import {
   ShieldX,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
+import { useToast } from "@/core/contexts/ToastContext";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { useSearchParams } from "next/navigation";
 import type {
@@ -59,6 +60,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { quotationRepository } from "@/core/repositories/quotation.repository";
 import { serviceCenterRepository } from "@/core/repositories/service-center.repository";
 import { jobCardRepository } from "@/core/repositories/job-card.repository";
+import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
 
 import { defaultInsurers, defaultNoteTemplates } from "./defaults";
 
@@ -77,6 +79,7 @@ const createEmptyCustomer = (): CustomerWithVehicles => ({
 
 function QuotationsContent() {
   const { userInfo, userRole } = useRole();
+  const { showSuccess, showError, showWarning, showInfo } = useToast();
   const isServiceAdvisor = userRole === "service_advisor";
   const isServiceManager = userRole === "sc_manager";
   const searchParams = useSearchParams();
@@ -115,6 +118,16 @@ function QuotationsContent() {
     }
   });
 
+  const deleteQuotationMutation = useMutation({
+    mutationFn: (id: string) => quotationRepository.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    }
+  });
+
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const [filter, setFilter] = useState<QuotationFilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
@@ -124,10 +137,38 @@ function QuotationsContent() {
   const [showCheckInSlipModal, setShowCheckInSlipModal] = useState<boolean>(false);
   const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: "danger" | "warning" | "info" | "success";
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => { },
+    type: "warning",
+  });
+
+  const openConfirm = (title: string, message: string, onConfirm: () => void, type: "danger" | "warning" | "info" | "success" = "warning") => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      },
+      type,
+    });
+  };
+
   // Form state
   const [form, setForm] = useState<CreateQuotationForm>({
     customerId: "",
     vehicleId: "",
+    quotationNumber: "",
     documentType: "Quotation",
     quotationDate: new Date().toISOString().split("T")[0],
     validUntilDays: 30,
@@ -143,6 +184,8 @@ function QuotationsContent() {
     customNotes: "",
     noteTemplateId: "",
     vehicleLocation: undefined,
+    appointmentId: "",
+    jobCardId: "",
   });
 
   // Data for dropdowns
@@ -155,7 +198,6 @@ function QuotationsContent() {
   const customerSearchResults = customerSearch.results as CustomerWithVehicles[];
   const performCustomerSearch = customerSearch.search;
   const clearCustomerSearch = customerSearch.clear;
-
 
   // Load insurers from localStorage or use mock data
   useEffect(() => {
@@ -253,6 +295,7 @@ function QuotationsContent() {
                   insuranceCompanyName: insuranceCompanyName || "",
                   insuranceStartDate: insuranceStartDate || "",
                   insuranceEndDate: insuranceEndDate || "",
+                  appointmentId: appointmentData.id || quotationData.appointmentId,
                 }));
 
                 // Find matching vehicle
@@ -363,6 +406,23 @@ function QuotationsContent() {
                   insuranceCompanyName: insuranceCompanyName || "",
                   insuranceStartDate: insuranceStartDate || "",
                   insuranceEndDate: insuranceEndDate || "",
+                  jobCardId: jobCard.id || jobCardIdParam,
+                  appointmentId: jobCard.appointmentId,
+                  items: jobCard.part2Items?.map((item: any, index: number) => {
+                    const gstRate = (item.gstPercent || 18) / 100;
+                    const preGstRate = item.rate || (item.amount / (1 + gstRate)) || 0;
+                    const amountInclGst = item.amount || (preGstRate * (1 + gstRate));
+
+                    return {
+                      serialNumber: index + 1,
+                      partName: item.partName || "Service Item",
+                      partNumber: item.partCode || undefined,
+                      quantity: item.qty || 1,
+                      rate: preGstRate,
+                      gstPercent: item.gstPercent || 18,
+                      amount: amountInclGst * (item.qty || 1)
+                    };
+                  }) || [],
                 }));
 
                 // Find matching vehicle
@@ -429,50 +489,118 @@ function QuotationsContent() {
   // Calculate totals
   const calculateTotals = useCallback(() => {
     let subtotal = 0;
-    form.items.forEach((item) => {
-      const itemAmount = item.rate * item.quantity;
-      subtotal += itemAmount;
+    const discount = form.discount || 0;
+
+    // First pass to get subtotal
+    form.items.forEach(item => {
+      subtotal += (item.rate || 0) * (item.quantity || 0);
     });
 
-    const discount = form.discount || 0;
     const discountPercent = subtotal > 0 ? (discount / subtotal) * 100 : 0;
     const preGstAmount = subtotal - discount;
 
-    // For now, using flat 18% GST. In production, this should calculate CGST/SGST/IGST based on states
-    const gstRate = 0.18;
-    const taxAmount = preGstAmount * gstRate;
+    let totalCgst = 0;
+    let totalSgst = 0;
+    let totalIgst = 0;
+    let totalTax = 0;
 
-    // Split into CGST and SGST (9% each) for intra-state, or IGST (18%) for inter-state
-    // This should be calculated based on customer state vs service center state
-    const cgst = taxAmount / 2;
-    const sgst = taxAmount / 2;
-    const igst = 0; // Set based on state comparison
+    // Determine if IGST or CGST/SGST should be applied
+    const customerState = selectedCustomer?.address?.toLowerCase().trim();
+    const scState = serviceCenterContext.serviceCenterLocation?.toLowerCase().trim();
+    const isInterState = customerState && scState && !customerState.includes(scState) && !scState.includes(customerState);
 
-    const totalAmount = preGstAmount + cgst + sgst + igst;
+    const itemsWithAmounts = form.items.map((item, index) => {
+      const itemSubtotal = (item.rate || 0) * (item.quantity || 0);
+      const itemDiscount = subtotal > 0 ? (itemSubtotal / subtotal) * discount : 0;
+      const itemTaxableValue = itemSubtotal - itemDiscount;
+
+      const itemGstPercent = item.gstPercent || 18;
+      const itemTax = itemTaxableValue * (itemGstPercent / 100);
+      totalTax += itemTax;
+
+      if (isInterState) {
+        totalIgst += itemTax;
+      } else {
+        totalCgst += itemTax / 2;
+        totalSgst += itemTax / 2;
+      }
+
+      const amountInclGst = itemSubtotal + (itemSubtotal * (itemGstPercent / 100)); // Standard display amount per item
+
+      return {
+        ...item,
+        amount: amountInclGst,
+        serialNumber: item.serialNumber || index + 1
+      };
+    });
+
+    const calculatedPreGst = subtotal - discount;
+    const totalAmount = calculatedPreGst + totalTax;
 
     return {
       subtotal,
       discount,
       discountPercent,
-      preGstAmount,
-      cgst,
-      sgst,
-      igst,
+      preGstAmount: calculatedPreGst,
+      cgst: totalCgst,
+      sgst: totalSgst,
+      igst: totalIgst,
       totalAmount,
+      items: itemsWithAmounts
     };
-  }, [form.items, form.discount]);
+  }, [form.items, form.discount, selectedCustomer, serviceCenterContext]);
 
   const totals = calculateTotals();
 
   const validateQuotationForm = () => {
     if (!form.customerId) {
-      alert("Please select a customer");
+      showWarning("Please select a customer");
       return false;
     }
 
-    if (form.items.length === 0) {
-      alert("Please add at least one item");
+    if (form.items.length === 0 && form.documentType !== "Check-in Slip") {
+      showWarning("Please add at least one item");
       return false;
+    }
+
+    // Check for duplicate Job Card ID
+    if (form.jobCardId) {
+      const existingQuotation = quotations.find(
+        (q) => q.jobCardId === form.jobCardId && q.id !== editingId && q.documentType === form.documentType
+      );
+      if (existingQuotation) {
+        showError(`A ${form.documentType} (${existingQuotation.quotationNumber}) already exists for this Job Card.`);
+        return false;
+      }
+    }
+
+    // Check for duplicate Customer & Vehicle ID (active session)
+    if (form.customerId && form.vehicleId && !editingId) {
+      const activeQuotation = quotations.find(
+        (q) => q.customerId === form.customerId &&
+          q.vehicleId === form.vehicleId &&
+          q.documentType === form.documentType &&
+          !["CUSTOMER_REJECTED", "MANAGER_REJECTED"].includes(q.status)
+      );
+      if (activeQuotation) {
+        showWarning(`This customer already has an active ${form.documentType} (${activeQuotation.quotationNumber}) for this vehicle.`);
+        return false;
+      }
+    }
+
+    // Check if vehicle has an active job card and enforce linkage
+    if (form.vehicleId && selectedCustomer && !editingId) {
+      const selectedVehicle = selectedCustomer.vehicles.find(v => String(v.id) === form.vehicleId);
+      if (selectedVehicle && selectedVehicle.currentStatus === "Active Job Card") {
+        if (!form.jobCardId) {
+          showError(`This vehicle has an active Job Card (${selectedVehicle.activeJobCardId}). New ${form.documentType}s must be created from that Job Card or linked to it.`);
+          return false;
+        }
+        if (form.jobCardId !== selectedVehicle.activeJobCardId) {
+          showError(`Mismatch: Vehicle has active Job Card ${selectedVehicle.activeJobCardId}, but requested ${form.jobCardId}.`);
+          return false;
+        }
+      }
     }
 
     return true;
@@ -488,7 +616,9 @@ function QuotationsContent() {
     );
     const resolvedCustomerId = form.customerId || activeCustomerId || "";
     const serviceCenterCode = getServiceCenterCode(resolvedServiceCenterId);
-    const quotationNumber = generateQuotationNumber(resolvedServiceCenterId, quotationDate, quotations);
+    const quotationNumber = isEditing && form.quotationNumber
+      ? form.quotationNumber
+      : generateQuotationNumber(resolvedServiceCenterId, quotationDate, quotations);
 
     const customer = selectedCustomer ?? createEmptyCustomer();
     const selectedInsurer = insurers.find((i) => i.id === form.insurerId);
@@ -498,13 +628,12 @@ function QuotationsContent() {
       (center) => normalizeServiceCenterId(center.id) === resolvedServiceCenterId
     );
 
-    // Get appointmentId from pendingQuotationFromAppointment if available
     const pendingQuotationData = safeStorage.getItem<any>("pendingQuotationFromAppointment", null);
-    const appointmentId = pendingQuotationData?.appointmentId || undefined;
-
-    // Get jobCardId from pendingQuotationFromJobCard if available
     const pendingJobCardData = safeStorage.getItem<any>("pendingQuotationFromJobCard", null);
-    const jobCardId = pendingJobCardData?.jobCardId || jobCardIdParam || undefined;
+
+    // Use form IDs preferably, fallback to storage
+    const appointmentId = form.appointmentId || pendingQuotationData?.appointmentId || undefined;
+    const jobCardId = form.jobCardId || pendingJobCardData?.jobCardId || jobCardIdParam || undefined;
 
     return {
       id: `qt-${Date.now()}`,
@@ -526,9 +655,9 @@ function QuotationsContent() {
       discount: updatedTotals.discount,
       discountPercent: updatedTotals.discountPercent,
       preGstAmount: updatedTotals.preGstAmount,
-      cgstAmount: updatedTotals.cgst,
-      sgstAmount: updatedTotals.sgst,
-      igstAmount: updatedTotals.igst,
+      cgst: updatedTotals.cgst,
+      sgst: updatedTotals.sgst,
+      igst: updatedTotals.igst,
       totalAmount: updatedTotals.totalAmount,
       notes: form.notes || selectedTemplate?.content || "",
       batterySerialNumber: form.batterySerialNumber,
@@ -540,8 +669,8 @@ function QuotationsContent() {
       managerId: undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      items: form.items.map((item, index) => ({
-        id: `item-${Date.now()}-${index}`,
+      items: updatedTotals.items.map((item, index) => ({
+        id: (item as any).id || `item-${Date.now()}-${index}`,
         ...item,
       })),
       customer: {
@@ -638,16 +767,15 @@ function QuotationsContent() {
             <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.serialNumber || index + 1}</td>
             <td style="border: 1px solid #ddd; padding: 8px;">${item.partName || "-"}</td>
             <td style="border: 1px solid #ddd; padding: 8px;">${item.partNumber || "-"}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${item.hsnSacCode || "-"}</td>
             <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.quantity || 0}</td>
             <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">₹${(item.rate || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
             <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.gstPercent || 0}%</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-weight: bold;">₹${(item.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-weight: bold;">₹${(item.amount || (item.rate * item.quantity * (1 + (item.gstPercent || 18) / 100))).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
           </tr>
         `
         )
         .join("")
-      : '<tr><td colspan="8" style="border: 1px solid #ddd; padding: 8px; text-align: center;">No items added</td></tr>';
+      : '<tr><td colspan="7" style="border: 1px solid #ddd; padding: 8px; text-align: center;">No items added</td></tr>';
 
     const insuranceHTML =
       quotation.hasInsurance && (quotation.insurer || quotation.insuranceStartDate || quotation.insuranceEndDate)
@@ -1005,11 +1133,10 @@ function QuotationsContent() {
                 <th style="text-align: center;">S.No</th>
                 <th>Part Name</th>
                 <th>Part Number</th>
-                <th>HSN/SAC Code</th>
                 <th style="text-align: center;">Qty</th>
-                <th style="text-align: right;">Rate (₹)</th>
+                <th style="text-align: right;">Rate (Pre-GST)</th>
                 <th style="text-align: center;">GST %</th>
-                <th style="text-align: right;">Amount (₹)</th>
+                <th style="text-align: right;">Amount (Incl. GST)</th>
               </tr>
             </thead>
             <tbody>
@@ -1024,39 +1151,31 @@ function QuotationsContent() {
             <tbody>
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Subtotal:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${(quotation.subtotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ${quotation.discount > 0 ? `
               <tr>
-                <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Discount ${quotation.discountPercent > 0 ? `(${quotation.discountPercent.toFixed(1)}%)` : ""}:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">-₹${quotation.discount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Discount ${quotation.discountPercent >= 0 ? `(${quotation.discountPercent.toFixed(1)}%)` : ""}:</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">-₹${(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
               <tr style="border-top: 1px solid #e5e7eb;">
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px; padding-top: 10px;">Pre-GST Amount:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; padding-top: 10px; white-space: nowrap;">₹${quotation.preGstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; padding-top: 10px; white-space: nowrap;">₹${(Number(quotation.preGstAmount) > 0 ? quotation.preGstAmount : (Number(quotation.subtotal || 0) - Number(quotation.discount || 0))).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ${quotation.cgstAmount > 0 ? `
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">CGST (9%):</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.cgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${((quotation as any).cgstAmount || (quotation as any).cgst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
-              ${quotation.sgstAmount > 0 ? `
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">SGST (9%):</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.sgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${((quotation as any).sgstAmount || (quotation as any).sgst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
-              ${quotation.igstAmount > 0 ? `
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">IGST (18%):</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.igstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${((quotation as any).igstAmount || (quotation as any).igst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
               <tr class="pricing-total-row">
                 <td style="width: 65%; text-align: left; padding-right: 15px; border-top: 2px solid #374151; padding-top: 10px; font-size: 16px; font-weight: bold;">Total Amount:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; border-top: 2px solid #374151; padding-top: 10px; font-size: 16px; font-weight: bold; white-space: nowrap;">₹${quotation.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; border-top: 2px solid #374151; padding-top: 10px; font-size: 16px; font-weight: bold; white-space: nowrap;">₹${(quotation.totalAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
             </tbody>
           </table>
@@ -1086,7 +1205,7 @@ function QuotationsContent() {
     const remainingCount = itemsCount > 3 ? itemsCount - 3 : 0;
 
     const itemsSummary = firstItems
-      .map((item, idx) => `${idx + 1}. ${item.partName} (Qty: ${item.quantity}) - ₹${item.amount.toLocaleString("en-IN")}`)
+      .map((item, idx) => `${idx + 1}. ${item.partName} (Qty: ${item.quantity}) - ₹${(item.amount || 0).toLocaleString("en-IN")}`)
       .join("\n");
 
     const approvalLink = `${window.location.origin}/sc/quotations?quotationId=${quotation.id}&action=approve`;
@@ -1104,8 +1223,8 @@ ${quotation.validUntil ? `⏰ Valid Till: ${new Date(quotation.validUntil).toLoc
 ${itemsSummary}
 ${remainingCount > 0 ? `... and ${remainingCount} more item${remainingCount > 1 ? "s" : ""}\n` : ""}
 💰 *Pricing:*
-Subtotal: ₹${quotation.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-${quotation.discount > 0 ? `Discount: -₹${quotation.discount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}*Total Amount: ₹${quotation.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}*
+Subtotal: ₹${(quotation.subtotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+${quotation.discount > 0 ? `Discount: -₹${(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}*Total Amount: ₹${(quotation.totalAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}*
 
 📄 A detailed PDF has been generated. Please review it.
 
@@ -1172,7 +1291,7 @@ Or reply with "APPROVE" or "REJECT"
       const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
 
       if (!validateWhatsAppNumber(customerWhatsapp)) {
-        alert("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
+        showWarning("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
         if (manageLoading) {
           setLoading(false);
         }
@@ -1187,7 +1306,7 @@ Or reply with "APPROVE" or "REJECT"
         try {
           const printWindow = window.open("", "_blank");
           if (!printWindow) {
-            alert("Please allow popups to generate PDF. The quotation details will be shown in the message.");
+            showWarning("Please allow popups to generate PDF. The quotation details will be shown in the message.");
             return false;
           }
 
@@ -1213,7 +1332,7 @@ Or reply with "APPROVE" or "REJECT"
           return true;
         } catch (error) {
           console.error("Error opening print window:", error);
-          alert("Could not open print dialog. The quotation will still be sent via WhatsApp.");
+          showWarning("Could not open print dialog. The quotation will still be sent via WhatsApp.");
           return false;
         }
       };
@@ -1229,15 +1348,15 @@ Or reply with "APPROVE" or "REJECT"
       setTimeout(() => {
         try {
           window.open(whatsappUrl, "_blank");
-          alert("Quotation PDF generated and sent to customer via WhatsApp!\n\nCustomer can approve or reject via the links provided.");
+          showSuccess("Quotation PDF generated and sent to customer via WhatsApp!");
         } catch (error) {
           console.error("Error opening WhatsApp:", error);
-          alert("Could not open WhatsApp. Please copy this link manually:\n\n" + whatsappUrl);
+          showError("Could not open WhatsApp. Please copy the link manually.");
         }
       }, 1500);
     } catch (error) {
       console.error("Error sending quotation:", error);
-      alert("Failed to send quotation via WhatsApp. Please try again.");
+      showError("Failed to send quotation via WhatsApp. Please try again.");
     } finally {
       if (manageLoading) {
         setLoading(false);
@@ -1256,7 +1375,6 @@ Or reply with "APPROVE" or "REJECT"
           serialNumber: form.items.length + 1,
           partName: "",
           partNumber: "",
-          hsnSacCode: "",
           quantity: 1,
           rate: 0,
           gstPercent: 18,
@@ -1282,8 +1400,11 @@ Or reply with "APPROVE" or "REJECT"
     newItems[index] = { ...newItems[index], [field]: value };
 
     // Recalculate amount
-    if (field === "rate" || field === "quantity") {
-      newItems[index].amount = newItems[index].rate * newItems[index].quantity;
+    if (field === "rate" || field === "quantity" || field === "gstPercent") {
+      const rate = Number(newItems[index].rate) || 0;
+      const q = Number(newItems[index].quantity) || 0;
+      const gst = Number(newItems[index].gstPercent) || 0;
+      newItems[index].amount = rate * q * (1 + gst / 100);
     }
 
     setForm({ ...form, items: newItems });
@@ -1308,7 +1429,7 @@ Or reply with "APPROVE" or "REJECT"
     // Handle check-in slip
     if (form.documentType === "Check-in Slip") {
       if (!selectedCustomer) {
-        alert("Please select a customer");
+        showWarning("Please select a customer");
         return;
       }
 
@@ -1402,11 +1523,23 @@ Or reply with "APPROVE" or "REJECT"
         };
 
         // Save check-in slip as quotation
-        const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
-        updateLocalAppointmentStatus(createdQuotation);
+        if (isEditing && editingId) {
+          const { id, quotationNumber, customer, vehicle, serviceCenter, ...updatableData } = checkInSlipQuotation;
+          await updateQuotationMutation.mutateAsync({ id: editingId, data: updatableData });
 
-        // Store enhanced check-in slip data for display
-        safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
+          // Update stored enhanced check-in slip data
+          safeStorage.setItem(`checkInSlip_${editingId}`, enhancedData);
+
+          showSuccess("Check-in slip updated successfully! You can now send it to the customer via WhatsApp.");
+        } else {
+          const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
+          updateLocalAppointmentStatus(createdQuotation);
+
+          // Store enhanced check-in slip data for display
+          safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
+
+          showSuccess("Check-in slip generated successfully! You can now send it to the customer via WhatsApp.");
+        }
 
         setShowCheckInSlipModal(true);
         // Keep form open so user can send via WhatsApp
@@ -1416,11 +1549,9 @@ Or reply with "APPROVE" or "REJECT"
         if (quotationDataFromStorage) {
           safeStorage.removeItem("pendingQuotationFromAppointment");
         }
-
-        alert("Check-in slip generated successfully! You can now send it to the customer via WhatsApp.");
       } catch (error) {
         console.error("Error creating check-in slip:", error);
-        alert("Failed to create check-in slip. Please try again.");
+        showError("Failed to create check-in slip. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -1434,17 +1565,24 @@ Or reply with "APPROVE" or "REJECT"
 
     try {
       setLoading(true);
-      const newQuotation = buildQuotationFromForm();
-      const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
-      updateLocalAppointmentStatus(createdQuotation);
-      setFilter("DRAFT");
-
-      alert("Quotation created successfully!");
+      if (isEditing && editingId) {
+        const updatedQuotation = buildQuotationFromForm();
+        // Remove ID and other non-updatable fields if necessary, but repo.update usually handles it
+        const { id, quotationNumber, customer, vehicle, serviceCenter, ...updatableData } = updatedQuotation;
+        await updateQuotationMutation.mutateAsync({ id: editingId, data: updatableData });
+        showSuccess("Quotation updated successfully!");
+      } else {
+        const newQuotation = buildQuotationFromForm();
+        const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
+        updateLocalAppointmentStatus(createdQuotation);
+        setFilter("DRAFT");
+        showSuccess("Quotation created successfully!");
+      }
       setShowCreateModal(false);
       resetForm();
     } catch (error) {
-      console.error("Error creating quotation:", error);
-      alert("Failed to create quotation. Please try again.");
+      console.error("Error saving quotation:", error);
+      showError("Failed to save quotation. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1466,9 +1604,10 @@ Or reply with "APPROVE" or "REJECT"
 
       setShowCreateModal(false);
       resetForm();
+      showSuccess("Quotation created and sent successfully!");
     } catch (error) {
       console.error("Error creating and sending quotation:", error);
-      alert("Failed to create and send quotation. Please try again.");
+      showError("Failed to create and send quotation. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1477,7 +1616,11 @@ Or reply with "APPROVE" or "REJECT"
   // Generate and Send Check-in Slip to Customer
   const handleGenerateAndSendCheckInSlip = async () => {
     if (!selectedCustomer) {
-      alert("Please select a customer");
+      showWarning("Please select a customer");
+      return;
+    }
+
+    if (!validateQuotationForm()) {
       return;
     }
 
@@ -1590,7 +1733,7 @@ Or reply with "APPROVE" or "REJECT"
       const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
 
       if (!customerWhatsapp) {
-        alert("Customer WhatsApp number not found. Check-in slip generated but could not send via WhatsApp.");
+        showWarning("Customer WhatsApp number not found. Check-in slip generated but could not send via WhatsApp.");
         setShowCheckInSlipModal(true);
         return;
       }
@@ -1625,12 +1768,12 @@ Please keep this slip safe for vehicle collection.`;
       // Open WhatsApp
       window.open(whatsappUrl, "_blank");
 
-      alert("Check-in slip generated and sent to customer via WhatsApp!");
+      showSuccess("Check-in slip generated and sent to customer via WhatsApp!");
       setShowCreateModal(false);
       resetForm();
     } catch (error) {
       console.error("Error generating and sending check-in slip:", error);
-      alert("Failed to generate and send check-in slip. Please try again.");
+      showError("Failed to generate and send check-in slip. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1639,7 +1782,7 @@ Please keep this slip safe for vehicle collection.`;
   // Send Check-in Slip to Customer via WhatsApp
   const handleSendCheckInSlipToCustomer = async () => {
     if (!checkInSlipData || !selectedCustomer) {
-      alert("Please generate a check-in slip first");
+      showWarning("Please generate a check-in slip first");
       return;
     }
 
@@ -1654,7 +1797,7 @@ Please keep this slip safe for vehicle collection.`;
       const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
 
       if (!customerWhatsapp) {
-        alert("Customer WhatsApp number not found");
+        showError("Customer WhatsApp number not found");
         return;
       }
 
@@ -1687,13 +1830,78 @@ Please keep this slip safe for vehicle collection.`;
 
       // Open WhatsApp
       window.open(whatsappUrl, "_blank");
-      alert("Check-in slip details sent to customer via WhatsApp!");
+      showSuccess("Check-in slip details sent to customer via WhatsApp!");
     } catch (error) {
       console.error("Error sending check-in slip:", error);
-      alert("Failed to send check-in slip via WhatsApp. Please try again.");
+      showError("Failed to send check-in slip via WhatsApp. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  // Delete Quotation
+  const handleDeleteQuotation = async (id: string) => {
+    openConfirm(
+      "Delete Quotation",
+      "Are you sure you want to delete this quotation? This action cannot be undone.",
+      async () => {
+        try {
+          setLoading(true);
+          await deleteQuotationMutation.mutateAsync(id);
+          showSuccess("Quotation deleted successfully!");
+        } catch (error) {
+          console.error("Error deleting quotation:", error);
+          showError("Failed to delete quotation.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      "danger"
+    );
+  };
+
+  // Edit Quotation
+  const handleEdit = (quotation: Quotation) => {
+    setForm({
+      customerId: quotation.customerId,
+      vehicleId: quotation.vehicleId || "",
+      documentType: quotation.documentType,
+      quotationNumber: quotation.quotationNumber,
+      quotationDate: quotation.quotationDate.split("T")[0],
+      validUntilDays: 30, // Default or calculate
+      hasInsurance: quotation.hasInsurance,
+      insurerId: quotation.insurerId || "",
+      insuranceCompanyName: quotation.insurer?.name || "",
+      insuranceStartDate: quotation.insuranceStartDate || "",
+      insuranceEndDate: quotation.insuranceEndDate || "",
+      items: quotation.items.map(item => ({ ...item })),
+      discount: quotation.discount,
+      notes: quotation.notes || "",
+      batterySerialNumber: quotation.batterySerialNumber || "",
+      customNotes: quotation.customNotes || "",
+      noteTemplateId: quotation.noteTemplateId || "",
+      vehicleLocation: quotation.vehicleLocation,
+      appointmentId: quotation.appointmentId || "",
+      jobCardId: quotation.jobCardId || "",
+    });
+
+    if (quotation.documentType === "Check-in Slip") {
+      const storedData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null);
+      if (storedData) {
+        setCheckInSlipFormData(storedData);
+      } else {
+        setCheckInSlipFormData({
+          notes: quotation.notes,
+          batterySerialNumber: quotation.batterySerialNumber,
+          technicalObservation: quotation.customNotes,
+        } as any);
+      }
+    }
+
+    setSelectedCustomer(quotation.customer as any);
+    setIsEditing(true);
+    setEditingId(quotation.id);
+    setShowCreateModal(true);
   };
 
   // Send to Customer via WhatsApp
@@ -1746,7 +1954,7 @@ Please keep this slip safe for vehicle collection.`;
       const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
 
       if (!validateWhatsAppNumber(customerWhatsapp)) {
-        alert("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
+        showWarning("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
         setLoading(false);
         return;
       }
@@ -1759,7 +1967,7 @@ Please keep this slip safe for vehicle collection.`;
         try {
           const printWindow = window.open("", "_blank");
           if (!printWindow) {
-            alert("Please allow popups to generate PDF. The quotation details will be shown in the message.");
+            showWarning("Please allow popups to generate PDF. The quotation details will be shown in the message.");
             return false;
           }
 
@@ -1785,7 +1993,7 @@ Please keep this slip safe for vehicle collection.`;
           return true;
         } catch (error) {
           console.error("Error opening print window:", error);
-          alert("Could not open print dialog. The quotation will still be sent via WhatsApp.");
+          showWarning("Could not open print dialog. The quotation will still be sent via WhatsApp.");
           return false;
         }
       };
@@ -1801,15 +2009,15 @@ Please keep this slip safe for vehicle collection.`;
       setTimeout(() => {
         try {
           window.open(whatsappUrl, "_blank");
-          alert("Quotation PDF generated and sent to customer via WhatsApp!\n\nCustomer can approve or reject via the links provided.");
+          showSuccess("Quotation PDF generated and sent to customer via WhatsApp!");
         } catch (error) {
           console.error("Error opening WhatsApp:", error);
-          alert("Could not open WhatsApp. Please copy this link manually:\n\n" + whatsappUrl);
+          showError("Could not open WhatsApp. Please copy the link manually.");
         }
       }, 1500);
     } catch (error) {
       console.error("Error sending quotation:", error);
-      alert("Failed to send quotation. Please try again.");
+      showError("Failed to send quotation. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -2009,190 +2217,179 @@ Please keep this slip safe for vehicle collection.`;
 
   // Customer Approval
   const handleCustomerApproval = async (quotationId: string) => {
-    if (!confirm("Customer has approved this quotation. Convert to job card and notify advisor?")) {
-      return;
-    }
+    openConfirm(
+      "Confirm Approval",
+      "Customer has approved this quotation. Convert to job card and notify advisor?",
+      async () => {
+        try {
+          setLoading(true);
+          const quotation = quotations.find((q) => q.id === quotationId);
+          if (!quotation) {
+            showError("Quotation not found!");
+            return;
+          }
 
-    try {
-      setLoading(true);
+          // Update quotation status
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "CUSTOMER_APPROVED" as const,
+              customerApproved: true,
+              customerApprovedAt: new Date().toISOString(),
+            }
+          });
 
-      const quotation = quotations.find((q) => q.id === quotationId);
-      if (!quotation) {
-        alert("Quotation not found!");
-        return;
-      }
+          // Create job card
+          const jobCard = await convertQuotationToJobCard(quotation);
 
-      // Update quotation status
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "CUSTOMER_APPROVED" as const,
-          customerApproved: true,
-          customerApprovedAt: new Date().toISOString(),
+          // Update lead status
+          updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
+
+          showSuccess(`Customer Approved! Quotation ${quotation.quotationNumber} has been approved and Job Card ${jobCard.jobCardNumber} created.`);
+        } catch (error) {
+          console.error("Error approving quotation:", error);
+          showError("Failed to approve quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
-
-
-      // Create job card (we skip looking for temp job card in local storage as we migrated)
-      const jobCard = await convertQuotationToJobCard(quotation);
-
-      // Update lead status to job_card_in_progress or converted
-      updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
-
-      // Show notification to advisor
-      alert(`✅ Customer Approved!\n\nQuotation ${quotation.quotationNumber} has been approved by the customer.\n\nJob Card: ${jobCard.jobCardNumber}\n\nJob card has been automatically sent to Service Manager for technician assignment and parts monitoring.`);
-
-      // In production, you would send a notification/email to the advisor and manager here
-      console.log("Notification to advisor:", {
-        advisorId: quotation.serviceAdvisorId,
-        message: `Quotation ${quotation.quotationNumber} approved by customer. Job Card ${jobCard.jobCardNumber} created and sent to manager.`,
-        quotationId: quotation.id,
-        jobCardId: jobCard.id,
-      });
-
-      console.log("Notification to manager:", {
-        message: `New job card ${jobCard.jobCardNumber} requires technician assignment and parts monitoring.`,
-        jobCardId: jobCard.id,
-        jobCardNumber: jobCard.jobCardNumber,
-      });
-
-    } catch (error) {
-      console.error("Error approving quotation:", error);
-      alert("Failed to approve quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      },
+      "success"
+    );
   };
 
   // Customer Rejection
   const handleCustomerRejection = async (quotationId: string) => {
-    if (!confirm("Customer has rejected this quotation. Add to leads for follow-up?")) {
-      return;
-    }
+    openConfirm(
+      "Confirm Rejection",
+      "Customer has rejected this quotation. Add to leads for follow-up?",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          const quotation = quotations.find((q) => q.id === quotationId);
+          if (!quotation) {
+            showError("Quotation not found!");
+            return;
+          }
 
-      const quotation = quotations.find((q) => q.id === quotationId);
-      if (!quotation) {
-        alert("Quotation not found!");
-        return;
-      }
+          // Update quotation status
+          const updateData = {
+            status: "CUSTOMER_REJECTED" as const,
+            customerRejected: true,
+            customerRejectedAt: new Date().toISOString(),
+          };
+          await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
 
-      // Update quotation status
-      const updateData = {
-        status: "CUSTOMER_REJECTED" as const,
-        customerRejected: true,
-        customerRejectedAt: new Date().toISOString(),
-      };
-      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
+          const updatedQuotation = { ...quotation, ...updateData };
 
-      const updatedQuotation = { ...quotation, ...updateData };
+          // Add to leads for follow-up
+          const lead = addRejectedQuotationToLeads(updatedQuotation);
 
-      // Add to leads for follow-up
-      const lead = addRejectedQuotationToLeads(updatedQuotation);
+          // Show notification to advisor
+          showWarning(`Customer Rejected Quotation ${quotation.quotationNumber}. Added to Leads for follow-up.`);
 
-      // Show notification to advisor
-      alert(`⚠️ Customer Rejected Quotation\n\nQuotation ${quotation.quotationNumber} has been rejected by the customer.\n\nAdded to Leads for follow-up.\n\nLead ID: ${lead.id}\n\nPlease follow up with the customer to understand their concerns.`);
-
-      // In production, you would send a notification/email to the advisor here
-      console.log("Notification to advisor:", {
-        advisorId: quotation.serviceAdvisorId,
-        message: `Quotation ${quotation.quotationNumber} rejected by customer. Added to leads for follow-up.`,
-        quotationId: quotation.id,
-        leadId: lead.id,
-      });
-
-      alert("Quotation marked as customer rejected.");
-    } catch (error) {
-      console.error("Error rejecting quotation:", error);
-      alert("Failed to reject quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+          showInfo("Quotation marked as customer rejected.");
+        } catch (error) {
+          console.error("Error rejecting quotation:", error);
+          showError("Failed to reject quotation. Please try again.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      "info"
+    );
   };
 
   // Send to Manager
   const handleSendToManager = async (quotationId: string) => {
-    if (!confirm("Send this quotation to manager for approval?")) {
-      return;
-    }
+    openConfirm(
+      "Send to Manager",
+      "Send this quotation to manager for approval?",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "SENT_TO_MANAGER" as const,
+              sentToManager: true,
+              sentToManagerAt: new Date().toISOString(),
+            }
+          });
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "SENT_TO_MANAGER" as const,
-          sentToManager: true,
-          sentToManagerAt: new Date().toISOString(),
+          showSuccess("Quotation sent to manager!");
+        } catch (error) {
+          console.error("Error sending to manager:", error);
+          showError("Failed to send quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
-
-      alert("Quotation sent to manager!");
-    } catch (error) {
-      console.error("Error sending to manager:", error);
-      alert("Failed to send quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      },
+      "info"
+    );
   };
 
   // Manager Approval
   const handleManagerApproval = async (quotationId: string) => {
-    if (!confirm("Approve this quotation? This will allow job card creation.")) {
-      return;
-    }
+    openConfirm(
+      "Approve Quotation",
+      "Approve this quotation? This will allow job card creation.",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "MANAGER_APPROVED" as const,
+              managerApproved: true,
+              managerApprovedAt: new Date().toISOString(),
+              managerId: userInfo?.id || "",
+            }
+          });
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "MANAGER_APPROVED" as const,
-          managerApproved: true,
-          managerApprovedAt: new Date().toISOString(),
-          managerId: userInfo?.id || "",
+          showSuccess("Quotation approved by manager!");
+        } catch (error) {
+          console.error("Error approving quotation:", error);
+          showError("Failed to approve quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
-
-      alert("Quotation approved by manager!");
-    } catch (error) {
-      console.error("Error approving quotation:", error);
-      alert("Failed to approve quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      },
+      "success"
+    );
   };
 
   // Manager Rejection
   const handleManagerRejection = async (quotationId: string) => {
-    if (!confirm("Reject this quotation?")) {
-      return;
-    }
+    openConfirm(
+      "Reject Quotation",
+      "Reject this quotation?",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "MANAGER_REJECTED" as const,
+              managerRejected: true,
+              managerRejectedAt: new Date().toISOString(),
+              managerId: userInfo?.id || "",
+            }
+          });
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "MANAGER_REJECTED" as const,
-          managerRejected: true,
-          managerRejectedAt: new Date().toISOString(),
-          managerId: userInfo?.id || "",
+          showInfo("Quotation rejected by manager.");
+        } catch (error) {
+          console.error("Error rejecting quotation:", error);
+          showError("Failed to reject quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
-
-      alert("Quotation rejected by manager.");
-    } catch (error) {
-      console.error("Error rejecting quotation:", error);
-      alert("Failed to reject quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      },
+      "danger"
+    );
   };
 
   // Open Quotation/Check-in Slip for Viewing
@@ -2261,6 +2458,7 @@ Please keep this slip safe for vehicle collection.`;
     setForm({
       customerId: "",
       vehicleId: "",
+      quotationNumber: "",
       documentType: "Quotation",
       quotationDate: new Date().toISOString().split("T")[0],
       validUntilDays: 30,
@@ -2275,12 +2473,16 @@ Please keep this slip safe for vehicle collection.`;
       batterySerialNumber: "",
       customNotes: "",
       noteTemplateId: "",
+      appointmentId: "",
+      jobCardId: "",
     });
-    setCheckInSlipFormData({});
+    setCheckInSlipFormData({} as CheckInSlipFormData);
     setSelectedCustomer(null);
     setActiveCustomerId("");
     setCustomerSearchQuery("");
     clearCustomerSearch();
+    setIsEditing(false);
+    setEditingId(null);
   }, [clearCustomerSearch]);
 
   // Filtered quotations
@@ -2491,16 +2693,36 @@ Please keep this slip safe for vehicle collection.`;
                                       setSelectedCustomer(customer);
                                       handleSendCheckInSlipToCustomer();
                                     } else {
-                                      alert("Customer not found");
+                                      showError("Customer not found");
                                     }
                                   } else {
-                                    alert("Check-in slip data not found");
+                                    showError("Check-in slip data not found");
                                   }
                                 }}
                                 className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
                                 title="Send via WhatsApp"
                               >
                                 <MessageCircle size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(quotation);
+                                }}
+                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Edit Check-in Slip"
+                              >
+                                <Edit size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteQuotation(quotation.id);
+                                }}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Delete Check-in Slip"
+                              >
+                                <Trash2 size={18} />
                               </button>
                             </>
                           ) : (
@@ -2539,6 +2761,26 @@ Please keep this slip safe for vehicle collection.`;
                                   <ArrowRight size={18} />
                                 </button>
                               )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(quotation);
+                                }}
+                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Edit Quotation"
+                              >
+                                <Edit size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteQuotation(quotation.id);
+                                }}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Delete Quotation"
+                              >
+                                <Trash2 size={18} />
+                              </button>
                             </>
                           )}
                         </div>
@@ -2583,6 +2825,7 @@ Please keep this slip safe for vehicle collection.`;
             resetForm();
           }}
           loading={loading}
+          isEditing={isEditing}
         />
       )}
 
@@ -2619,6 +2862,15 @@ Please keep this slip safe for vehicle collection.`;
           onManagerRejection={handleManagerRejection}
         />
       )}
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type={confirmModal.type}
+      />
     </div>
   );
 }

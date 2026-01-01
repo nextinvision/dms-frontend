@@ -66,7 +66,9 @@ export interface JobCardPart2Item {
   partName: string; // Clean name from description
   partCode: string; // First alphanumeric block from description
   qty: number; // Quantity
-  amount: number; // Amount (if available, default 0)
+  rate?: number; // Pre-GST rate
+  gstPercent?: number; // GST percentage
+  amount: number; // Total amount (inclusive of GST)
   technician: string; // Technician (if provided)
   labourCode: string; // If Item Type = Work Item → extract labour text, If Item Type = Part → "Auto Select With Part"
   itemType?: "part" | "work_item"; // To distinguish between parts and work items

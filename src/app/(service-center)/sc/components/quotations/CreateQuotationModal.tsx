@@ -44,6 +44,7 @@ interface CreateQuotationModalProps {
     checkInSlipData?: CheckInSlipData | null;
     onClose: () => void;
     loading: boolean;
+    isEditing?: boolean;
 }
 
 export function CreateQuotationModal({
@@ -74,6 +75,7 @@ export function CreateQuotationModal({
     checkInSlipData,
     onClose,
     loading,
+    isEditing = false,
 }: CreateQuotationModalProps) {
     // Get appointment data directly from localStorage as fallback
     const appointmentDataFromStorage = typeof window !== "undefined"
@@ -108,7 +110,9 @@ export function CreateQuotationModal({
             <div className="bg-white rounded-2xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
                 <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-[101]">
                     <h2 className="text-2xl font-bold text-gray-900">
-                        {form.documentType === "Check-in Slip" ? "Create Check-in Slip" : "Create Quotation"}
+                        {form.documentType === "Check-in Slip"
+                            ? (isEditing ? "Edit Check-in Slip" : "Create Check-in Slip")
+                            : (isEditing ? "Edit Quotation" : "Create Quotation")}
                     </h2>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                         <X size={24} />
@@ -346,7 +350,6 @@ export function CreateQuotationModal({
                                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">S.No</th>
                                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Part Name *</th>
                                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Part Number</th>
-                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">HSN/SAC</th>
                                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
                                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
                                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">GST %</th>
@@ -373,14 +376,6 @@ export function CreateQuotationModal({
                                                             value={item.partNumber}
                                                             onChange={(e) => updateItem(index, "partNumber", e.target.value)}
                                                             placeholder="MCU-"
-                                                            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                                                        />
-                                                    </td>
-                                                    <td className="px-3 py-2">
-                                                        <input
-                                                            type="text"
-                                                            value={item.hsnSacCode}
-                                                            onChange={(e) => updateItem(index, "hsnSacCode", e.target.value)}
                                                             className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
                                                         />
                                                     </td>
@@ -416,7 +411,7 @@ export function CreateQuotationModal({
                                                         />
                                                     </td>
                                                     <td className="px-3 py-2">
-                                                        <span className="text-sm">₹{item.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                                        <span className="text-sm">₹{(item.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                                     </td>
                                                     <td className="px-3 py-2">
                                                         <button
@@ -440,31 +435,31 @@ export function CreateQuotationModal({
                                 <div className="space-y-2">
                                     <div className="flex justify-between">
                                         <span className="text-gray-700">Subtotal:</span>
-                                        <span className="font-medium">₹{totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="font-medium">₹{(totals.subtotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-gray-700">Discount ({totals.discountPercent.toFixed(1)}%):</span>
-                                        <span className="font-medium">-₹{totals.discount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="text-gray-700">Discount ({totals.discountPercent?.toFixed(1) || "0.0"}%):</span>
+                                        <span className="font-medium">-₹{(totals.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-gray-700">Pre-GST Amount:</span>
-                                        <span className="font-medium">₹{totals.preGstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="font-medium">₹{(totals.preGstAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-gray-700">CGST (9%):</span>
-                                        <span className="font-medium">₹{totals.cgst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="font-medium">₹{(totals.cgst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-gray-700">SGST (9%):</span>
-                                        <span className="font-medium">₹{totals.sgst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="font-medium">₹{(totals.sgst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-gray-700">IGST (18%):</span>
-                                        <span className="font-medium">₹{totals.igst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="font-medium">₹{(totals.igst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="border-t border-gray-300 pt-2 mt-2 flex justify-between">
                                         <span className="text-lg font-semibold text-gray-900">Total Amount:</span>
-                                        <span className="text-lg font-bold text-blue-600">₹{totals.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="text-lg font-bold text-blue-600">₹{(totals.totalAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                                     </div>
                                 </div>
                                 <div className="mt-4">
@@ -592,8 +587,12 @@ export function CreateQuotationModal({
                             className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
                         >
                             {loading
-                                ? (form.documentType === "Check-in Slip" ? "Generating..." : "Creating...")
-                                : (form.documentType === "Check-in Slip" ? "Generate Check-in Slip" : "Create Quotation")
+                                ? (form.documentType === "Check-in Slip"
+                                    ? (isEditing ? "Updating..." : "Generating...")
+                                    : (isEditing ? "Updating..." : "Creating..."))
+                                : (form.documentType === "Check-in Slip"
+                                    ? (isEditing ? "Update Check-in Slip" : "Generate Check-in Slip")
+                                    : (isEditing ? "Update Quotation" : "Create Quotation"))
                             }
                         </button>
                     </div>

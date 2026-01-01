@@ -497,7 +497,7 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                 jobCardId: "",
                 date: new Date().toISOString().split("T")[0],
                 dueDate: "",
-                items: [{ name: "", qty: 1, price: "", hsnSacCode: "", gstRate: 18 }],
+                items: [{ name: "", qty: 1, price: "", gstRate: 18 }],
                 paymentMethod: "",
                 gstRequirement: false,
                 businessNameForInvoice: "",
@@ -856,7 +856,7 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                     jobCardId: "",
                     date: new Date().toISOString().split("T")[0],
                     dueDate: "",
-                    items: [{ name: "", qty: 1, price: "", hsnSacCode: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { hsnSacCode?: string; gstRate?: number }>,
+                    items: [{ name: "", qty: 1, price: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,
                     paymentMethod: "" as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "",
                     gstRequirement: false,
                     businessNameForInvoice: "",
@@ -1138,7 +1138,7 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                 <div className="space-y-3">
                   {invoiceForm.items.map((item, index) => (
                     <div key={index} className="bg-white p-4 rounded-lg border border-gray-200 grid grid-cols-12 gap-3 items-end">
-                      <div className="col-span-4">
+                      <div className="col-span-6">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Item Name <span className="text-red-500">*</span>
                         </label>
@@ -1149,22 +1149,6 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                           placeholder="e.g., Engine Oil"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                           required
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          HSN/SAC
-                        </label>
-                        <input
-                          type="text"
-                          value={item.hsnSacCode || ""}
-                          onChange={(e) => {
-                            const updatedItems = [...invoiceForm.items];
-                            updatedItems[index] = { ...updatedItems[index], hsnSacCode: e.target.value };
-                            setInvoiceForm({ ...invoiceForm, items: updatedItems });
-                          }}
-                          placeholder="HSN/SAC"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                         />
                       </div>
                       <div className="col-span-2">
@@ -1236,7 +1220,7 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                       jobCardId: "",
                       date: new Date().toISOString().split("T")[0],
                       dueDate: "",
-                      items: [{ name: "", qty: 1, price: "", hsnSacCode: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { hsnSacCode?: string; gstRate?: number }>,
+                      items: [{ name: "", qty: 1, price: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,
                       paymentMethod: "" as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "",
                       gstRequirement: false,
                       businessNameForInvoice: "",

@@ -34,17 +34,20 @@ export function useHydratedJobCard(jobCard: JobCard | null) {
             vehicleMake: vehicle?.vehicleMake || jobCard.vehicleMake,
             vehicleModel: vehicle?.vehicleModel || jobCard.vehicleModel,
             vehicleYear: vehicle?.vehicleYear || jobCard.vehicleYear,
+            vehicle: vehicle || jobCard.vehicle, // Attach hydrated vehicle object
 
             // Nested objects
-            part1: jobCard.part1 ? {
-                ...jobCard.part1,
-                fullName: customer.name || jobCard.part1.fullName,
-                mobilePrimary: customer.phone || jobCard.part1.mobilePrimary,
-                customerAddress: customer.address || jobCard.part1.customerAddress,
-                registrationNumber: vehicle?.registration || jobCard.part1.registrationNumber,
-                vinChassisNumber: vehicle?.vin || jobCard.part1.vinChassisNumber,
+            part1: (jobCard.part1 || jobCard.part1Data) ? {
+                ...(jobCard.part1 || jobCard.part1Data),
+                fullName: customer.name || (jobCard.part1 || jobCard.part1Data).fullName,
+                mobilePrimary: customer.phone || (jobCard.part1 || jobCard.part1Data).mobilePrimary,
+                customerAddress: customer.address || (jobCard.part1 || jobCard.part1Data).customerAddress,
+                registrationNumber: vehicle?.registration || (jobCard.part1 || jobCard.part1Data).registrationNumber,
+                vinChassisNumber: vehicle?.vin || (jobCard.part1 || jobCard.part1Data).vinChassisNumber,
+                dateOfPurchase: vehicle?.purchaseDate || (jobCard.part1 || jobCard.part1Data).dateOfPurchase,
             } : undefined
         };
+
     }, [jobCard, customer]);
 
     return {

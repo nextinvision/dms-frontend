@@ -110,7 +110,7 @@ class InvoicesService {
         const legacyItems: ServiceCenterInvoiceItem[] = enhancedItems.map(item => ({
             name: item.name,
             qty: item.quantity,
-            price: `₹${item.totalAmount.toLocaleString('en-IN')}`,
+            price: `₹${(item.totalAmount || 0).toLocaleString('en-IN')}`,
             // optional extended fields
             unitPrice: item.unitPrice,
             quantity: item.quantity,
@@ -130,9 +130,9 @@ class InvoicesService {
             date: new Date(backendInvoice.createdAt).toISOString().split('T')[0], // Using createdAt as date
             dueDate: new Date(new Date(backendInvoice.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Default 7 days
 
-            amount: `₹${Number(backendInvoice.grandTotal).toLocaleString('en-IN')}`,
-            paidAmount: backendInvoice.status === 'PAID' ? `₹${Number(backendInvoice.grandTotal).toLocaleString('en-IN')}` : "₹0",
-            balance: backendInvoice.status === 'PAID' ? "₹0" : `₹${Number(backendInvoice.grandTotal).toLocaleString('en-IN')}`,
+            amount: `₹${Number(backendInvoice.grandTotal || 0).toLocaleString('en-IN')}`,
+            paidAmount: backendInvoice.status === 'PAID' ? `₹${Number(backendInvoice.grandTotal || 0).toLocaleString('en-IN')}` : "₹0",
+            balance: backendInvoice.status === 'PAID' ? "₹0" : `₹${Number(backendInvoice.grandTotal || 0).toLocaleString('en-IN')}`,
 
             status: backendInvoice.status === 'PAID' ? 'Paid' : backendInvoice.status === 'CANCELLED' ? 'Overdue' : 'Unpaid', // Mapping generic statuses
             paymentMethod: null, // Backend doesn't store this on invoice entity itself yet, or it's not in the findOne response

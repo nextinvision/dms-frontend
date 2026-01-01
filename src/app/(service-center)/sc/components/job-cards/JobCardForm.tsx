@@ -79,28 +79,46 @@ export default function JobCardForm({
     // Load existing job card if editing
     useEffect(() => {
         if (mode === "edit" && jobCardId) {
+            // Priority 1: API
             jobCardService.getById(jobCardId).then(jc => {
                 if (jc) {
                     setExistingJobCard(jc);
                     setPreviewJobCardNumber(jc.jobCardNumber);
+                } else {
+                    // Priority 2: Local Fallback
+                    const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+                    const localJc = migrateAllJobCards().find((item: any) => item.id === jobCardId);
+                    if (localJc) {
+                        setExistingJobCard(localJc);
+                        setPreviewJobCardNumber(localJc.jobCardNumber);
+                    }
                 }
             });
         }
+
     }, [mode, jobCardId]);
 
     // Use hydration hook for live data
     const { jobCard: hydratedCard } = useHydratedJobCard(existingJobCard);
 
     // Update form with hydrated data when it becomes available
+    const [formInitialized, setFormInitialized] = useState(false);
     useEffect(() => {
-        if (hydratedCard && mode === "edit") {
+        if (hydratedCard && mode === "edit" && !formInitialized) {
             const mappedFormData = jobCardAdapter.mapJobCardToForm(hydratedCard);
             setForm((prev: CreateJobCardForm) => ({
                 ...prev,
                 ...mappedFormData
             }));
+            setFormInitialized(true);
         }
-    }, [hydratedCard, mode, setForm]);
+    }, [hydratedCard, mode, setForm, formInitialized]);
+
+    // Reset initialization when ID changes
+    useEffect(() => {
+        setFormInitialized(false);
+    }, [jobCardId]);
+
 
     // Generate preview job card number
     useEffect(() => {
@@ -186,77 +204,21 @@ export default function JobCardForm({
         setIsSubmitting(true);
 
         try {
-            const jobCardData: Omit<JobCard, "id"> & { part2A?: any } = {
-                jobCardNumber: mode === "edit" && existingJobCard ? existingJobCard.jobCardNumber : previewJobCardNumber,
+            const jobCardToSave = jobCardAdapter.mapFormToJobCard(
+                form,
                 serviceCenterId,
                 serviceCenterCode,
-                serviceCenterName: serviceCenterContext.serviceCenterName || "",
-                customerId: form.customerId,
-                customerName: form.customerName,
-                vehicleId: form.vehicleId,
-                vehicle: `${form.vehicleMake} ${form.vehicleModel}`,
-                registration: form.vehicleRegistration,
-                vehicleMake: form.vehicleMake,
-                vehicleModel: form.vehicleModel,
-                customerType: form.customerType as any,
-                serviceType: "General Service",
-                description: form.description || "",
-                status: mode === "edit" && existingJobCard ? existingJobCard.status : "CREATED",
-                priority: "NORMAL",
-                assignedEngineer: null,
-                estimatedCost: "",
-                estimatedTime: "",
-                createdAt: mode === "edit" && existingJobCard ? existingJobCard.createdAt : new Date().toISOString(),
-                parts: form.part2Items.map((item) => item.partName),
-                location: "STATION",
-                isTemporary: true,
-                part1: {
-                    fullName: form.customerName,
-                    mobilePrimary: form.mobilePrimary,
-                    customerType: form.customerType,
-                    vehicleBrand: form.vehicleMake,
-                    vehicleModel: form.vehicleModel,
-                    registrationNumber: form.vehicleRegistration,
-                    vinChassisNumber: form.vinChassisNumber,
-                    variantBatteryCapacity: form.variantBatteryCapacity || "",
-                    warrantyStatus: form.warrantyStatus || "",
-                    estimatedDeliveryDate: form.estimatedDeliveryDate || "",
-                    customerAddress: form.customerAddress,
-                    jobCardNumber: mode === "edit" && existingJobCard ? existingJobCard.jobCardNumber : previewJobCardNumber,
-                    customerFeedback: form.customerFeedback,
-                    technicianObservation: form.technicianObservation || "",
-                    insuranceStartDate: form.insuranceStartDate || "",
-                    insuranceEndDate: form.insuranceEndDate || "",
-                    insuranceCompanyName: form.insuranceCompanyName || "",
-                    batterySerialNumber: form.batterySerialNumber || "",
-                    mcuSerialNumber: form.mcuSerialNumber || "",
-                    vcuSerialNumber: form.vcuSerialNumber || "",
-                    otherPartSerialNumber: form.otherPartSerialNumber || "",
-                },
-                part2: form.part2Items,
-                part2A: {
-                    issueDescription: form.issueDescription || "",
-                    numberOfObservations: form.numberOfObservations || "",
-                    symptom: form.symptom || "",
-                    defectPart: form.defectPart || "",
-                    videoEvidence: (form.videoEvidence.urls && form.videoEvidence.urls.length > 0) ? "Yes" : "No",
-                    vinImage: (form.vinImage.urls && form.vinImage.urls.length > 0) ? "Yes" : "No",
-                    odoImage: (form.odoImage.urls && form.odoImage.urls.length > 0) ? "Yes" : "No",
-                    damageImages: (form.damageImages.urls && form.damageImages.urls.length > 0) ? "Yes" : "No",
-                    // Include metadata for the DTO mapper
-                    videoEvidenceMetadata: form.videoEvidence?.metadata || [],
-                    vinImageMetadata: form.vinImage?.metadata || [],
-                    odoImageMetadata: form.odoImage?.metadata || [],
-                    damageImagesMetadata: form.damageImages?.metadata || [],
-                }
-            };
+                existingJobCard
+            );
 
             let savedJobCard: JobCard;
             if (mode === "edit" && jobCardId) {
-                savedJobCard = await jobCardService.update(jobCardId, { ...jobCardData, id: jobCardId });
+                savedJobCard = await jobCardService.update(jobCardId, { ...jobCardToSave, id: jobCardId });
+
                 console.log("✅ Job card updated:", savedJobCard.id);
             } else {
-                savedJobCard = await jobCardService.create({ ...jobCardData }, userInfo?.id);
+                savedJobCard = await jobCardService.create({ ...jobCardToSave }, userInfo?.id);
+
                 console.log("✅ Job card created:", savedJobCard.id);
 
                 if (activeId && activeId.startsWith('TEMP_')) {
@@ -375,8 +337,8 @@ export default function JobCardForm({
                     partName: item.partName || "Service Item",
                     partNumber: item.partCode || undefined,
                     quantity: item.qty || 1,
-                    rate: item.amount || 0,
-                    gstPercent: 18,
+                    rate: item.rate || (item.amount / (1 + (item.gstPercent || 18) / 100)) || 0,
+                    gstPercent: item.gstPercent || 18,
                 })) || [],
                 customNotes: form.description || undefined,
             };

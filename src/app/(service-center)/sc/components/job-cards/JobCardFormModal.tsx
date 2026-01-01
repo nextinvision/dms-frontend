@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+
 import { useRouter } from "next/navigation";
 import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight } from "lucide-react";
 
@@ -67,7 +69,9 @@ export default function JobCardFormModal({
     resetForm,
     handleSelectQuotation,
     handleSelectCustomer,
+    selectedQuotation,
   } = useJobCardForm({
+
     initialValues,
     serviceCenterId,
     onError,
@@ -94,19 +98,43 @@ export default function JobCardFormModal({
     }
   }, [open, mode, jobCardId]);
 
-  // Use hydration hook for live data
-  const { jobCard: hydratedCard } = useHydratedJobCard(existingJobCard);
+  // Fetch job card from API for live state
+  const { data: apiJobCard } = useQuery({
+    queryKey: ["jobCard", jobCardId],
+    queryFn: () => (jobCardId ? jobCardService.getById(jobCardId) : null),
+    enabled: open && mode === "edit" && !!jobCardId,
+    refetchOnWindowFocus: true,
+  });
 
-  // Update form with hydrated data when it becomes available
+  // Use hydration hook for live data (merge local and API data)
+  const combinedCard = useMemo(() => {
+    if (!apiJobCard) return existingJobCard;
+    if (!existingJobCard) return apiJobCard;
+    return { ...existingJobCard, ...apiJobCard };
+  }, [apiJobCard, existingJobCard]);
+
+  const { jobCard: hydratedCard } = useHydratedJobCard(combinedCard);
+
+
+
+  // Update form with hydrated data when it becomes available (only once or when ID changes)
+  const [formInitialized, setFormInitialized] = useState(false);
   useEffect(() => {
-    if (hydratedCard && mode === "edit") {
+    if (hydratedCard && mode === "edit" && !formInitialized) {
       const mappedFormData = jobCardAdapter.mapJobCardToForm(hydratedCard);
       setForm((prev: CreateJobCardForm) => ({
         ...prev,
         ...mappedFormData
       }));
+      setFormInitialized(true);
     }
-  }, [hydratedCard, mode, setForm]);
+  }, [hydratedCard, mode, setForm, formInitialized]);
+
+  // Reset initialization when ID changes
+  useEffect(() => {
+    setFormInitialized(false);
+  }, [jobCardId]);
+
 
   // Unified Search Logic (Quotations + Customers)
   useEffect(() => {
@@ -177,14 +205,15 @@ export default function JobCardFormModal({
     try {
       const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
       const existingJobCards = migrateAllJobCards();
-      const existingJobCard = mode === "edit" ? existingJobCards.find((jc: any) => jc.id === jobCardId) : null;
+      const jobCardForSave = apiJobCard || (mode === "edit" ? existingJobCards.find((jc: any) => jc.id === jobCardId) : null);
 
       const jobCardToSave = jobCardAdapter.mapFormToJobCard(
         form,
         serviceCenterId,
         serviceCenterCode,
-        existingJobCard
+        jobCardForSave
       );
+
 
       if (mode === "edit") {
         await jobCardService.update(jobCardId!, jobCardToSave);
@@ -321,25 +350,50 @@ export default function JobCardFormModal({
       }
 
       // Create quotation from job card data - matching backend CreateQuotationDto
-      const quotationData = {
-        serviceCenterId: actualServiceCenterId, // Use actual UUID from API
-        customerId: form.customerId,
-        vehicleId: form.vehicleId!, // Required by backend
-        quotationDate: now.toISOString().split('T')[0],
-        documentType: "Quotation",
-        hasInsurance: false,
-        discount: 0,
-        jobCardId: jobCardId, // Link to job card
-        // Map items from job card to match QuotationItemDto structure
-        items: form.part2Items?.map((item) => ({
-          partName: item.partName || "Service Item",
-          partNumber: item.partCode || undefined,
-          quantity: item.qty || 1,
-          rate: item.amount || 0,
-          gstPercent: 18, // Default GST
-        })) || [],
-        customNotes: form.description || undefined,
-      };
+      const quotationData = (() => {
+        // Calculate totals
+        const itemsWithCalculatedRates = (form.part2Items || []).map((item, index) => {
+          const gstRate = (item.gstPercent || 18) / 100;
+          const preGstRate = item.rate || (item.amount / (1 + gstRate)) || 0;
+          const linePreGstTotal = preGstRate * (item.qty || 1);
+          const lineAmountInclGst = linePreGstTotal * (1 + gstRate);
+
+          return {
+            serialNumber: index + 1,
+            partName: item.partName || "Service Item",
+            partNumber: item.partCode || undefined,
+            quantity: item.qty || 1,
+            rate: preGstRate,
+            gstPercent: item.gstPercent || 18,
+            amount: lineAmountInclGst,
+          };
+        });
+
+        const subtotal = itemsWithCalculatedRates.reduce((sum, item) => sum + (item.rate * item.quantity), 0);
+        const preGstAmount = subtotal; // Assuming 0 discount initially when creating from job card
+        const taxAmount = itemsWithCalculatedRates.reduce((sum, item) => sum + (item.amount - (item.rate * item.quantity)), 0);
+        const totalAmount = subtotal + taxAmount;
+
+        return {
+          serviceCenterId: actualServiceCenterId,
+          customerId: form.customerId,
+          vehicleId: form.vehicleId!,
+          quotationDate: now.toISOString().split('T')[0],
+          documentType: "Quotation",
+          hasInsurance: false,
+          subtotal,
+          discount: 0,
+          discountPercent: 0,
+          preGstAmount,
+          cgst: taxAmount / 2,
+          sgst: taxAmount / 2,
+          igst: 0,
+          totalAmount,
+          jobCardId: jobCardId,
+          items: itemsWithCalculatedRates,
+          customNotes: form.description || undefined,
+        };
+      })();
 
       // Detailed validation logging
       console.log("=== QUOTATION CREATION DEBUG ===");
@@ -500,8 +554,9 @@ export default function JobCardFormModal({
           <button
             type="button"
             onClick={handleCreateQuotation}
-            disabled={isSubmitting || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!hydratedCard?.quotationId || !!hydratedCard?.quotation
+            disabled={isSubmitting || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
+
               ? "bg-gray-100 text-gray-400 border border-gray-200"
               : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
               }`}
@@ -514,8 +569,9 @@ export default function JobCardFormModal({
             ) : (
               <>
                 <FileText size={20} />
-                {!!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
+                {!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
               </>
+
             )}
           </button>
 
