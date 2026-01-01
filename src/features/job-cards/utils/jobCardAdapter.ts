@@ -270,6 +270,8 @@ export const jobCardAdapter = {
                 urls: filtered.map((f: any) => f.url),
                 publicIds: filtered.map((f: any) => f.publicId),
                 metadata: filtered.map((f: any) => ({
+                    url: f.url,
+                    publicId: f.publicId,
                     filename: f.filename,
                     format: f.format,
                     bytes: f.bytes,

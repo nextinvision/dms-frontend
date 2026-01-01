@@ -381,7 +381,7 @@ export default function PartsOrderEntryPage() {
                                 <div className="flex items-start justify-between mb-2">
                                   <div className="flex-1">
                                     <p className="font-medium text-gray-900">{item.partName}</p>
-                                    <p className="text-xs text-gray-600">Part ID: {item.partId}</p>
+                          git           <p className="text-xs text-gray-600">Part ID: {item.partId}</p>
                                   </div>
                                   {getUrgencyBadge(item.urgency)}
                                 </div>
