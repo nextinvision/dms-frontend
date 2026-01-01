@@ -4,15 +4,15 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Plus, X, Package } from "lucide-react";
-import type { Part } from "@/shared/types/inventory.types";
+import type { CentralInventoryItem } from "@/core/repositories/central-inventory.repository";
 import type { PartsOrderEntryFormData, PartsOrderItem } from "./form.schema";
 import { LABEL_CLASSES, INPUT_CLASSES, TEXTAREA_CLASSES, createFormChangeHandler } from "../shared/form.utils";
 
 interface PartsOrderEntryFormProps {
   formData: PartsOrderEntryFormData;
   onFormChange: (data: PartsOrderEntryFormData) => void;
-  availableParts: Part[];
-  selectedPart: Part | null;
+  availableParts: CentralInventoryItem[];
+  selectedPart: CentralInventoryItem | null;
   onPartSelect: (partId: string) => void;
   currentItem: PartsOrderItem;
   onCurrentItemChange: (item: PartsOrderItem) => void;
@@ -76,7 +76,7 @@ export function PartsOrderEntryForm({
               <option value="">Select a part</option>
               {availableParts.map((part) => (
                 <option key={part.id} value={part.id}>
-                  {part.partName} ({part.partId}) - Stock: {part.stockQuantity}
+                  {part.partName} ({part.partNumber}) - Available: {part.available}
                 </option>
               ))}
             </select>
@@ -86,7 +86,7 @@ export function PartsOrderEntryForm({
             <div className="p-4 bg-white rounded-lg border border-gray-200">
               <p className="font-medium text-gray-900">{selectedPart.partName}</p>
               <p className="text-sm text-gray-600">
-                Part Number: {selectedPart.partNumber} | Current Stock: {selectedPart.stockQuantity} {selectedPart.unit}
+                Part Number: {selectedPart.partNumber} | Available: {selectedPart.available} | Stock: {selectedPart.stockQuantity} | Unit Price: ₹{selectedPart.unitPrice}
               </p>
             </div>
           )}

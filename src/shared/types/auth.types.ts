@@ -18,7 +18,9 @@ export interface UserInfo {
   name: string;
   role: UserRole;
   initials: string;
-  serviceCenter?: string | null;
+  serviceCenter?: string | number | null;
+  serviceCenterId?: string | number | null;
+  serviceCenterName?: string | null;
   id?: string;
 }
 

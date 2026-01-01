@@ -7,6 +7,19 @@ import { useState, useEffect, useCallback } from "react";
 import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types";
 import { partsIssueService, type PartsIssue } from "@/features/inventory/services/parts-issue.service";
 
+// Helper function to extract user name from user object or string
+const extractUserName = (user: any): string => {
+  if (!user) return "Unknown";
+  if (typeof user === "string") return user;
+  if (typeof user === "object") {
+    // Handle user object with name property
+    if (user.name) return user.name;
+    if (user.email) return user.email;
+    if (user.id) return user.id;
+  }
+  return String(user);
+};
+
 // Reuse mapping helper (can be moved to a shared util later if needed)
 const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
   const isApproved = issue.status === 'APPROVED' || issue.status === 'ISSUED';
@@ -18,7 +31,7 @@ const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
     jobCardId: issue.jobCardId,
     vehicleNumber: "N/A",
     customerName: "N/A",
-    requestedBy: issue.requestedBy,
+    requestedBy: extractUserName(issue.requestedBy),
     requestedAt: issue.requestedAt,
     status: issue.status === 'ISSUED' ? 'approved' : issue.status === 'REJECTED' ? 'rejected' : 'pending',
     parts: items.map(i => ({
@@ -29,7 +42,7 @@ const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
       serialNumber: i.serialNumber
     })),
     scManagerApproved: isApproved,
-    scManagerApprovedBy: issue.approvedBy,
+    scManagerApprovedBy: issue.approvedBy ? extractUserName(issue.approvedBy) : undefined,
     scManagerApprovedAt: issue.approvedAt,
     inventoryManagerAssigned: isIssued,
     // inventoryManagerAssignedBy not directly available

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import React from "react";
 import { useRouter, useParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -13,20 +14,29 @@ import {
   DollarSign,
   AlertCircle,
   Truck,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Info,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useToast } from "@/contexts/ToastContext";
-import { centralInventoryRepository } from "@/__mocks__/repositories/central-inventory.repository";
+import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
+import { useRole } from "@/shared/hooks/useRole";
 import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
 
 export default function PurchaseOrderDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { showSuccess, showError, showWarning } = useToast();
+  const { userRole } = useRole();
   const poId = params.id as string;
+  const isAdmin = userRole === 'admin';
+  const isCIM = userRole === 'central_inventory_manager';
+  const canApprovePO = isAdmin || isCIM; // Both admin and CIM can approve POs
 
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +44,10 @@ export default function PurchaseOrderDetailPage() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  const [approvedItems, setApprovedItems] = useState<Array<{ itemId: string; approvedQty: number }>>([]);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [partDetails, setPartDetails] = useState<Record<string, any>>({});
 
   useEffect(() => {
     const fetchPurchaseOrder = async () => {
@@ -57,42 +71,65 @@ export default function PurchaseOrderDetailPage() {
   }, [poId, router]);
 
   const handleApprove = async () => {
-    if (!purchaseOrder) return;
+    if (!purchaseOrder || !canApprovePO) return;
 
     setShowApproveModal(false);
     setIsProcessing(true);
     try {
-      const userInfo = JSON.parse(localStorage.getItem("userInfo") || '{"name": "Central Inventory Manager"}');
+      const userInfo = JSON.parse(localStorage.getItem("userInfo") || '{"name": "User"}');
       const approvedPO = await centralInventoryRepository.approvePurchaseOrder(
         poId,
-        userInfo.name || "Central Inventory Manager"
+        userInfo.name || "User"
       );
       setPurchaseOrder(approvedPO);
-      showSuccess("Purchase order approved successfully! Redirecting to issue parts page...");
-      
-      // Navigate to issue parts page with auto-filled data
-      // Pass approved items as query params
-      const approvedItems = approvedPO.items
-        .filter(item => item.status === "approved" && item.approvedQty && item.approvedQty > 0)
-        .map(item => ({
-          partId: item.partId,
-          quantity: item.approvedQty || item.requestedQty
-        }));
-      
-      // Store purchase order data in sessionStorage for auto-fill
-      sessionStorage.setItem('autoFillPO', JSON.stringify({
-        purchaseOrderId: approvedPO.id,
-        serviceCenterId: approvedPO.serviceCenterId,
-        items: approvedItems
-      }));
-      
-      // Navigate to issue parts page
-      setTimeout(() => {
-        router.push(`/central-inventory/stock/issue/${approvedPO.serviceCenterId}?poId=${approvedPO.id}`);
-      }, 1000);
+      if (isCIM) {
+        showSuccess("Purchase order approved successfully! Redirecting to issue page...");
+        // Redirect to issue page with purchase order data
+        setTimeout(() => {
+          const itemsParam = encodeURIComponent(JSON.stringify(
+            purchaseOrder.items.map(item => ({
+              partId: item.partId,
+              partName: item.partName,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+            }))
+          ));
+          router.push(`/central-inventory/stock/issue/${purchaseOrder.serviceCenterId}?poId=${poId}&items=${itemsParam}`);
+        }, 1500);
+      } else {
+        showSuccess("Purchase order approved successfully!");
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      }
     } catch (error) {
       console.error("Failed to approve purchase order:", error);
       showError("Failed to approve purchase order. Please try again.");
+      setIsProcessing(false);
+    }
+  };
+
+  const handleIssue = async () => {
+    if (!purchaseOrder || !isCIM) return;
+
+    if (approvedItems.length === 0) {
+      showWarning("Please approve at least one item to issue");
+      return;
+    }
+
+    setShowIssueModal(false);
+    setIsProcessing(true);
+    try {
+      const partsIssue = await centralInventoryRepository.issuePurchaseOrder(poId, approvedItems);
+      showSuccess(`Parts Issue created successfully! Issue Number: ${partsIssue.issueNumber}. This Parts Issue is now pending admin approval before parts can be dispatched.`);
+      
+      // Navigate to parts issue detail page
+      setTimeout(() => {
+        router.push(`/central-inventory/parts-issue-requests`);
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to issue parts:", error);
+      showError("Failed to create parts issue. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -100,25 +137,20 @@ export default function PurchaseOrderDetailPage() {
 
   const handleReject = async () => {
     if (!purchaseOrder || !rejectionReason.trim()) {
-      alert("Please provide a rejection reason");
+      showWarning("Please provide a rejection reason");
       return;
     }
 
     setIsProcessing(true);
     try {
-      const userInfo = JSON.parse(localStorage.getItem("userInfo") || '{"name": "Central Inventory Manager"}');
-      const rejectedPO = await centralInventoryRepository.rejectPurchaseOrder(
-        poId,
-        userInfo.name || "Central Inventory Manager",
-        rejectionReason
-      );
-      setPurchaseOrder(rejectedPO);
+      // Note: Backend doesn't have reject endpoint yet, so we'll cancel it
+      // For now, just show a message
+      showError("Reject functionality not yet implemented in backend");
       setShowRejectModal(false);
       setRejectionReason("");
-      showSuccess("Purchase order rejected successfully!");
     } catch (error) {
       console.error("Failed to reject purchase order:", error);
-      alert("Failed to reject purchase order. Please try again.");
+      showError("Failed to reject purchase order. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -179,23 +211,40 @@ export default function PurchaseOrderDetailPage() {
                 {getPriorityBadge(purchaseOrder.priority)}
               </div>
             </div>
-            {purchaseOrder.status === "pending" && (
+            {/* CIM and Admin can approve PENDING_APPROVAL POs */}
+            {purchaseOrder.status === "pending" && canApprovePO && (
               <div className="flex gap-3">
-                <button
-                  onClick={() => setShowRejectModal(true)}
-                  disabled={isProcessing}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <XCircle className="w-5 h-5" />
-                  Reject
-                </button>
                 <Button
                   onClick={() => setShowApproveModal(true)}
                   disabled={isProcessing}
                   className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
                 >
                   <CheckCircle className="w-5 h-5" />
-                  Approve
+                  Approve Purchase Order
+                </Button>
+              </div>
+            )}
+            {/* CIM can issue parts after approving PO - redirects to issue page */}
+            {purchaseOrder.status === "approved" && isCIM && (
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => {
+                    // Redirect to issue page with purchase order data
+                    const itemsParam = encodeURIComponent(JSON.stringify(
+                      purchaseOrder.items.map(item => ({
+                        partId: item.partId,
+                        partName: item.partName,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice,
+                      }))
+                    ));
+                    router.push(`/central-inventory/stock/issue/${purchaseOrder.serviceCenterId}?poId=${poId}&items=${itemsParam}`);
+                  }}
+                  disabled={isProcessing}
+                  className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                >
+                  <Package className="w-5 h-5" />
+                  Issue Parts
                 </Button>
               </div>
             )}
@@ -212,11 +261,50 @@ export default function PurchaseOrderDetailPage() {
               </CardHeader>
               <CardBody>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-start gap-3">
-                    <Building className="w-5 h-5 text-gray-400 mt-1" />
-                    <div>
-                      <p className="text-sm text-gray-500">Service Center</p>
-                      <p className="font-medium">{purchaseOrder.serviceCenterName}</p>
+                  <div className="flex items-start gap-3 md:col-span-2">
+                    <Building className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-500 mb-1">Service Center</p>
+                      <p className="font-semibold text-lg text-gray-900 mb-2">
+                        {purchaseOrder.serviceCenterName}
+                        {purchaseOrder.serviceCenterCode && (
+                          <span className="text-blue-600 font-normal ml-2">({purchaseOrder.serviceCenterCode})</span>
+                        )}
+                      </p>
+                      {(purchaseOrder.serviceCenterAddress || purchaseOrder.serviceCenterCity || purchaseOrder.serviceCenterState) && (
+                        <div className="text-sm text-gray-700 space-y-1 mb-2">
+                          {purchaseOrder.serviceCenterAddress && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-gray-500">📍</span>
+                              <span>{purchaseOrder.serviceCenterAddress}</span>
+                            </div>
+                          )}
+                          <div className="flex items-start gap-2">
+                            <span className="text-gray-500">🏙️</span>
+                            <span>
+                              {[purchaseOrder.serviceCenterCity, purchaseOrder.serviceCenterState, purchaseOrder.serviceCenterPinCode]
+                                .filter(Boolean)
+                                .join(', ')}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {(purchaseOrder.serviceCenterPhone || purchaseOrder.serviceCenterEmail) && (
+                        <div className="text-sm text-gray-600 space-x-4 mt-2">
+                          {purchaseOrder.serviceCenterPhone && (
+                            <span className="flex items-center gap-1">
+                              <span>📞</span>
+                              <span>{purchaseOrder.serviceCenterPhone}</span>
+                            </span>
+                          )}
+                          {purchaseOrder.serviceCenterEmail && (
+                            <span className="flex items-center gap-1">
+                              <span>✉️</span>
+                              <span>{purchaseOrder.serviceCenterEmail}</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
@@ -337,42 +425,142 @@ export default function PurchaseOrderDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {purchaseOrder.items.map((item) => (
-                        <tr key={item.id} className="border-b border-gray-100">
-                          <td className="py-3 px-4">
-                            <p className="font-medium">{item.partName}</p>
-                            {item.partCode && (
-                              <p className="text-sm text-gray-400">Code: {item.partCode}</p>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-600">{item.hsnCode}</td>
-                          <td className="py-3 px-4 text-right font-medium">{item.requestedQty}</td>
-                          <td className="py-3 px-4 text-right">
-                            {item.approvedQty !== undefined ? (
-                              <span className="font-medium">{item.approvedQty}</span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right">₹{item.unitPrice.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-right font-medium">
-                            ₹{item.totalPrice.toLocaleString()}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <Badge
-                              className={
-                                item.status === "approved"
-                                  ? "bg-green-100 text-green-800"
-                                  : item.status === "rejected"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-yellow-100 text-yellow-800"
-                              }
+                      {purchaseOrder.items.map((item) => {
+                        const isExpanded = expandedItems.has(item.id);
+                        return (
+                          <React.Fragment key={item.id}>
+                            <tr 
+                              className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+                              onClick={() => {
+                                const newExpanded = new Set(expandedItems);
+                                if (isExpanded) {
+                                  newExpanded.delete(item.id);
+                                } else {
+                                  newExpanded.add(item.id);
+                                }
+                                setExpandedItems(newExpanded);
+                              }}
                             >
-                              {item.status}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-2">
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-4 h-4 text-gray-400" />
+                                  ) : (
+                                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                                  )}
+                                  <div>
+                                    <p className="font-medium">{item.partName}</p>
+                                    <p className="text-sm text-gray-500">Part #: {item.partNumber || 'N/A'}</p>
+                                    {item.partCode && (
+                                      <p className="text-sm text-gray-400">Code: {item.partCode}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-sm text-gray-600">{item.hsnCode || 'N/A'}</td>
+                              <td className="py-3 px-4 text-right font-medium">{item.requestedQty}</td>
+                              <td className="py-3 px-4 text-right">
+                                {item.approvedQty !== undefined ? (
+                                  <span className="font-medium">{item.approvedQty}</span>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-right">₹{item.unitPrice.toLocaleString()}</td>
+                              <td className="py-3 px-4 text-right font-medium">
+                                ₹{item.totalPrice.toLocaleString()}
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <Badge
+                                  className={
+                                    item.status === "approved"
+                                      ? "bg-green-100 text-green-800"
+                                      : item.status === "rejected"
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-yellow-100 text-yellow-800"
+                                  }
+                                >
+                                  {item.status}
+                                </Badge>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr key={`${item.id}-details`} className="bg-blue-50">
+                                <td colSpan={7} className="py-4 px-4">
+                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                                    <div>
+                                      <p className="text-gray-500 font-medium mb-1">Part Information</p>
+                                      <p className="text-gray-700"><span className="font-medium">Name:</span> {item.partName}</p>
+                                      <p className="text-gray-700"><span className="font-medium">Part Number:</span> {item.partNumber || 'N/A'}</p>
+                                      {item.oemPartNumber && (
+                                        <p className="text-gray-700"><span className="font-medium">OEM Part Number:</span> {item.oemPartNumber}</p>
+                                      )}
+                                      <p className="text-gray-700"><span className="font-medium">Category:</span> {item.category || 'N/A'}</p>
+                                      <p className="text-gray-700"><span className="font-medium">HSN Code:</span> {item.hsnCode || 'N/A'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-gray-500 font-medium mb-1">Part Details</p>
+                                      {item.brandName && (
+                                        <p className="text-gray-700"><span className="font-medium">Brand:</span> {item.brandName}</p>
+                                      )}
+                                      {item.variant && (
+                                        <p className="text-gray-700"><span className="font-medium">Variant:</span> {item.variant}</p>
+                                      )}
+                                      {item.partType && (
+                                        <p className="text-gray-700"><span className="font-medium">Part Type:</span> {item.partType}</p>
+                                      )}
+                                      {item.color && (
+                                        <p className="text-gray-700"><span className="font-medium">Color:</span> {item.color}</p>
+                                      )}
+                                      {item.originType && (
+                                        <p className="text-gray-700"><span className="font-medium">Origin:</span> {item.originType}</p>
+                                      )}
+                                      {item.unit && (
+                                        <p className="text-gray-700"><span className="font-medium">Unit:</span> {item.unit}</p>
+                                      )}
+                                    </div>
+                                    {item.description && (
+                                      <div className="md:col-span-3">
+                                        <p className="text-gray-500 font-medium mb-1">Description</p>
+                                        <p className="text-gray-700">{item.description}</p>
+                                      </div>
+                                    )}
+                                    <div>
+                                      <p className="text-gray-500 font-medium mb-1">Quantity Details</p>
+                                      <p className="text-gray-700"><span className="font-medium">Requested:</span> {item.requestedQty}</p>
+                                      <p className="text-gray-700"><span className="font-medium">Approved:</span> {item.approvedQty !== undefined ? item.approvedQty : 'Pending'}</p>
+                                      <p className="text-gray-700"><span className="font-medium">Issued:</span> {item.issuedQty !== undefined ? item.issuedQty : 'Not issued'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-gray-500 font-medium mb-1">Pricing</p>
+                                      <p className="text-gray-700"><span className="font-medium">Unit Price:</span> ₹{item.unitPrice.toLocaleString()}</p>
+                                      <p className="text-gray-700"><span className="font-medium">Total Price:</span> ₹{item.totalPrice.toLocaleString()}</p>
+                                    </div>
+                                    {item.urgency && (
+                                      <div>
+                                        <p className="text-gray-500 font-medium mb-1">Urgency</p>
+                                        <Badge className={
+                                          item.urgency === 'urgent' ? 'bg-red-100 text-red-800' :
+                                          item.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
+                                          'bg-blue-100 text-blue-800'
+                                        }>
+                                          {item.urgency.toUpperCase()}
+                                        </Badge>
+                                      </div>
+                                    )}
+                                    {item.notes && (
+                                      <div className="md:col-span-2">
+                                        <p className="text-gray-500 font-medium mb-1">Notes</p>
+                                        <p className="text-gray-700">{item.notes}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr className="bg-gray-50">
@@ -429,12 +617,94 @@ export default function PurchaseOrderDetailPage() {
         onClose={() => setShowApproveModal(false)}
         onConfirm={handleApprove}
         title="Approve Purchase Order"
-        message="Are you sure you want to approve this purchase order? After approval, you will be redirected to issue parts page with auto-filled data."
+        message={isCIM 
+          ? "Are you sure you want to approve this purchase order? After approval, you can issue parts (admin approval will be required for the Parts Issue)."
+          : "Are you sure you want to approve this purchase order? After approval, Central Inventory Manager will be able to issue parts (admin approval required for Parts Issue)."
+        }
         type="info"
-        confirmText="Approve & Issue Parts"
+        confirmText="Approve"
         cancelText="Cancel"
         isLoading={isProcessing}
       />
+
+      {/* Issue Parts Modal with Quantity Adjustment */}
+      {showIssueModal && purchaseOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <h3 className="text-xl font-semibold text-gray-800">Issue Parts from Purchase Order</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Adjust quantities if needed (you can issue partial quantities). 
+                <span className="font-semibold text-yellow-700 block mt-1">⚠️ Note: This will create a Parts Issue that requires admin approval before parts are dispatched.</span>
+              </p>
+            </CardHeader>
+            <CardBody>
+              <div className="space-y-4">
+                {purchaseOrder.items.map((item, index) => {
+                  const approvedItem = approvedItems.find(ai => ai.itemId === (item.itemId || item.id));
+                  return (
+                    <div key={item.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{item.partName || `Part ${index + 1}`}</p>
+                          <p className="text-sm text-gray-600">Requested: {item.quantity}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <label className="text-sm font-medium text-gray-700 min-w-[120px]">
+                          Issue Quantity:
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.quantity}
+                          value={approvedItem?.approvedQty || item.quantity}
+                          onChange={(e) => {
+                            const qty = parseInt(e.target.value) || 0;
+                            const updatedItems = approvedItems.map(ai =>
+                              ai.itemId === (item.itemId || item.id)
+                                ? { ...ai, approvedQty: Math.min(qty, item.quantity) }
+                                : ai
+                            );
+                            // If item not in list, add it
+                            if (!approvedItem) {
+                              updatedItems.push({
+                                itemId: item.itemId || item.id,
+                                approvedQty: Math.min(qty, item.quantity)
+                              });
+                            }
+                            setApprovedItems(updatedItems);
+                          }}
+                          className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-600">of {item.quantity}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="flex gap-3 justify-end pt-4 border-t">
+                  <button
+                    onClick={() => {
+                      setShowIssueModal(false);
+                      setApprovedItems([]);
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleIssue}
+                    disabled={isProcessing || approvedItems.reduce((sum, item) => sum + item.approvedQty, 0) === 0}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isProcessing ? "Processing..." : "Issue Parts"}
+                  </button>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      )}
 
       {/* Reject Modal */}
       {showRejectModal && (

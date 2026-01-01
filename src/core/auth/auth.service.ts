@@ -55,6 +55,8 @@ class AuthService {
                 name: backendUser.name || 'Unknown User',
                 role: backendUser.role,
                 serviceCenter: backendUser.serviceCenterId, // Map ID to serviceCenter property
+                serviceCenterId: backendUser.serviceCenterId, // Also store as serviceCenterId
+                serviceCenterName: backendUser.serviceCenterName || null,
                 initials: backendUser.name
                     ? backendUser.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2)
                     : '??'
