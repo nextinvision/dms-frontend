@@ -1,24 +1,24 @@
 "use client";
 import { useState, useEffect, startTransition } from "react";
-import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
-import { partsOrderService, type PartsOrder } from "@/features/inventory/services/partsOrder.service";
+import { inventoryPurchaseOrderService, type InventoryPurchaseOrder } from "@/features/inventory/services/inventoryPurchaseOrder.service";
+import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useToast } from "@/contexts/ToastContext";
 import { Package, FileText, ChevronDown, ChevronUp, Edit, CheckCircle } from "lucide-react";
-import type { Part } from "@/shared/types/inventory.types";
+import type { CentralInventoryItem } from "@/core/repositories/central-inventory.repository";
 import { PartsOrderEntryForm } from "./PartsOrderEntryForm";
 import { getInitialFormData, getInitialItemFormData, type PartsOrderEntryFormData, type PartsOrderItem } from "./form.schema";
 
 export default function PartsOrderEntryPage() {
   const { showSuccess, showError, showWarning } = useToast();
-  const [parts, setParts] = useState<Part[]>([]);
-  const [orders, setOrders] = useState<PartsOrder[]>([]);
+  const [parts, setParts] = useState<CentralInventoryItem[]>([]);
+  const [orders, setOrders] = useState<InventoryPurchaseOrder[]>([]);
   const [showOrderView, setShowOrderView] = useState(true);
   const [formData, setFormData] = useState<PartsOrderEntryFormData>(getInitialFormData());
-  const [selectedPart, setSelectedPart] = useState<Part | null>(null);
+  const [selectedPart, setSelectedPart] = useState<CentralInventoryItem | null>(null);
   const [currentItem, setCurrentItem] = useState<PartsOrderItem>(getInitialItemFormData());
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
 
@@ -35,19 +35,21 @@ export default function PartsOrderEntryPage() {
 
   const fetchParts = async () => {
     try {
-      const data = await partsMasterService.getAll();
+      const data = await inventoryPurchaseOrderService.getCentralInventoryParts();
       setParts(data);
     } catch (error) {
-      console.error("Failed to fetch parts:", error);
+      console.error("Failed to fetch service center inventory parts:", error);
+      showError("Failed to load parts from service center inventory");
     }
   };
 
   const fetchOrders = async () => {
     try {
-      const data = await partsOrderService.getAll();
+      const data = await inventoryPurchaseOrderService.getAll();
       setOrders(data);
     } catch (error) {
-      console.error("Failed to fetch orders:", error);
+      console.error("Failed to fetch purchase orders:", error);
+      showError("Failed to load purchase orders");
     }
   };
 
@@ -102,7 +104,12 @@ export default function PartsOrderEntryPage() {
     });
   };
 
-  const handleLoadDraft = (order: PartsOrder) => {
+  const handleLoadDraft = (order: InventoryPurchaseOrder) => {
+    // Only allow editing DRAFT orders
+    if (order.status !== 'draft') {
+      showWarning("Only draft orders can be edited");
+      return;
+    }
     setFormData({
       items: order.items,
       orderNotes: order.orderNotes || "",
@@ -127,15 +134,12 @@ export default function PartsOrderEntryPage() {
 
     try {
       setIsProcessing(true);
-      const order = await partsOrderService.saveDraft(
+      // Create PO as DRAFT (backend creates as DRAFT by default)
+      const order = await inventoryPurchaseOrderService.create(
         formData.items,
-        formData.orderNotes,
-        "Inventory Manager",
-        editingDraftId || undefined
+        formData.orderNotes
       );
-      const message = editingDraftId
-        ? `Draft ${order.orderNumber} updated successfully with ${formData.items.length} part(s)!`
-        : `Purchase order ${order.orderNumber} saved as draft with ${formData.items.length} part(s)!`;
+      const message = `Purchase order ${order.poNumber} saved as draft with ${formData.items.length} part(s)!`;
       showSuccess(message);
       handleCancelEdit();
       // Refresh orders and show order view
@@ -168,25 +172,26 @@ export default function PartsOrderEntryPage() {
         setShowConfirmModal(false);
         setIsProcessing(true);
         try {
-          let order: PartsOrder;
+          let order: InventoryPurchaseOrder;
           if (editingDraftId) {
-            // Update draft first, then submit it
-            await partsOrderService.updateDraft(
-              editingDraftId,
+            // For existing draft, we need to create a new PO and submit it
+            // (Backend doesn't support updating PO items, so we create new one)
+            order = await inventoryPurchaseOrderService.create(
               formData.items,
               formData.orderNotes
             );
-            order = await partsOrderService.submitDraft(editingDraftId);
-            showSuccess(`Draft ${order.orderNumber} submitted successfully with ${formData.items.length} part(s)!`);
+            // Submit the newly created PO
+            order = await inventoryPurchaseOrderService.submit(order.id);
+            showSuccess(`Purchase order ${order.poNumber} submitted successfully with ${formData.items.length} part(s)!`);
           } else {
-            // Create new order
-            order = await partsOrderService.create(
+            // Create new order and submit immediately
+            order = await inventoryPurchaseOrderService.create(
               formData.items,
-              formData.orderNotes,
-              "Inventory Manager",
-              "order"
+              formData.orderNotes
             );
-            showSuccess(`Purchase order ${order.orderNumber} created successfully with ${formData.items.length} part(s)!`);
+            // Submit for approval
+            order = await inventoryPurchaseOrderService.submit(order.id);
+            showSuccess(`Purchase order ${order.poNumber} created and submitted successfully with ${formData.items.length} part(s)!`);
           }
           handleCancelEdit();
           // Refresh orders and show order view
@@ -364,7 +369,7 @@ export default function PartsOrderEntryPage() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
                                 <Package className="text-indigo-600" size={20} />
-                                <h3 className="text-lg font-semibold text-gray-900">{order.orderNumber}</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">{order.poNumber}</h3>
                                 <Badge variant="info">{order.items.length} part{order.items.length !== 1 ? "s" : ""}</Badge>
                               </div>
                             </div>

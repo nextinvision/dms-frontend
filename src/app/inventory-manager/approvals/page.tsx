@@ -12,6 +12,19 @@ import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types
 import { ApprovalForm } from "./ApprovalForm";
 import { getInitialApprovalFormData, type ApprovalFormData } from "./form.schema";
 
+// Helper function to extract user name from user object or string
+const extractUserName = (user: any): string => {
+  if (!user) return "Unknown";
+  if (typeof user === "string") return user;
+  if (typeof user === "object") {
+    // Handle user object with name property
+    if (user.name) return user.name;
+    if (user.email) return user.email;
+    if (user.id) return user.id;
+  }
+  return String(user);
+};
+
 // Helper to map API PartsIssue to Frontend JobCardPartsRequest
 const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
   const isApproved = issue.status === 'APPROVED' || issue.status === 'ISSUED';
@@ -27,7 +40,7 @@ const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
     // For now, map what we have.
     vehicleNumber: "N/A", // Placeholder
     customerName: "N/A", // Placeholder
-    requestedBy: issue.requestedBy,
+    requestedBy: extractUserName(issue.requestedBy),
     requestedAt: issue.requestedAt,
     status: issue.status === 'ISSUED' ? 'approved' : issue.status === 'REJECTED' ? 'rejected' : 'pending', // Simplify status mapping
     parts: items.map(i => ({
@@ -38,7 +51,7 @@ const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
       serialNumber: i.serialNumber
     })),
     scManagerApproved: isApproved,
-    scManagerApprovedBy: issue.approvedBy,
+    scManagerApprovedBy: issue.approvedBy ? extractUserName(issue.approvedBy) : undefined,
     scManagerApprovedAt: issue.approvedAt,
     inventoryManagerAssigned: isIssued,
     // inventoryManagerAssignedBy: ... // Not directly in PartsIssue type of frontend service

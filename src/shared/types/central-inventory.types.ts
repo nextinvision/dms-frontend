@@ -94,6 +94,13 @@ export interface PurchaseOrder {
   poNumber: string;
   serviceCenterId: string;
   serviceCenterName: string;
+  serviceCenterCode?: string;
+  serviceCenterAddress?: string;
+  serviceCenterCity?: string;
+  serviceCenterState?: string;
+  serviceCenterPinCode?: string;
+  serviceCenterPhone?: string;
+  serviceCenterEmail?: string;
   requestedBy: string;
   requestedByEmail?: string;
   requestedAt: string;
