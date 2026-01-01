@@ -12,6 +12,7 @@ import {
   Clock,
   AlertCircle,
   ArrowRight,
+  Building,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -59,6 +60,10 @@ export default function PurchaseOrdersPage() {
         (po) =>
           po.poNumber.toLowerCase().includes(query) ||
           po.serviceCenterName.toLowerCase().includes(query) ||
+          po.serviceCenterCode?.toLowerCase().includes(query) ||
+          po.serviceCenterCity?.toLowerCase().includes(query) ||
+          po.serviceCenterState?.toLowerCase().includes(query) ||
+          po.serviceCenterAddress?.toLowerCase().includes(query) ||
           po.requestedBy.toLowerCase().includes(query) ||
           po.items.some((item) => item.partName.toLowerCase().includes(query))
       );
@@ -69,7 +74,7 @@ export default function PurchaseOrdersPage() {
 
   const getStatusBadge = (status: PurchaseOrder["status"]) => {
     const variants: Record<PurchaseOrder["status"], { color: string; label: string }> = {
-      pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
+      pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending Approval" },
       approved: { color: "bg-green-100 text-green-800", label: "Approved" },
       rejected: { color: "bg-red-100 text-red-800", label: "Rejected" },
       partially_fulfilled: { color: "bg-blue-100 text-blue-800", label: "Partially Fulfilled" },
@@ -101,7 +106,7 @@ export default function PurchaseOrdersPage() {
   if (isLoading) {
     return (
       <div className="bg-[#f9f9fb] min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">Loading purchase orders...</div>
+        <div className="text-gray-500">Loading purchase orders from service centers...</div>
       </div>
     );
   }
@@ -111,7 +116,14 @@ export default function PurchaseOrdersPage() {
       <div className="pt-6 pb-10">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-blue-600 mb-2">Purchase Orders</h1>
-          <p className="text-gray-500">View and manage purchase orders from service centers</p>
+          <p className="text-gray-500">
+            View and manage purchase orders from service center inventory managers
+            {purchaseOrders.length > 0 && (
+              <span className="ml-2 text-blue-600 font-medium">
+                ({purchaseOrders.length} order{purchaseOrders.length !== 1 ? 's' : ''} from {new Set(purchaseOrders.map(po => po.serviceCenterName)).size} service center{new Set(purchaseOrders.map(po => po.serviceCenterName)).size !== 1 ? 's' : ''})
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Filters and Search */}
@@ -122,7 +134,7 @@ export default function PurchaseOrdersPage() {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="text"
-                  placeholder="Search by PO number, service center, part name..."
+                  placeholder="Search by PO number, service center, location, part name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -170,7 +182,11 @@ export default function PurchaseOrdersPage() {
                   <p className="text-gray-400 text-sm mt-2">
                     Try adjusting your search or filter criteria
                   </p>
-                ) : null}
+                ) : (
+                  <p className="text-gray-400 text-sm mt-2">
+                    No purchase orders have been submitted by service center inventory managers yet
+                  </p>
+                )}
               </div>
             </CardBody>
           </Card>
@@ -191,10 +207,44 @@ export default function PurchaseOrdersPage() {
                         {getStatusBadge(po.status)}
                         {getPriorityBadge(po.priority)}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600 mb-3">
-                        <div>
-                          <span className="font-medium">Service Center:</span> {po.serviceCenterName}
+                      {/* Service Center Information - Prominently Displayed */}
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-3">
+                        <div className="flex items-start gap-3">
+                          <Building className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <div className="font-semibold text-blue-900 mb-1">
+                              {po.serviceCenterName}
+                              {po.serviceCenterCode && (
+                                <span className="text-blue-600 font-normal ml-2">({po.serviceCenterCode})</span>
+                              )}
+                            </div>
+                            {(po.serviceCenterAddress || po.serviceCenterCity || po.serviceCenterState) && (
+                              <div className="text-sm text-gray-700 space-y-1">
+                                {po.serviceCenterAddress && (
+                                  <div>{po.serviceCenterAddress}</div>
+                                )}
+                                <div>
+                                  {[po.serviceCenterCity, po.serviceCenterState, po.serviceCenterPinCode]
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                </div>
+                              </div>
+                            )}
+                            {(po.serviceCenterPhone || po.serviceCenterEmail) && (
+                              <div className="text-xs text-gray-600 mt-2 space-x-3">
+                                {po.serviceCenterPhone && (
+                                  <span>📞 {po.serviceCenterPhone}</span>
+                                )}
+                                {po.serviceCenterEmail && (
+                                  <span>✉️ {po.serviceCenterEmail}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600 mb-3">
                         <div>
                           <span className="font-medium">Requested By:</span> {po.requestedBy}
                         </div>

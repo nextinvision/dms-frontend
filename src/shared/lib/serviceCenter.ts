@@ -3,6 +3,8 @@
  * Migrated from mock data to use backend + localStorage caching
  */
 
+import { useAuthStore } from '@/store/authStore';
+
 // Simple safe storage helper for this file
 const getStorageItem = <T>(key: string, defaultValue: T): T => {
   if (typeof window === "undefined") return defaultValue;
@@ -25,12 +27,30 @@ const DEFAULT_CENTER_MAP: Record<string, string> = {
   service_advisor: "1",
   sc_manager: "1",
   service_engineer: "1",
+  inventory_manager: "1",
 };
 
 export const getServiceCenterContext = (): ServiceCenterContext => {
+  // Get from auth store first
+  const { userInfo, userRole } = useAuthStore.getState();
+
+  // If we have user info from auth store, use it
+  if (userInfo) {
+    const serviceCenterId = userInfo.serviceCenterId || userInfo.serviceCenter;
+    
+    if (serviceCenterId) {
+      return {
+        serviceCenterId: typeof serviceCenterId === "number" ? String(serviceCenterId) : serviceCenterId,
+        serviceCenterName: userInfo.serviceCenterName || null,
+        userRole: userRole || null,
+      };
+    }
+  }
+
+  // Fallback to reading from localStorage (for backwards compatibility)
   const storedUserInfo = getStorageItem<any>("userInfo", null);
   const storedUserRole = getStorageItem<any>("userRole", null);
-  const userRole = typeof storedUserRole === "string" ? storedUserRole : null;
+  const fallbackRole = userRole || (typeof storedUserRole === "string" ? storedUserRole : null);
 
   // Try to get serviceCenterId from user info
   const explicitCenterId =
@@ -50,18 +70,18 @@ export const getServiceCenterContext = (): ServiceCenterContext => {
       return {
         serviceCenterId: String(matchedCenter.id),
         serviceCenterName: matchedCenter.name,
-        userRole,
+        userRole: fallbackRole,
       };
     }
   }
 
   const fallbackCenter =
-    explicitCenterId || (userRole ? DEFAULT_CENTER_MAP[userRole] ?? null : null);
+    explicitCenterId || (fallbackRole ? DEFAULT_CENTER_MAP[fallbackRole] ?? null : null);
 
   return {
     serviceCenterId: fallbackCenter,
     serviceCenterName: storedUserInfo?.serviceCenter ?? null,
-    userRole,
+    userRole: fallbackRole,
   };
 };
 

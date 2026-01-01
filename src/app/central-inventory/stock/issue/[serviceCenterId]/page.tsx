@@ -1,11 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft, Building } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { useToast } from "@/contexts/ToastContext";
-import { centralInventoryRepository } from "@/__mocks__/repositories/central-inventory.repository";
-import { adminApprovalService } from "@/features/inventory/services/adminApproval.service";
+import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { PartsIssueForm } from "@/app/central-inventory/components/PartsIssueForm";
 import type {
   ServiceCenterInfo,
@@ -17,33 +16,90 @@ import type {
 export default function StockIssuePage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { showSuccess, showError } = useToast();
   const serviceCenterId = params.serviceCenterId as string;
+  const poId = searchParams.get('poId');
+  const itemsParam = searchParams.get('items');
 
   const [serviceCenter, setServiceCenter] = useState<ServiceCenterInfo | null>(null);
   const [availableStock, setAvailableStock] = useState<CentralStock[]>([]);
   const [availablePOs, setAvailablePOs] = useState<PurchaseOrder[]>([]);
+  const [initialItems, setInitialItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch service center
-        const sc = await centralInventoryRepository.getServiceCenterById(serviceCenterId);
+        // Fetch service center info from purchase order
+        let sc: ServiceCenterInfo | null = null;
+        if (poId) {
+          // If coming from purchase order, get service center from PO
+          const po = await centralInventoryRepository.getPurchaseOrderById(poId);
+          if (po && po.serviceCenterId) {
+            sc = {
+              id: po.serviceCenterId,
+              name: po.serviceCenterName,
+              location: `${po.serviceCenterCity || ''} ${po.serviceCenterState || ''}`.trim(),
+              contactPerson: po.requestedBy,
+              contactEmail: po.serviceCenterEmail,
+              contactPhone: po.serviceCenterPhone,
+              active: true,
+            };
+          }
+        } else {
+          // If no PO ID, create basic service center info from serviceCenterId
+          sc = {
+            id: serviceCenterId,
+            name: 'Service Center',
+            location: '',
+            active: true,
+          };
+        }
+        
         if (!sc) {
-          router.push("/central-inventory/stock/issue");
+          showError("Service center information not found");
+          router.push("/central-inventory/purchase-orders");
           return;
         }
         setServiceCenter(sc);
 
         // Fetch available stock
         const stock = await centralInventoryRepository.getAllStock();
-        setAvailableStock(stock.filter((s) => s.currentQty > 0));
+        setAvailableStock(stock.filter((s) => s.stockQuantity > 0));
 
-        // Fetch purchase orders for this service center
-        const pos = await centralInventoryRepository.getPurchaseOrdersByServiceCenter(serviceCenterId);
-        setAvailablePOs(pos.filter((po) => po.status === "approved"));
+        // Parse initial items from query params if available
+        if (itemsParam) {
+          try {
+            const items = JSON.parse(decodeURIComponent(itemsParam));
+            // Map items to match PartsIssueForm format
+            const mappedItems = items.map((item: any) => {
+              // Find matching stock item
+              const stockItem = stock.find(s => s.id === item.partId || s.partNumber === item.partNumber);
+              return {
+                partId: item.partId || stockItem?.id || '',
+                partName: item.partName || stockItem?.partName || '',
+                hsnCode: stockItem?.hsnCode || '',
+                fromStock: stockItem?.id || item.partId || '',
+                quantity: item.quantity || 0,
+                unitPrice: item.unitPrice || stockItem?.unitPrice || 0,
+                availableQty: stockItem?.stockQuantity || 0,
+              };
+            }).filter((item: any) => item.fromStock && item.quantity > 0);
+            setInitialItems(mappedItems);
+          } catch (e) {
+            console.error("Failed to parse items from query params:", e);
+          }
+        }
+
+        // Fetch purchase orders for this service center if needed
+        if (poId) {
+          const po = await centralInventoryRepository.getPurchaseOrderById(poId);
+          if (po) {
+            setAvailablePOs([po]);
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
         showError("Failed to load data");
@@ -55,7 +111,7 @@ export default function StockIssuePage() {
     if (serviceCenterId) {
       fetchData();
     }
-  }, [serviceCenterId, router, showError]);
+  }, [serviceCenterId, poId, itemsParam, router, showError]);
 
   const handleSubmit = async (formData: PartsIssueFormData) => {
     setIsSubmitting(true);
@@ -63,18 +119,20 @@ export default function StockIssuePage() {
       const userInfo = typeof window !== "undefined" 
         ? JSON.parse(localStorage.getItem("userInfo") || '{"name": "Central Inventory Manager"}')
         : { name: "Central Inventory Manager" };
-      // Create parts issue request (pending admin approval)
-      const request = await adminApprovalService.createPartsIssueRequest(
+      
+      // Create parts issue (will be pending admin approval)
+      const issue = await centralInventoryRepository.createPartsIssue(
         formData,
         userInfo.name || "Central Inventory Manager"
       );
-      showSuccess("Parts issue request submitted successfully! Waiting for admin approval.");
+      
+      showSuccess("Parts issue created successfully! This issue is now pending admin approval before parts can be dispatched.");
       setTimeout(() => {
-        router.push("/central-inventory/stock");
+        router.push("/central-inventory/parts-issue-requests");
       }, 2000);
     } catch (error) {
-      console.error("Failed to submit parts issue request:", error);
-      showError(error instanceof Error ? error.message : "Failed to submit parts issue request. Please try again.");
+      console.error("Failed to create parts issue:", error);
+      showError(error instanceof Error ? error.message : "Failed to create parts issue. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -120,6 +178,8 @@ export default function StockIssuePage() {
           serviceCenter={serviceCenter}
           availableStock={availableStock}
           availablePurchaseOrders={availablePOs}
+          initialItems={initialItems}
+          initialPurchaseOrderId={poId || undefined}
           onSubmit={handleSubmit}
           onCancel={handleCancel}
           isLoading={isSubmitting}
