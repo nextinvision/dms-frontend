@@ -271,7 +271,7 @@ export function ViewQuotationModal({
                             <div>
                                 <p className="text-sm font-semibold text-gray-700 mb-1">Customer Name</p>
                                 <p className="text-gray-900">
-                                    {quotation.customer?.firstName || ""} {quotation.customer?.lastName || ""}
+                                    {quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim() || "N/A"}
                                 </p>
                             </div>
                             <div>
@@ -287,7 +287,7 @@ export function ViewQuotationModal({
                                     <div>
                                         <p className="text-sm font-semibold text-gray-700 mb-1">Brand and Model</p>
                                         <p className="text-gray-900">
-                                            {quotation.vehicle.make || "N/A"} {quotation.vehicle.model || ""}
+                                            {quotation.vehicle.vehicleMake || quotation.vehicle.make || "N/A"} {quotation.vehicle.vehicleModel || quotation.vehicle.model || ""}
                                         </p>
                                     </div>
                                 </>

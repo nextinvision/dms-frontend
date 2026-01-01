@@ -329,6 +329,7 @@ export default function JobCardFormModal({
         documentType: "Quotation",
         hasInsurance: false,
         discount: 0,
+        jobCardId: jobCardId, // Link to job card
         // Map items from job card to match QuotationItemDto structure
         items: form.part2Items?.map((item) => ({
           partName: item.partName || "Service Item",
@@ -499,8 +500,11 @@ export default function JobCardFormModal({
           <button
             type="button"
             onClick={handleCreateQuotation}
-            disabled={isSubmitting}
-            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isSubmitting || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!hydratedCard?.quotationId || !!hydratedCard?.quotation
+              ? "bg-gray-100 text-gray-400 border border-gray-200"
+              : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
+              }`}
           >
             {isSubmitting ? (
               <>
@@ -510,7 +514,7 @@ export default function JobCardFormModal({
             ) : (
               <>
                 <FileText size={20} />
-                Create Quotation
+                {!!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
               </>
             )}
           </button>
@@ -520,7 +524,10 @@ export default function JobCardFormModal({
               type="button"
               onClick={handlePassToManager}
               disabled={isSubmitting || hydratedCard?.passedToManager}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed ${hydratedCard?.passedToManager
+                ? "bg-gray-100 text-gray-400 border border-gray-200"
+                : "bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:opacity-90"
+                }`}
             >
               {isSubmitting ? (
                 <>
@@ -530,7 +537,7 @@ export default function JobCardFormModal({
               ) : (
                 <>
                   <ArrowRight size={20} />
-                  {hydratedCard?.passedToManager ? "Passed to Manager" : "Pass to Manager"}
+                  {hydratedCard?.passedToManager ? "Sent to Manager" : "Pass to Manager"}
                 </>
               )}
             </button>

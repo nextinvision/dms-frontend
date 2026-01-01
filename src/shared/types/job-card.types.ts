@@ -214,9 +214,10 @@ export interface JobCard {
 
   // NEW STRUCTURED DATA (PART 1, PART 2, PART 2A, PART 3)
   part1?: JobCardPart1; // Customer & Vehicle Information
-  part2?: JobCardPart2Item[]; // Parts & Work Items List
+  part2?: JobCardPart2Item[]; // Parts & Work Items List (Part 2 items)
   part2A?: JobCardPart2A; // Warranty / Insurance Case Details (only if applicable)
   part3?: JobCardPart3; // Part Requisition & Issue Details
+  quotation?: any;
 }
 
 export interface KanbanColumn {

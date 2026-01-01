@@ -534,7 +534,7 @@ function QuotationsContent() {
       batterySerialNumber: form.batterySerialNumber,
       customNotes: form.customNotes,
       noteTemplateId: form.noteTemplateId,
-      status: "draft",
+      status: "DRAFT",
       passedToManager: false,
       passedToManagerAt: undefined,
       managerId: undefined,
@@ -970,7 +970,7 @@ function QuotationsContent() {
           <div class="details-grid">
             <div class="detail-item">
               <span class="detail-label">Customer Name:</span>
-              <span> ${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}</span>
+              <span> ${quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim() || "N/A"}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">Phone Number:</span>
@@ -983,7 +983,7 @@ function QuotationsContent() {
             </div>
             <div class="detail-item">
               <span class="detail-label">Brand and Model:</span>
-              <span> ${quotation.vehicle.make || ""} ${quotation.vehicle.model || ""}</span>
+              <span> ${quotation.vehicle.vehicleMake || quotation.vehicle.make || "N/A"} ${quotation.vehicle.vehicleModel || quotation.vehicle.model || ""}</span>
             </div>
             ` : ""}
             ${quotation.vehicleLocation ? `
@@ -1075,9 +1075,9 @@ function QuotationsContent() {
 
   // Helper function to format WhatsApp message
   const formatWhatsAppMessage = (quotation: Quotation, serviceCenter: any): string => {
-    const customerName = quotation.customer?.firstName || "Customer";
+    const customerName = quotation.customer?.name || (quotation.customer?.firstName ? `${quotation.customer.firstName} ${quotation.customer.lastName || ""}`.trim() : "Customer");
     const vehicleInfo = quotation.vehicle
-      ? `${quotation.vehicle.make} ${quotation.vehicle.model} (${quotation.vehicle.registration})`
+      ? `${quotation.vehicle.vehicleMake || quotation.vehicle.make || ""} ${quotation.vehicle.vehicleModel || quotation.vehicle.model || ""} (${quotation.vehicle.registration})`.trim()
       : "N/A";
 
     // Show first 3 items, then count of remaining
@@ -1133,7 +1133,7 @@ Or reply with "APPROVE" or "REJECT"
       }
 
       const updatedQuotationData = {
-        status: "sent_to_customer" as const,
+        status: "SENT_TO_CUSTOMER" as const,
         sentToCustomer: true,
         sentToCustomerAt: new Date().toISOString(),
         whatsappSent: true,
@@ -1366,7 +1366,7 @@ Or reply with "APPROVE" or "REJECT"
           batterySerialNumber: enhancedData.batterySerialNumber,
           customNotes: enhancedData.technicalObservation || "",
           noteTemplateId: undefined,
-          status: "draft",
+          status: "DRAFT",
           passedToManager: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1437,7 +1437,7 @@ Or reply with "APPROVE" or "REJECT"
       const newQuotation = buildQuotationFromForm();
       const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
       updateLocalAppointmentStatus(createdQuotation);
-      setFilter("draft");
+      setFilter("DRAFT");
 
       alert("Quotation created successfully!");
       setShowCreateModal(false);
@@ -1460,7 +1460,7 @@ Or reply with "APPROVE" or "REJECT"
       const newQuotation = buildQuotationFromForm();
       const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
       updateLocalAppointmentStatus(createdQuotation);
-      setFilter("sent_to_customer");
+      setFilter("SENT_TO_CUSTOMER");
 
       await sendQuotationToCustomerById(createdQuotation.id, { manageLoading: false });
 
@@ -1535,7 +1535,7 @@ Or reply with "APPROVE" or "REJECT"
         batterySerialNumber: enhancedData.batterySerialNumber,
         customNotes: enhancedData.technicalObservation || "",
         noteTemplateId: undefined,
-        status: "draft",
+        status: "DRAFT",
         passedToManager: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -1706,7 +1706,7 @@ Please keep this slip safe for vehicle collection.`;
 
       // Update quotation status
       const updateData = {
-        status: "sent_to_customer" as const,
+        status: "SENT_TO_CUSTOMER" as const,
         sentToCustomer: true,
         sentToCustomerAt: new Date().toISOString(),
         whatsappSent: true,
@@ -1836,7 +1836,7 @@ Please keep this slip safe for vehicle collection.`;
       serviceCenterId: quotation.serviceCenterId || resolvedServiceCenterId,
       serviceCenterCode,
       customerId: quotation.customerId,
-      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
       vehicleId: quotation.vehicleId,
       vehicle: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "Unknown",
       registration: quotation.vehicle?.registration || "",
@@ -1844,8 +1844,8 @@ Please keep this slip safe for vehicle collection.`;
       vehicleModel: quotation.vehicle?.model,
       serviceType: quotation.items?.[0]?.partName || "Service",
       description: quotation.notes || quotation.customNotes || "Service as per quotation",
-      status: "Created" as const,
-      priority: "Normal" as const,
+      status: "CREATED" as const,
+      priority: "NORMAL" as const,
       assignedEngineer: null,
       estimatedCost: `₹${quotation.totalAmount.toLocaleString("en-IN")}`,
       estimatedTime: "To be determined",
@@ -1854,7 +1854,7 @@ Please keep this slip safe for vehicle collection.`;
       location: "STATION" as const,
       quotationId: quotation.id,
       hasInsurance: quotation.hasInsurance,
-      insurerName: quotation.insurer?.name,
+      insurerName: (quotation as any).insurer?.name,
     };
 
     // Save job card via API
@@ -1877,7 +1877,7 @@ Please keep this slip safe for vehicle collection.`;
 
     const leadData: any = {
       customerId: quotation.customerId,
-      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
       phone: quotation.customer?.phone || "",
       email: quotation.customer?.email,
       vehicleDetails: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "",
@@ -1947,7 +1947,7 @@ Please keep this slip safe for vehicle collection.`;
       const newLead: any = {
         id: `lead-${Date.now()}`,
         customerId: quotation.customerId,
-        customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+        customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
         phone: quotation.customer?.phone || "",
         email: quotation.customer?.email,
         vehicleDetails: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "",
@@ -1981,7 +1981,7 @@ Please keep this slip safe for vehicle collection.`;
     const newLead: any = {
       id: `lead-${Date.now()}`,
       customerId: quotation.customerId,
-      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
       phone: quotation.customer?.phone || "",
       email: quotation.customer?.email,
       vehicleDetails: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "",
@@ -2026,7 +2026,7 @@ Please keep this slip safe for vehicle collection.`;
       await updateQuotationMutation.mutateAsync({
         id: quotationId,
         data: {
-          status: "customer_approved" as const,
+          status: "CUSTOMER_APPROVED" as const,
           customerApproved: true,
           customerApprovedAt: new Date().toISOString(),
         }
@@ -2081,7 +2081,7 @@ Please keep this slip safe for vehicle collection.`;
 
       // Update quotation status
       const updateData = {
-        status: "customer_rejected" as const,
+        status: "CUSTOMER_REJECTED" as const,
         customerRejected: true,
         customerRejectedAt: new Date().toISOString(),
       };
@@ -2124,7 +2124,7 @@ Please keep this slip safe for vehicle collection.`;
       await updateQuotationMutation.mutateAsync({
         id: quotationId,
         data: {
-          status: "sent_to_manager" as const,
+          status: "SENT_TO_MANAGER" as const,
           sentToManager: true,
           sentToManagerAt: new Date().toISOString(),
         }
@@ -2151,7 +2151,7 @@ Please keep this slip safe for vehicle collection.`;
       await updateQuotationMutation.mutateAsync({
         id: quotationId,
         data: {
-          status: "manager_approved" as const,
+          status: "MANAGER_APPROVED" as const,
           managerApproved: true,
           managerApprovedAt: new Date().toISOString(),
           managerId: userInfo?.id || "",
@@ -2179,7 +2179,7 @@ Please keep this slip safe for vehicle collection.`;
       await updateQuotationMutation.mutateAsync({
         id: quotationId,
         data: {
-          status: "manager_rejected" as const,
+          status: "MANAGER_REJECTED" as const,
           managerRejected: true,
           managerRejectedAt: new Date().toISOString(),
           managerId: userInfo?.id || "",
@@ -2193,6 +2193,67 @@ Please keep this slip safe for vehicle collection.`;
     } finally {
       setLoading(false);
     }
+  };
+
+  // Open Quotation/Check-in Slip for Viewing
+  const handleOpenQuotation = (quotation: Quotation) => {
+    if (quotation.documentType === "Check-in Slip") {
+      // Load check-in slip data and display
+      const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
+
+      if (storedCheckInSlipData) {
+        setCheckInSlipData(storedCheckInSlipData);
+        // Find and set customer for WhatsApp sending
+        const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
+        const customer = customers.find(c => c.id?.toString() === quotation.customerId);
+        if (customer) {
+          setSelectedCustomer(customer);
+        }
+        setShowCheckInSlipModal(true);
+      } else {
+        // Fallback: reconstruct from quotation data
+        const reconstructedData: EnhancedCheckInSlipData = {
+          slipNumber: quotation.quotationNumber,
+          customerName: `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim(),
+          phone: quotation.customer?.phone || "",
+          email: quotation.customer?.email,
+          vehicleMake: quotation.vehicle?.make || "",
+          vehicleModel: quotation.vehicle?.model || "",
+          registrationNumber: quotation.vehicle?.registration || "",
+          vin: quotation.vehicle?.vin,
+          checkInDate: quotation.quotationDate,
+          checkInTime: new Date().toTimeString().slice(0, 5),
+          serviceCenterName: quotation.serviceCenter?.name || "",
+          serviceCenterAddress: quotation.serviceCenter?.address || "",
+          serviceCenterCity: quotation.serviceCenter?.city || "",
+          serviceCenterState: quotation.serviceCenter?.state || "",
+          serviceCenterPincode: quotation.serviceCenter?.pincode || "",
+          serviceCenterPhone: quotation.serviceCenter?.phone,
+          notes: quotation.notes,
+        };
+        setCheckInSlipData(reconstructedData);
+        const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
+        const customer = customers.find(c => c.id?.toString() === quotation.customerId);
+        if (customer) {
+          setSelectedCustomer(customer);
+        }
+        setShowCheckInSlipModal(true);
+      }
+    } else {
+      setSelectedQuotation(quotation);
+      setShowViewModal(true);
+    }
+  };
+
+  const getCustomerDisplayName = (customer: Quotation["customer"]) => {
+    if (!customer) return null;
+    const name = (
+      customer.name ||
+      `${customer.firstName || ""} ${customer.lastName || ""}`.trim()
+    ).replace(/\s+/g, " ");
+
+    if (!name || name === customer.phone) return null;
+    return name;
   };
 
   // Reset form
@@ -2239,194 +2300,186 @@ Please keep this slip safe for vehicle collection.`;
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "draft":
-        return "bg-gray-100 text-gray-700 border-gray-300";
-      case "sent_to_customer":
-        return "bg-blue-100 text-blue-700 border-blue-300";
-      case "customer_approved":
-        return "bg-green-100 text-green-700 border-green-300";
-      case "customer_rejected":
-        return "bg-red-100 text-red-700 border-red-300";
-      case "sent_to_manager":
-        return "bg-purple-100 text-purple-700 border-purple-300";
-      case "manager_approved":
-        return "bg-green-100 text-green-700 border-green-300";
-      case "manager_rejected":
-        return "bg-red-100 text-red-700 border-red-300";
+      case "DRAFT":
+        return "bg-slate-50 text-slate-600 border-slate-200";
+      case "SENT_TO_CUSTOMER":
+        return "bg-sky-50 text-sky-700 border-sky-100";
+      case "CUSTOMER_APPROVED":
+        return "bg-emerald-50 text-emerald-700 border-emerald-100";
+      case "CUSTOMER_REJECTED":
+        return "bg-rose-50 text-rose-700 border-rose-100";
+      case "SENT_TO_MANAGER":
+        return "bg-violet-50 text-violet-700 border-violet-100";
+      case "MANAGER_APPROVED":
+        return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      case "MANAGER_REJECTED":
+        return "bg-rose-100 text-rose-800 border-rose-200";
       default:
-        return "bg-gray-100 text-gray-700 border-gray-300";
+        return "bg-slate-100 text-slate-700 border-slate-200";
     }
   };
 
   return (
-    <div className="bg-[#f9f9fb] min-h-screen">
-      <div className="pt-6 pb-10">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-blue-600 mb-2">Quotations</h1>
-            <p className="text-gray-500">Create and manage service quotations</p>
+    <div className="bg-slate-50 min-h-screen">
+      <div className="max-w-[1600px] mx-auto pt-8 pb-12 px-4 sm:px-6 lg:px-8">
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-10 gap-6">
+          <div className="space-y-1">
+            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">
+              Service <span className="text-blue-600">Quotations</span>
+            </h1>
+            <p className="text-lg text-slate-500 font-medium">
+              Oversee, generate, and track all service center quotations in one place.
+            </p>
           </div>
           <button
             onClick={() => {
               resetForm();
               setShowCreateModal(true);
             }}
-            className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition shadow-md inline-flex items-center gap-2"
+            className="group bg-blue-600 text-white px-8 py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-all duration-200 shadow-lg shadow-blue-200 flex items-center justify-center gap-2.5 active:scale-95"
           >
-            <PlusCircle size={20} />
-            Create Quotation
+            <PlusCircle size={22} className="group-hover:rotate-90 transition-transform duration-300" />
+            <span>Create New Quotation</span>
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-4 items-center">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        {/* Search and Filters Card */}
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/60 p-5 mb-8">
+          <div className="flex flex-col xl:flex-row gap-5">
+            <div className="flex-1 relative group">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
               <input
                 type="text"
-                placeholder="Search by quotation number, customer, or vehicle..."
+                placeholder="Find by number, customer, or registration..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 focus:outline-none transition-all placeholder:text-slate-400 font-medium"
               />
             </div>
-            <div className="flex gap-2">
-              {(["all", "draft", "sent_to_customer", "customer_approved", "customer_rejected", "sent_to_manager", "manager_approved", "manager_rejected"] as QuotationFilterType[]).map((f) => (
+            <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-50 rounded-2xl border border-slate-200">
+              {(["all", "DRAFT", "SENT_TO_CUSTOMER", "CUSTOMER_APPROVED", "CUSTOMER_REJECTED", "SENT_TO_MANAGER", "MANAGER_APPROVED", "MANAGER_REJECTED"] as QuotationFilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${filter === f
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${filter === f
+                    ? "bg-white text-blue-600 shadow-sm border border-blue-100"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                     }`}
                 >
                   {f === "all"
-                    ? "All"
-                    : f.charAt(0).toUpperCase() + f.slice(1).replace(/_/g, " ")}
+                    ? "All Statuses"
+                    : f.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ")}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Quotations List */}
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+        {/* Quotations Content Section */}
+        <div className="bg-white rounded-3xl shadow-lg shadow-slate-200/50 border border-slate-200 overflow-hidden">
           {loading ? (
-            <div className="p-12 text-center">
-              <Loader2 className="animate-spin mx-auto mb-4 text-blue-600" size={32} />
-              <p className="text-gray-600">Loading quotations...</p>
+            <div className="p-24 text-center">
+              <div className="relative inline-block">
+                <div className="absolute inset-0 bg-blue-100 rounded-full animate-ping opacity-25"></div>
+                <Loader2 className="animate-spin mb-6 text-blue-600 relative z-10" size={48} />
+              </div>
+              <p className="text-xl font-bold text-slate-800">Refreshing records...</p>
+              <p className="text-slate-500 mt-2">Just a moment while we fetch the latest data.</p>
             </div>
           ) : filteredQuotations.length === 0 ? (
-            <div className="p-12 text-center">
-              <FileText className="mx-auto mb-4 text-gray-400" size={48} />
-              <p className="text-gray-600">No quotations found</p>
+            <div className="p-24 text-center bg-slate-50/50">
+              <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <FileText className="text-slate-400" size={40} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-800">No records found</h3>
+              <p className="text-slate-500 mt-2 max-w-sm mx-auto">Try adjusting your filters or search query to find what you're looking for.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quotation #</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Document Details</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Customer</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Vehicle</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Creation Date</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Total Valuation</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Current Status</th>
+                    <th className="px-8 py-5 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-slate-100">
                   {filteredQuotations.map((quotation) => (
-                    <tr key={quotation.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{quotation.quotationNumber}</div>
-                        <div className="text-xs text-gray-500">{quotation.documentType}</div>
+                    <tr
+                      key={quotation.id}
+                      onClick={() => handleOpenQuotation(quotation)}
+                      className="hover:bg-blue-50/30 transition-colors group cursor-pointer"
+                    >
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{quotation.quotationNumber}</div>
+                        <div className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{quotation.documentType}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {quotation.customer?.firstName} {quotation.customer?.lastName}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 font-bold border border-slate-200">
+                            {quotation.customer?.firstName?.[0] || 'C'}
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold text-slate-800">
+                              {getCustomerDisplayName(quotation.customer) || "Customer"}
+                            </div>
+                            <div className="text-xs font-medium text-slate-500 mt-0.5">{quotation.customer?.phone}</div>
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500">{quotation.customer?.phone}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "N/A"}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <div className="text-sm font-bold text-slate-800">
+                            {quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "Not Specified"}
+                          </div>
+                          <div className="text-xs font-semibold text-blue-600 mt-1 bg-blue-50 w-fit px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-wider">
+                            {quotation.vehicle?.registration || "N/A"}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500">{quotation.vehicle?.registration}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(quotation.quotationDate).toLocaleDateString()}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                          <Clock size={14} className="text-slate-400" />
+                          {new Date(quotation.quotationDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-8 py-6 whitespace-nowrap">
                         {quotation.documentType === "Check-in Slip" ? (
-                          <div className="text-sm text-gray-500">N/A</div>
+                          <div className="text-sm font-medium text-slate-400 italic">No Valuation</div>
                         ) : (
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-sm font-extrabold text-slate-900 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 w-fit shadow-sm">
                             ₹{quotation.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full border ${quotation.documentType === "Check-in Slip" ? "bg-indigo-100 text-indigo-700 border-indigo-300" : getStatusColor(quotation.status)}`}>
-                          {quotation.documentType === "Check-in Slip" ? "Check-in Slip" : quotation.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <span className={`px-4 py-1.5 text-xs font-extrabold rounded-full border-2 uppercase tracking-widest ${quotation.documentType === "Check-in Slip" ? "bg-indigo-50 text-indigo-700 border-indigo-100" : getStatusColor(quotation.status)} shadow-sm`}>
+                          {quotation.documentType === "Check-in Slip" ? "Entry Registered" : quotation.status.replace(/_/g, " ")}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex gap-2">
+                      <td className="px-8 py-6 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-3">
                           {quotation.documentType === "Check-in Slip" ? (
                             <>
                               <button
-                                onClick={() => {
-                                  // Load check-in slip data and display
-                                  const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
-                                  if (storedCheckInSlipData) {
-                                    setCheckInSlipData(storedCheckInSlipData);
-                                    // Find and set customer for WhatsApp sending
-                                    const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
-                                    const customer = customers.find(c => c.id?.toString() === quotation.customerId);
-                                    if (customer) {
-                                      setSelectedCustomer(customer);
-                                    }
-                                    setShowCheckInSlipModal(true);
-                                  } else {
-                                    // Fallback: reconstruct from quotation data
-                                    const reconstructedData: EnhancedCheckInSlipData = {
-                                      slipNumber: quotation.quotationNumber,
-                                      customerName: `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim(),
-                                      phone: quotation.customer?.phone || "",
-                                      email: quotation.customer?.email,
-                                      vehicleMake: quotation.vehicle?.make || "",
-                                      vehicleModel: quotation.vehicle?.model || "",
-                                      registrationNumber: quotation.vehicle?.registration || "",
-                                      vin: quotation.vehicle?.vin,
-                                      checkInDate: quotation.quotationDate,
-                                      checkInTime: new Date().toTimeString().slice(0, 5),
-                                      serviceCenterName: quotation.serviceCenter?.name || "",
-                                      serviceCenterAddress: quotation.serviceCenter?.address || "",
-                                      serviceCenterCity: quotation.serviceCenter?.city || "",
-                                      serviceCenterState: quotation.serviceCenter?.state || "",
-                                      serviceCenterPincode: quotation.serviceCenter?.pincode || "",
-                                      serviceCenterPhone: quotation.serviceCenter?.phone,
-                                      notes: quotation.notes,
-                                    };
-                                    setCheckInSlipData(reconstructedData);
-                                    const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
-                                    const customer = customers.find(c => c.id?.toString() === quotation.customerId);
-                                    if (customer) {
-                                      setSelectedCustomer(customer);
-                                    }
-                                    setShowCheckInSlipModal(true);
-                                  }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenQuotation(quotation);
                                 }}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
                                 title="View Check-in Slip"
                               >
                                 <Eye size={18} />
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   // Load check-in slip data and send
                                   const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
                                   if (storedCheckInSlipData) {
@@ -2444,8 +2497,8 @@ Please keep this slip safe for vehicle collection.`;
                                     alert("Check-in slip data not found");
                                   }
                                 }}
-                                className="text-green-600 hover:text-green-900"
-                                title="Send to Customer via WhatsApp"
+                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Send via WhatsApp"
                               >
                                 <MessageCircle size={18} />
                               </button>
@@ -2453,29 +2506,35 @@ Please keep this slip safe for vehicle collection.`;
                           ) : (
                             <>
                               <button
-                                onClick={() => {
-                                  setSelectedQuotation(quotation);
-                                  setShowViewModal(true);
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenQuotation(quotation);
                                 }}
-                                className="text-blue-600 hover:text-blue-900"
-                                title="View"
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Detailed View"
                               >
                                 <Eye size={18} />
                               </button>
-                              {isServiceAdvisor && quotation.status === "draft" && (
+                              {isServiceAdvisor && quotation.status === "DRAFT" && (
                                 <button
-                                  onClick={() => handleSendToCustomer(quotation.id)}
-                                  className="text-green-600 hover:text-green-900"
-                                  title="Send to Customer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendToCustomer(quotation.id);
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                  title="Send to Client"
                                 >
                                   <MessageCircle size={18} />
                                 </button>
                               )}
-                              {isServiceAdvisor && quotation.status === "customer_approved" && (
+                              {isServiceAdvisor && quotation.status === "CUSTOMER_APPROVED" && (
                                 <button
-                                  onClick={() => handleSendToManager(quotation.id)}
-                                  className="text-purple-600 hover:text-purple-900"
-                                  title="Send to Manager"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendToManager(quotation.id);
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                  title="Submit to Manager"
                                 >
                                   <ArrowRight size={18} />
                                 </button>

@@ -14,6 +14,8 @@ import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/
 import { getServiceCenterCode } from "@/shared/utils/service-center.utils";
 import { JobCard } from "@/shared/types/job-card.types";
 import { Quotation } from "@/shared/types/quotation.types";
+import { quotationsService } from "@/features/quotations/services/quotations.service";
+import { userRepository } from "@/core/repositories/user.repository";
 
 // Hooks, Utils and Sections
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
@@ -39,7 +41,9 @@ export default function JobCardForm({
     mode = "create",
 }: JobCardFormProps) {
     const router = useRouter();
-    const { userInfo } = useRole();
+    const { userInfo, userRole } = useRole();
+    const isServiceAdvisor = userRole === "service_advisor";
+    const isServiceManager = userRole === "sc_manager";
     const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
     const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
     const serviceCenterCode = getServiceCenterCode(serviceCenterId);
@@ -300,6 +304,96 @@ export default function JobCardForm({
         setShowCheckInSlip(true);
     };
 
+    const handlePassToManager = async () => {
+        if (!jobCardId || !hydratedCard) return;
+
+        if (!confirm("Pass this job card to manager for approval?")) {
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+
+            // Fetch manager for this service center
+            const managers = await userRepository.getByRole("sc_manager", serviceCenterId);
+
+            if (managers.length === 0) {
+                // Try without service center filter if none found specifically
+                const allManagers = await userRepository.getByRole("sc_manager");
+                if (allManagers.length === 0) {
+                    throw new Error("No manager found to pass this job card to.");
+                }
+                await jobCardService.passToManager(jobCardId, allManagers[0].id);
+            } else {
+                await jobCardService.passToManager(jobCardId, managers[0].id);
+            }
+
+            alert("Job card passed to manager successfully!");
+            router.push("/sc/job-cards");
+        } catch (error: any) {
+            console.error("Error passing to manager:", error);
+            alert(error.message || "Failed to pass to manager. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleCreateQuotation = async () => {
+        if (!form.customerId || !form.vehicleId) {
+            alert("Please select a customer and vehicle first.");
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            const now = new Date();
+
+            // Fetch the actual job card from API to get the real serviceCenterId UUID
+            let actualServiceCenterId = serviceCenterId;
+
+            if (jobCardId) {
+                try {
+                    const jobCardFromApi = await jobCardService.getById(jobCardId);
+                    if (jobCardFromApi?.serviceCenterId) {
+                        actualServiceCenterId = jobCardFromApi.serviceCenterId;
+                    }
+                } catch (err) {
+                    console.warn("Could not fetch job card from API, using prop:", err);
+                }
+            }
+
+            const quotationData = {
+                serviceCenterId: actualServiceCenterId,
+                customerId: form.customerId,
+                vehicleId: form.vehicleId,
+                quotationDate: now.toISOString().split('T')[0],
+                documentType: "Quotation",
+                hasInsurance: false,
+                discount: 0,
+                jobCardId: jobCardId, // Correctly link to the job card
+                items: form.part2Items?.map((item) => ({
+                    partName: item.partName || "Service Item",
+                    partNumber: item.partCode || undefined,
+                    quantity: item.qty || 1,
+                    rate: item.amount || 0,
+                    gstPercent: 18,
+                })) || [],
+                customNotes: form.description || undefined,
+            };
+
+            const createdQuotation = await quotationsService.create(quotationData as any);
+            console.log("Quotation created successfully:", createdQuotation);
+
+            router.push(`/sc/quotations?highlight=${createdQuotation.id}`);
+        } catch (error: any) {
+            console.error("Error creating quotation:", error);
+            const errorMessage = error.response?.data?.message || error.message || "Unknown error";
+            alert(`Failed to create quotation: ${errorMessage}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     return (
         <div className="bg-[#f9f9fb] min-h-screen py-6">
             <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -410,8 +504,8 @@ export default function JobCardForm({
                     />
 
                     {/* Footer Actions */}
-                    <div className="bg-white rounded-xl shadow-md p-6 mt-6">
-                        <div className="flex items-center justify-between gap-4">
+                    <div className="bg-white rounded-xl shadow-md p-6 mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="flex flex-wrap gap-3">
                             <button
                                 type="button"
                                 onClick={handleGenerateCheckInSlip}
@@ -421,33 +515,79 @@ export default function JobCardForm({
                                 Generate Check-in Slip
                             </button>
 
-                            <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={handleCreateQuotation}
+                                disabled={isSubmitting || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${!!hydratedCard?.quotationId || !!hydratedCard?.quotation
+                                    ? "bg-gray-100 text-gray-400 border border-gray-200"
+                                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                                    }`}
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 className="animate-spin" size={20} />
+                                        Creating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileText size={20} />
+                                        {!!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
+                                    </>
+                                )}
+                            </button>
+
+                            {mode === "edit" && isServiceAdvisor && (
                                 <button
                                     type="button"
-                                    onClick={() => router.back()}
-                                    className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all"
-                                    disabled={isSubmitting}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg disabled:opacity-50"
+                                    onClick={handlePassToManager}
+                                    disabled={isSubmitting || hydratedCard?.passedToManager}
+                                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${hydratedCard?.passedToManager
+                                        ? "bg-gray-100 text-gray-400 border border-gray-200"
+                                        : "bg-purple-600 text-white hover:bg-purple-700"
+                                        }`}
                                 >
                                     {isSubmitting ? (
                                         <>
-                                            <Loader2 size={20} className="animate-spin" />
-                                            {mode === "edit" ? "Updating..." : "Creating..."}
+                                            <Loader2 className="animate-spin" size={20} />
+                                            Processing...
                                         </>
                                     ) : (
                                         <>
-                                            <CheckCircle size={20} />
-                                            {mode === "edit" ? "Update Job Card" : "Create Job Card"}
+                                            <ArrowLeft size={20} className="transform rotate-180" />
+                                            {hydratedCard?.passedToManager ? "Sent to Manager" : "Pass to Manager"}
                                         </>
                                     )}
                                 </button>
-                            </div>
+                            )}
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => router.back()}
+                                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all"
+                                disabled={isSubmitting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg disabled:opacity-50"
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 size={20} className="animate-spin" />
+                                        {mode === "edit" ? "Updating..." : "Creating..."}
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle size={20} />
+                                        {mode === "edit" ? "Update Job Card" : "Create Job Card"}
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </form>

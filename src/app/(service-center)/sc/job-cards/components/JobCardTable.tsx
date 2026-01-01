@@ -99,12 +99,22 @@ const JobCardTable = React.memo<JobCardTableProps>(({
 
     // Helper to get customer name from job card
     const getCustomerName = (job: JobCard): string => {
-        // Try relation first
-        if (job.customer) {
-            return `${job.customer.name || ''}`.trim() || job.customer.phone || 'Unknown Customer';
+        // Try to find a name from any available source
+        const nameSource = (
+            (job.customer?.name) ||
+            (job.customerName) ||
+            (job.part1?.fullName)
+        )?.trim();
+
+        const phone = (job.customer?.phone || job.part1?.mobilePrimary || '').trim();
+
+        if (nameSource && nameSource !== phone) {
+            // Avoid double-appending if the phone is already in the name string
+            if (phone && nameSource.includes(`(${phone})`)) return nameSource;
+            return phone ? `${nameSource} (${phone})` : nameSource;
         }
-        // Fall back to direct field
-        return job.customerName || job.part1?.fullName || 'Unknown Customer';
+
+        return nameSource || phone || 'Unknown Customer';
     };
 
     // Helper to get vehicle display string
@@ -358,14 +368,19 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         <Eye size={16} />
                                                     </button>
                                                 )}
-                                                {isServiceAdvisor && job.status === "AWAITING_QUOTATION_APPROVAL" && job.isTemporary && !hasQuotation?.(job.id) && onCreateQuotation && (
+                                                {isServiceAdvisor && job.status === "AWAITING_QUOTATION_APPROVAL" && job.isTemporary && onCreateQuotation && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            onCreateQuotation(job);
+                                                            if (!hasQuotation?.(job.id)) {
+                                                                onCreateQuotation(job);
+                                                            }
                                                         }}
-                                                        className="p-2 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded transition"
-                                                        title="Create Quotation"
+                                                        className={`p-2 rounded transition ${hasQuotation?.(job.id)
+                                                            ? "text-gray-300 cursor-not-allowed"
+                                                            : "text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"}`}
+                                                        title={hasQuotation?.(job.id) ? "Quotation Already Created" : "Create Quotation"}
+                                                        disabled={hasQuotation?.(job.id)}
                                                     >
                                                         <FileText size={16} />
                                                     </button>
@@ -386,10 +401,15 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            onPassToManager(job.id);
+                                                            if (!job.passedToManager) {
+                                                                onPassToManager(job.id);
+                                                            }
                                                         }}
-                                                        className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition"
-                                                        title="Pass to Manager"
+                                                        className={`p-2 rounded transition ${job.passedToManager
+                                                            ? "text-gray-300 cursor-not-allowed"
+                                                            : "text-purple-600 hover:text-purple-700 hover:bg-purple-50"}`}
+                                                        title={job.passedToManager ? "Already Sent to Manager" : "Pass to Manager"}
+                                                        disabled={job.passedToManager}
                                                     >
                                                         <ArrowRight size={16} />
                                                     </button>

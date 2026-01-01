@@ -507,7 +507,7 @@ export default function JobCards() {
             getNextStatus={getNextStatus}
             hasQuotation={(jobId) => {
               const job = filteredJobs.find(j => j.id === jobId);
-              return !!job?.quotationId;
+              return !!job?.quotationId || !!job?.quotation;
             }}
             onCreateQuotation={(job) => {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);

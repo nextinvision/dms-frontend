@@ -82,7 +82,8 @@ export interface Quotation {
   items: QuotationItem[];
   customer?: {
     id: string;
-    firstName: string;
+    name?: string;
+    firstName?: string;
     lastName?: string;
     phone: string;
     email?: string;
@@ -93,10 +94,12 @@ export interface Quotation {
   };
   vehicle?: {
     id: string;
-    make: string;
-    model: string;
+    make?: string;
+    model?: string;
+    vehicleMake?: string;
+    vehicleModel?: string;
     registration: string;
-    vin: string;
+    vin?: string;
   };
   insurer?: Insurer;
   serviceCenter?: {

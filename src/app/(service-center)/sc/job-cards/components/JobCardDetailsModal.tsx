@@ -58,6 +58,11 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                         >
                             {job.priority} Priority
                         </span>
+                        {job.passedToManager && (
+                            <span className="bg-purple-100 text-purple-700 px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium border border-purple-200">
+                                Sent to Manager
+                            </span>
+                        )}
                     </div>
 
                     {/* Customer & Vehicle Info */}
@@ -144,7 +149,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                         >
                             Close
                         </button>
-                        {job.status === "Created" && !job.assignedEngineer && (
+                        {job.status === "CREATED" && !job.assignedEngineer && (
                             <button
                                 onClick={() => onAssignEngineer(job.id)}
                                 className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base"
@@ -160,7 +165,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 Update Status
                             </button>
                         )}
-                        {job.status === "Completed" && (
+                        {job.status === "COMPLETED" && (
                             <button className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base">
                                 Generate Invoice
                             </button>

@@ -33,21 +33,26 @@ const JobCardActions: React.FC<JobCardActionsProps> = ({
     return (
         <>
             {/* Service Advisor: Submit to Manager Panel */}
-            {isServiceAdvisor && selectedJob && selectedJob.status === "Created" && !selectedJob.submittedToManager && (
+            {isServiceAdvisor && selectedJob && selectedJob.status === "CREATED" && (
                 <div className="mb-4 bg-gradient-to-r from-blue-50 to-white rounded-xl p-4 shadow-sm border border-blue-100">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                         <div>
                             <p className="text-sm font-semibold text-blue-800">Submit Job Card to Manager</p>
                             <p className="text-xs text-blue-600 mt-1">
-                                Review the job card details and required parts, then submit to manager for approval and technician assignment.
+                                {selectedJob.passedToManager
+                                    ? "This job card has already been submitted to the manager for review."
+                                    : "Review the job card details and required parts, then submit to manager for approval and technician assignment."}
                             </p>
                         </div>
                         <button
                             type="button"
                             onClick={handleSubmitToManager}
-                            className="px-4 py-2 rounded-lg font-semibold text-sm transition bg-blue-600 text-white shadow-md hover:bg-blue-700"
+                            className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${selectedJob.passedToManager
+                                ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                                : "bg-blue-600 text-white shadow-md hover:bg-blue-700"}`}
+                            disabled={selectedJob.passedToManager}
                         >
-                            Submit to Manager
+                            {selectedJob.passedToManager ? "Already Sent to Manager" : "Submit to Manager"}
                         </button>
                     </div>
                 </div>
@@ -87,19 +92,19 @@ const JobCardActions: React.FC<JobCardActionsProps> = ({
                             <button
                                 type="button"
                                 onClick={handleManagerQuoteAction}
-                                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${technicianApproved && partsApproved
+                                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${technicianApproved && partsApproved && !(selectedJob?.quotationId || selectedJob?.quotation)
                                     ? "bg-indigo-600 text-white shadow-md hover:bg-indigo-700"
                                     : "bg-indigo-200 text-indigo-600 cursor-not-allowed"
                                     }`}
-                                disabled={!(technicianApproved && partsApproved)}
+                                disabled={!(technicianApproved && partsApproved) || !!(selectedJob?.quotationId || selectedJob?.quotation)}
                             >
-                                Create Manager Quote
+                                {selectedJob?.quotationId || selectedJob?.quotation ? "Manager Quote Created" : "Create Manager Quote"}
                             </button>
                         </div>
                     </div>
 
                     {/* Service Manager: Create Invoice Panel */}
-                    {selectedJob && selectedJob.status === "Completed" && !selectedJob.invoiceNumber && (
+                    {selectedJob && selectedJob.status === "COMPLETED" && !selectedJob.invoiceNumber && (
                         <div className="mb-4 bg-gradient-to-r from-green-50 to-white rounded-xl p-4 shadow-sm border border-green-100">
                             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                                 <div>
@@ -127,19 +132,19 @@ const JobCardActions: React.FC<JobCardActionsProps> = ({
                                 <div className="bg-white p-3 rounded-lg border border-purple-200">
                                     <p className="text-purple-600 font-medium">Assigned</p>
                                     <p className="text-2xl font-bold text-purple-800">
-                                        {visibleJobCards.filter((j) => j.status === "Assigned").length}
+                                        {visibleJobCards.filter((j) => j.status === "ASSIGNED").length}
                                     </p>
                                 </div>
                                 <div className="bg-white p-3 rounded-lg border border-purple-200">
                                     <p className="text-purple-600 font-medium">In Progress</p>
                                     <p className="text-2xl font-bold text-purple-800">
-                                        {visibleJobCards.filter((j) => j.status === "In Progress").length}
+                                        {visibleJobCards.filter((j) => j.status === "IN_PROGRESS").length}
                                     </p>
                                 </div>
                                 <div className="bg-white p-3 rounded-lg border border-purple-200">
                                     <p className="text-purple-600 font-medium">Parts Pending</p>
                                     <p className="text-2xl font-bold text-purple-800">
-                                        {visibleJobCards.filter((j) => j.status === "Parts Pending").length}
+                                        {visibleJobCards.filter((j) => j.status === "PARTS_PENDING").length}
                                     </p>
                                 </div>
                             </div>
