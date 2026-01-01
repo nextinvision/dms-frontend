@@ -5,10 +5,9 @@ import { FileText, Building, Calendar, DollarSign, Search, Download } from "luci
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { invoiceService } from "@/features/inventory/services/invoice.service";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import type { Invoice } from "@/shared/types/invoice.types";
-import type { ServiceCenterInfo } from "@/shared/types/central-inventory.types";
+import type { ServiceCenterInfo, PartsIssue } from "@/shared/types/central-inventory.types";
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -22,10 +21,42 @@ export default function InvoicesPage() {
     const fetchData = async () => {
       try {
         setIsLoading(true);
-        const allInvoices = invoiceService.getAllInvoices();
+        // Fetch parts issues instead of invoices (central_inventory_manager has access to parts-issues)
+        const partsIssues = await centralInventoryRepository.getAllPartsIssues();
         const scs = await centralInventoryRepository.getAllServiceCenters();
         setServiceCenters(scs);
-        setInvoices(allInvoices);
+        
+        // Map PartsIssue to Invoice format
+        const mappedInvoices: Invoice[] = partsIssues
+          .filter((issue) => issue.status === 'issued' || issue.status === 'received' || issue.status === 'admin_approved')
+          .map((issue: PartsIssue) => ({
+            id: issue.id,
+            invoiceNumber: `INV-${issue.issueNumber}`,
+            serviceCenterId: issue.serviceCenterId,
+            serviceCenterName: issue.serviceCenterName,
+            partsIssueId: issue.id,
+            partsIssueNumber: issue.issueNumber,
+            purchaseOrderId: issue.purchaseOrderId,
+            issuedBy: issue.issuedBy,
+            issuedAt: issue.issuedAt,
+            status: mapPartsIssueStatusToInvoiceStatus(issue.status),
+            items: issue.items.map((item) => ({
+              id: item.id,
+              partId: item.partId,
+              partName: item.partName,
+              partNumber: item.partNumber,
+              hsnCode: item.hsnCode,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice,
+            })),
+            subtotal: issue.totalAmount,
+            totalAmount: issue.totalAmount,
+            createdAt: issue.issuedAt,
+            createdBy: issue.issuedBy,
+          }));
+        
+        setInvoices(mappedInvoices);
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -35,6 +66,20 @@ export default function InvoicesPage() {
 
     fetchData();
   }, []);
+
+  // Map PartsIssue status to Invoice status
+  const mapPartsIssueStatusToInvoiceStatus = (status: PartsIssue['status']): Invoice['status'] => {
+    const statusMap: Record<PartsIssue['status'], Invoice['status']> = {
+      'pending': 'draft',
+      'pending_admin_approval': 'draft',
+      'admin_approved': 'sent',
+      'admin_rejected': 'cancelled',
+      'issued': 'sent',
+      'received': 'paid',
+      'cancelled': 'cancelled',
+    };
+    return statusMap[status] || 'draft';
+  };
 
   const getStatusBadge = (status: Invoice["status"]) => {
     const badges = {

@@ -35,9 +35,11 @@ export interface InvoiceItem {
 class InvoiceService {
   /**
    * Get all invoices
+   * @param invoiceType - Optional filter by invoice type ('OTC_ORDER' | 'JOB_CARD')
    */
-  async getAllInvoices(): Promise<Invoice[]> {
-    const response = await apiClient.get<Invoice[]>('/invoices');
+  async getAllInvoices(invoiceType?: 'OTC_ORDER' | 'JOB_CARD'): Promise<Invoice[]> {
+    const params = invoiceType ? { invoiceType } : {};
+    const response = await apiClient.get<Invoice[]>('/invoices', { params });
     return response.data;
   }
 

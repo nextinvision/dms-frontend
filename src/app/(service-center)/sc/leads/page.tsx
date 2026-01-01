@@ -82,6 +82,8 @@ export default function Leads() {
     if (storedLeads.length > 0) {
       setLeads(storedLeads);
     } else {
+      // Initialize with empty array if no stored leads
+      const defaultLeads: Lead[] = [];
       setLeads(defaultLeads);
       safeStorage.setItem("leads", defaultLeads);
     }
