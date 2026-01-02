@@ -114,7 +114,9 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
             ...prev,
             partName: part.partName,
             partCode: part.partNumber || part.partCode || "",
-            amount: part.unitPrice || part.price || 0,
+            rate: part.unitPrice || part.price || 0,
+            gstPercent: part.gstRate || 18,
+            amount: part.totalPrice || (part.unitPrice ? part.unitPrice * (1 + (part.gstRate || 18) / 100) : part.price || 0),
             labourCode: part.labourCode || prev.labourCode || "",
         }));
         setShowResults(false);
@@ -273,15 +275,18 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                                     <span>Code: {part.partNumber || part.partId}</span>
                                                     <span>Stock: {part.stockQuantity}</span>
                                                 </div>
-                                                <div className="flex justify-between text-xs mt-0.5">
+                                                <div className="flex flex-col text-xs mt-0.5">
                                                     {(part.unitPrice || part.price) && (
-                                                        <span className="text-indigo-600">
-                                                            ₹{(part.unitPrice || part.price || 0).toLocaleString("en-IN")}
+                                                        <span className="text-gray-500">
+                                                            Pre-GST: ₹{(part.unitPrice || part.price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                                                         </span>
                                                     )}
+                                                    <span className="text-indigo-600 font-bold">
+                                                        Total (Incl. GST): ₹{(part.totalPrice || (part.unitPrice ? part.unitPrice * (1 + (part.gstRate || 18) / 100) : part.price || 0)).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                                    </span>
                                                     {part.labourCode && (
                                                         <span className="text-green-600">
-                                                            Labour: {part.labourCode}
+                                                            Labour Code: {part.labourCode}
                                                         </span>
                                                     )}
                                                 </div>
@@ -368,7 +373,13 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                             min="0"
                             step="0.01"
                             value={newItem.amount || 0}
-                            onChange={(e) => setNewItem({ ...newItem, amount: parseFloat(e.target.value) || 0 })}
+                            onChange={(e) => {
+                                const total = parseFloat(e.target.value) || 0;
+                                // Simple back-calculate pre-gst rate if possible, using 18% as fallback
+                                const gst = newItem.gstPercent || 18;
+                                const rate = total / (1 + (gst / 100));
+                                setNewItem({ ...newItem, amount: total, rate });
+                            }}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                         />
                     </div>
@@ -480,7 +491,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                         <td className="px-3 py-2 text-gray-700">{item.partName}</td>
                                         <td className="px-3 py-2 text-gray-700 font-mono text-xs">{item.partCode}</td>
                                         <td className="px-3 py-2 text-gray-700">{item.qty}</td>
-                                        <td className="px-3 py-2 text-gray-700">₹{item.amount.toLocaleString("en-IN")}</td>
+                                        <td className="px-3 py-2 text-gray-700">₹{item.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
                                         <td className="px-3 py-2 text-gray-700">{item.technician || "-"}</td>
                                         <td className="px-3 py-2">
                                             <span className={`px-2 py-1 rounded text-xs font-medium ${item.itemType === "part"

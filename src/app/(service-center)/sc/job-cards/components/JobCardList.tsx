@@ -159,16 +159,22 @@ const JobCardList = React.memo<JobCardListProps>(({
                                         View
                                     </button>
                                 )}
-                                {isServiceAdvisor && job.status === "AWAITING_QUOTATION_APPROVAL" && job.isTemporary && !hasQuotation?.(job.id) && onCreateQuotation && (
+                                {isServiceAdvisor && job.status === "AWAITING_QUOTATION_APPROVAL" && job.isTemporary && onCreateQuotation && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            onCreateQuotation(job);
+                                            if (!hasQuotation?.(job.id)) {
+                                                onCreateQuotation(job);
+                                            }
                                         }}
-                                        className="flex-1 bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-medium hover:bg-indigo-700 transition inline-flex items-center gap-1 justify-center"
+                                        className={`flex-1 px-3 py-2 rounded-lg text-xs md:text-sm font-medium transition inline-flex items-center gap-1 justify-center ${hasQuotation?.(job.id)
+                                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                            : "bg-indigo-600 text-white hover:bg-indigo-700"}`}
+                                        disabled={hasQuotation?.(job.id)}
+                                        title={hasQuotation?.(job.id) ? "Quotation already created" : "Create Quotation"}
                                     >
                                         <FileText size={14} />
-                                        Create Quotation
+                                        {hasQuotation?.(job.id) ? "Quotation Created" : "Create Quotation"}
                                     </button>
                                 )}
                                 {isServiceAdvisor && job.draftIntake && job.sourceAppointmentId && onEditDraft && (
@@ -221,16 +227,22 @@ const JobCardList = React.memo<JobCardListProps>(({
                                 </button>
                             )}
 
-                            {isServiceAdvisor && job.isTemporary && !job.passedToManager && onPassToManager && (
+                            {isServiceAdvisor && job.isTemporary && onPassToManager && (
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onPassToManager(job);
+                                        if (!job.passedToManager) {
+                                            onPassToManager(job);
+                                        }
                                     }}
-                                    className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-medium hover:opacity-90 transition w-full flex items-center justify-center gap-1"
+                                    className={`px-3 py-2 rounded-lg text-xs md:text-sm font-medium transition w-full flex items-center justify-center gap-1 ${job.passedToManager
+                                        ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                                        : "bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:opacity-90 shadow-sm"
+                                        }`}
+                                    disabled={job.passedToManager}
                                 >
                                     <Clock size={14} />
-                                    Submit for Approval
+                                    {job.passedToManager ? "Sent to Manager" : "Submit for Approval"}
                                 </button>
                             )}
 

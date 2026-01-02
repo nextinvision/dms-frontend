@@ -3,16 +3,16 @@
  */
 
 export function formatCurrency(amount: number | string, currency: string = "INR"): string {
-  const numAmount = typeof amount === "string" ? parseFloat(amount.replace(/[₹,]/g, "")) : amount;
-  
+  const numAmount = (typeof amount === "string" ? parseFloat(amount.replace(/[₹,]/g, "")) : amount) || 0;
+
   if (currency === "INR") {
-    return `₹${numAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `₹${(numAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
-  
+
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency,
-  }).format(numAmount);
+  }).format(numAmount || 0);
 }
 
 export function parseCurrency(value: string): number {
@@ -21,7 +21,7 @@ export function parseCurrency(value: string): number {
 
 export function formatCurrencyCompact(amount: number | string): string {
   const numAmount = typeof amount === "string" ? parseFloat(amount.replace(/[₹,]/g, "")) : amount;
-  
+
   if (numAmount >= 10000000) {
     return `₹${(numAmount / 10000000).toFixed(2)}Cr`;
   }
@@ -31,7 +31,7 @@ export function formatCurrencyCompact(amount: number | string): string {
   if (numAmount >= 1000) {
     return `₹${(numAmount / 1000).toFixed(2)}K`;
   }
-  
+
   return formatCurrency(numAmount);
 }
 

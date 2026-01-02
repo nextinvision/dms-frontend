@@ -3,7 +3,6 @@ export interface QuotationItem {
   serialNumber: number;
   partName: string;
   partNumber?: string;
-  hsnSacCode?: string;
   quantity: number;
   rate: number;
   gstPercent: number;
@@ -48,9 +47,9 @@ export interface Quotation {
   discount: number;
   discountPercent: number;
   preGstAmount: number;
-  cgstAmount: number;
-  sgstAmount: number;
-  igstAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
   totalAmount: number;
   notes?: string;
   batterySerialNumber?: string;
@@ -82,7 +81,8 @@ export interface Quotation {
   items: QuotationItem[];
   customer?: {
     id: string;
-    firstName: string;
+    name?: string;
+    firstName?: string;
     lastName?: string;
     phone: string;
     email?: string;
@@ -93,10 +93,12 @@ export interface Quotation {
   };
   vehicle?: {
     id: string;
-    make: string;
-    model: string;
+    make?: string;
+    model?: string;
+    vehicleMake?: string;
+    vehicleModel?: string;
     registration: string;
-    vin: string;
+    vin?: string;
   };
   insurer?: Insurer;
   serviceCenter?: {
@@ -116,6 +118,7 @@ export interface Quotation {
 export interface CreateQuotationForm {
   customerId: string;
   vehicleId?: string;
+  quotationNumber?: string;
   documentType: "Quotation" | "Proforma Invoice" | "Check-in Slip";
   quotationDate: string;
   validUntil?: string;
@@ -132,6 +135,8 @@ export interface CreateQuotationForm {
   customNotes?: string;
   noteTemplateId?: string;
   vehicleLocation?: "with_customer" | "at_workshop";
+  appointmentId?: string | number;
+  jobCardId?: string;
 }
 
 export type QuotationStatus =

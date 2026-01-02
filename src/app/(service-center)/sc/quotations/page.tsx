@@ -30,6 +30,7 @@ import {
   ShieldX,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
+import { useToast } from "@/core/contexts/ToastContext";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { useSearchParams } from "next/navigation";
 import type {
@@ -59,6 +60,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { quotationRepository } from "@/core/repositories/quotation.repository";
 import { serviceCenterRepository } from "@/core/repositories/service-center.repository";
 import { jobCardRepository } from "@/core/repositories/job-card.repository";
+import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
 
 import { defaultInsurers, defaultNoteTemplates } from "./defaults";
 
@@ -77,6 +79,7 @@ const createEmptyCustomer = (): CustomerWithVehicles => ({
 
 function QuotationsContent() {
   const { userInfo, userRole } = useRole();
+  const { showSuccess, showError, showWarning, showInfo } = useToast();
   const isServiceAdvisor = userRole === "service_advisor";
   const isServiceManager = userRole === "sc_manager";
   const searchParams = useSearchParams();
@@ -115,6 +118,16 @@ function QuotationsContent() {
     }
   });
 
+  const deleteQuotationMutation = useMutation({
+    mutationFn: (id: string) => quotationRepository.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
+    }
+  });
+
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const [filter, setFilter] = useState<QuotationFilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
@@ -124,10 +137,38 @@ function QuotationsContent() {
   const [showCheckInSlipModal, setShowCheckInSlipModal] = useState<boolean>(false);
   const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: "danger" | "warning" | "info" | "success";
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => { },
+    type: "warning",
+  });
+
+  const openConfirm = (title: string, message: string, onConfirm: () => void, type: "danger" | "warning" | "info" | "success" = "warning") => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      },
+      type,
+    });
+  };
+
   // Form state
   const [form, setForm] = useState<CreateQuotationForm>({
     customerId: "",
     vehicleId: "",
+    quotationNumber: "",
     documentType: "Quotation",
     quotationDate: new Date().toISOString().split("T")[0],
     validUntilDays: 30,
@@ -143,6 +184,8 @@ function QuotationsContent() {
     customNotes: "",
     noteTemplateId: "",
     vehicleLocation: undefined,
+    appointmentId: "",
+    jobCardId: "",
   });
 
   // Data for dropdowns
@@ -155,7 +198,6 @@ function QuotationsContent() {
   const customerSearchResults = customerSearch.results as CustomerWithVehicles[];
   const performCustomerSearch = customerSearch.search;
   const clearCustomerSearch = customerSearch.clear;
-
 
   // Load insurers from localStorage or use mock data
   useEffect(() => {
@@ -253,6 +295,7 @@ function QuotationsContent() {
                   insuranceCompanyName: insuranceCompanyName || "",
                   insuranceStartDate: insuranceStartDate || "",
                   insuranceEndDate: insuranceEndDate || "",
+                  appointmentId: appointmentData.id || quotationData.appointmentId,
                 }));
 
                 // Find matching vehicle
@@ -363,6 +406,23 @@ function QuotationsContent() {
                   insuranceCompanyName: insuranceCompanyName || "",
                   insuranceStartDate: insuranceStartDate || "",
                   insuranceEndDate: insuranceEndDate || "",
+                  jobCardId: jobCard.id || jobCardIdParam,
+                  appointmentId: jobCard.appointmentId,
+                  items: jobCard.part2Items?.map((item: any, index: number) => {
+                    const gstRate = (item.gstPercent || 18) / 100;
+                    const preGstRate = item.rate || (item.amount / (1 + gstRate)) || 0;
+                    const amountInclGst = item.amount || (preGstRate * (1 + gstRate));
+
+                    return {
+                      serialNumber: index + 1,
+                      partName: item.partName || "Service Item",
+                      partNumber: item.partCode || undefined,
+                      quantity: item.qty || 1,
+                      rate: preGstRate,
+                      gstPercent: item.gstPercent || 18,
+                      amount: amountInclGst * (item.qty || 1)
+                    };
+                  }) || [],
                 }));
 
                 // Find matching vehicle
@@ -429,50 +489,121 @@ function QuotationsContent() {
   // Calculate totals
   const calculateTotals = useCallback(() => {
     let subtotal = 0;
-    form.items.forEach((item) => {
-      const itemAmount = item.rate * item.quantity;
-      subtotal += itemAmount;
+    const discount = form.discount || 0;
+
+    // First pass to get subtotal
+    form.items.forEach(item => {
+      subtotal += (item.rate || 0) * (item.quantity || 0);
     });
 
-    const discount = form.discount || 0;
     const discountPercent = subtotal > 0 ? (discount / subtotal) * 100 : 0;
     const preGstAmount = subtotal - discount;
 
-    // For now, using flat 18% GST. In production, this should calculate CGST/SGST/IGST based on states
-    const gstRate = 0.18;
-    const taxAmount = preGstAmount * gstRate;
+    let totalCgst = 0;
+    let totalSgst = 0;
+    let totalIgst = 0;
+    let totalTax = 0;
 
-    // Split into CGST and SGST (9% each) for intra-state, or IGST (18%) for inter-state
-    // This should be calculated based on customer state vs service center state
-    const cgst = taxAmount / 2;
-    const sgst = taxAmount / 2;
-    const igst = 0; // Set based on state comparison
+    // Determine if IGST or CGST/SGST should be applied
+    const customerState = selectedCustomer?.address?.toLowerCase().trim();
+    const serviceCenter = serviceCenters.find(
+      (center) => normalizeServiceCenterId(center.id) === normalizeServiceCenterId(activeServiceCenterId || serviceCenterContext.serviceCenterId)
+    );
+    const scState = serviceCenter?.state?.toLowerCase().trim();
+    const isInterState = customerState && scState && !customerState.includes(scState) && !scState.includes(customerState);
 
-    const totalAmount = preGstAmount + cgst + sgst + igst;
+    const itemsWithAmounts = form.items.map((item, index) => {
+      const itemSubtotal = (item.rate || 0) * (item.quantity || 0);
+      const itemDiscount = subtotal > 0 ? (itemSubtotal / subtotal) * discount : 0;
+      const itemTaxableValue = itemSubtotal - itemDiscount;
+
+      const itemGstPercent = item.gstPercent || 18;
+      const itemTax = itemTaxableValue * (itemGstPercent / 100);
+      totalTax += itemTax;
+
+      if (isInterState) {
+        totalIgst += itemTax;
+      } else {
+        totalCgst += itemTax / 2;
+        totalSgst += itemTax / 2;
+      }
+
+      const amountInclGst = itemSubtotal + (itemSubtotal * (itemGstPercent / 100)); // Standard display amount per item
+
+      return {
+        ...item,
+        amount: amountInclGst,
+        serialNumber: item.serialNumber || index + 1
+      };
+    });
+
+    const calculatedPreGst = subtotal - discount;
+    const totalAmount = calculatedPreGst + totalTax;
 
     return {
       subtotal,
       discount,
       discountPercent,
-      preGstAmount,
-      cgst,
-      sgst,
-      igst,
+      preGstAmount: calculatedPreGst,
+      cgst: totalCgst,
+      sgst: totalSgst,
+      igst: totalIgst,
       totalAmount,
+      items: itemsWithAmounts
     };
-  }, [form.items, form.discount]);
+  }, [form.items, form.discount, selectedCustomer, serviceCenterContext]);
 
   const totals = calculateTotals();
 
   const validateQuotationForm = () => {
     if (!form.customerId) {
-      alert("Please select a customer");
+      showWarning("Please select a customer");
       return false;
     }
 
-    if (form.items.length === 0) {
-      alert("Please add at least one item");
+    if (form.items.length === 0 && form.documentType !== "Check-in Slip") {
+      showWarning("Please add at least one item");
       return false;
+    }
+
+    // Check for duplicate Job Card ID
+    if (form.jobCardId) {
+      const existingQuotation = quotations.find(
+        (q) => q.jobCardId === form.jobCardId && q.id !== editingId && q.documentType === form.documentType
+      );
+      if (existingQuotation) {
+        showError(`A ${form.documentType} (${existingQuotation.quotationNumber}) already exists for this Job Card.`);
+        return false;
+      }
+    }
+
+    // Check for duplicate Customer & Vehicle ID (active session)
+    if (form.customerId && form.vehicleId && !editingId) {
+      const activeQuotation = quotations.find(
+        (q) => q.customerId === form.customerId &&
+          q.vehicleId === form.vehicleId &&
+          q.documentType === form.documentType &&
+          !["CUSTOMER_REJECTED", "MANAGER_REJECTED"].includes(q.status)
+      );
+      if (activeQuotation) {
+        showWarning(`This customer already has an active ${form.documentType} (${activeQuotation.quotationNumber}) for this vehicle.`);
+        return false;
+      }
+    }
+
+    // Check if vehicle has an active job card and enforce linkage
+    if (form.vehicleId && selectedCustomer && !editingId) {
+      const selectedVehicle = selectedCustomer.vehicles.find(v => String(v.id) === form.vehicleId);
+      if (selectedVehicle && selectedVehicle.currentStatus === "Active Job Card") {
+        if (!form.jobCardId) {
+          showError(`This vehicle has an active Job Card (${selectedVehicle.activeJobCardId}). New ${form.documentType}s must be created from that Job Card or linked to it.`);
+          return false;
+        }
+        if (form.jobCardId !== selectedVehicle.activeJobCardId) {
+          showError(`Mismatch: Vehicle has active Job Card ${selectedVehicle.activeJobCardId}, but requested ${form.jobCardId}.`);
+          return false;
+        }
+      }
     }
 
     return true;
@@ -488,7 +619,9 @@ function QuotationsContent() {
     );
     const resolvedCustomerId = form.customerId || activeCustomerId || "";
     const serviceCenterCode = getServiceCenterCode(resolvedServiceCenterId);
-    const quotationNumber = generateQuotationNumber(resolvedServiceCenterId, quotationDate, quotations);
+    const quotationNumber = isEditing && form.quotationNumber
+      ? form.quotationNumber
+      : generateQuotationNumber(resolvedServiceCenterId, quotationDate, quotations);
 
     const customer = selectedCustomer ?? createEmptyCustomer();
     const selectedInsurer = insurers.find((i) => i.id === form.insurerId);
@@ -498,13 +631,12 @@ function QuotationsContent() {
       (center) => normalizeServiceCenterId(center.id) === resolvedServiceCenterId
     );
 
-    // Get appointmentId from pendingQuotationFromAppointment if available
     const pendingQuotationData = safeStorage.getItem<any>("pendingQuotationFromAppointment", null);
-    const appointmentId = pendingQuotationData?.appointmentId || undefined;
-
-    // Get jobCardId from pendingQuotationFromJobCard if available
     const pendingJobCardData = safeStorage.getItem<any>("pendingQuotationFromJobCard", null);
-    const jobCardId = pendingJobCardData?.jobCardId || jobCardIdParam || undefined;
+
+    // Use form IDs preferably, fallback to storage
+    const appointmentId = form.appointmentId || pendingQuotationData?.appointmentId || undefined;
+    const jobCardId = form.jobCardId || pendingJobCardData?.jobCardId || jobCardIdParam || undefined;
 
     return {
       id: `qt-${Date.now()}`,
@@ -526,22 +658,22 @@ function QuotationsContent() {
       discount: updatedTotals.discount,
       discountPercent: updatedTotals.discountPercent,
       preGstAmount: updatedTotals.preGstAmount,
-      cgstAmount: updatedTotals.cgst,
-      sgstAmount: updatedTotals.sgst,
-      igstAmount: updatedTotals.igst,
+      cgst: updatedTotals.cgst,
+      sgst: updatedTotals.sgst,
+      igst: updatedTotals.igst,
       totalAmount: updatedTotals.totalAmount,
       notes: form.notes || selectedTemplate?.content || "",
       batterySerialNumber: form.batterySerialNumber,
       customNotes: form.customNotes,
       noteTemplateId: form.noteTemplateId,
-      status: "draft",
+      status: "DRAFT",
       passedToManager: false,
       passedToManagerAt: undefined,
       managerId: undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      items: form.items.map((item, index) => ({
-        id: `item-${Date.now()}-${index}`,
+      items: updatedTotals.items.map((item, index) => ({
+        id: (item as any).id || `item-${Date.now()}-${index}`,
         ...item,
       })),
       customer: {
@@ -635,19 +767,18 @@ function QuotationsContent() {
         .map(
           (item, index) => `
           <tr>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.serialNumber || index + 1}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${item.partName || "-"}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${item.partNumber || "-"}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${item.hsnSacCode || "-"}</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.quantity || 0}</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">₹${(item.rate || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.gstPercent || 0}%</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-weight: bold;">₹${(item.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+            <td style="text-align: center; color: #6b7280;">${item.serialNumber || index + 1}</td>
+            <td style="font-weight: 500; color: #111827;">${item.partName || "-"}</td>
+            <td style="color: #6b7280;">${item.partNumber || "-"}</td>
+            <td style="text-align: center;">${item.quantity || 0}</td>
+            <td style="text-align: right;">₹${(item.rate || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+            <td style="text-align: center; color: #6b7280;">${item.gstPercent || 0}%</td>
+            <td style="text-align: right; font-weight: 600; color: #111827;">₹${(item.amount || (item.rate * item.quantity * (1 + (item.gstPercent || 18) / 100))).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
           </tr>
         `
         )
         .join("")
-      : '<tr><td colspan="8" style="border: 1px solid #ddd; padding: 8px; text-align: center;">No items added</td></tr>';
+      : '<tr><td colspan="7" style="border: 1px solid #ddd; padding: 20px; text-align: center; color: #9ca3af;">No items found in this quotation</td></tr>';
 
     const insuranceHTML =
       quotation.hasInsurance && (quotation.insurer || quotation.insuranceStartDate || quotation.insuranceEndDate)
@@ -669,6 +800,9 @@ function QuotationsContent() {
       <head>
         <title>${quotation.documentType === "Proforma Invoice" ? "Proforma Invoice" : "Quotation"} ${quotation.quotationNumber}</title>
         <meta charset="UTF-8">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
           @media print {
             * {
@@ -682,199 +816,202 @@ function QuotationsContent() {
               height: auto !important;
             }
             body {
-              padding: 10px 15px !important;
-              font-size: 12px !important;
+              padding: 0 !important;
+              font-size: 11px !important;
             }
             .no-print { display: none !important; }
             @page {
-              margin: 0.8cm !important;
+              margin: 1.2cm !important;
               size: A4;
             }
-            @page :first {
-              margin: 0.8cm !important;
-            }
-            .header {
-              padding-bottom: 10px !important;
-              margin-bottom: 12px !important;
-            }
-            .company-name {
-              font-size: 18px !important;
-            }
-            .document-type {
-              font-size: 20px !important;
-            }
-            .header-content {
-              margin-bottom: 8px !important;
-            }
-            .details-section {
-              margin: 12px 0 !important;
-            }
-            table {
-              font-size: 11px !important;
-              margin: 12px 0 !important;
-            }
-            th, td {
-              padding: 6px 4px !important;
-            }
-            .section-title {
-              font-size: 14px !important;
-              margin-bottom: 8px !important;
-              padding-bottom: 4px !important;
-            }
-            .details-grid {
-              gap: 8px !important;
-              font-size: 11px !important;
-            }
-            .pricing-summary {
-              margin-top: 12px !important;
-            }
-            .pricing-summary-table {
-              font-size: 12px !important;
-              margin-top: 8px !important;
-            }
-            .pricing-summary-table td {
-              padding: 6px 8px !important;
-              font-size: 12px !important;
-            }
-            .pricing-total-row td {
-              font-size: 14px !important;
-              padding-top: 8px !important;
-            }
-            .notes-section {
-              margin-top: 12px !important;
-              padding: 10px !important;
-              font-size: 11px !important;
+            .main-container {
+              padding: 0 !important;
+              box-shadow: none !important;
+              border: none !important;
             }
           }
+
           body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f3f4f6;
+            padding: 40px 20px;
             color: #1f2937;
-            line-height: 1.5;
-            font-size: 14px;
+            margin: 0;
           }
+
+          .main-container {
+            max-width: 850px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+          }
+
           .header {
-            border-bottom: 2px solid #374151;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-          }
-          .header-content {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            margin-bottom: 40px;
+            padding-bottom: 30px;
+            border-bottom: 2px solid #f3f4f6;
           }
-          .company-info {
-            flex: 1;
+
+          .company-brand {
+            display: flex;
+            align-items: center;
+            gap: 15px;
           }
-          .company-name {
+
+          .company-logo-circle {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
             font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 8px;
-            color: #111827;
+            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
           }
-          .document-info {
+
+          .company-details h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0;
+            color: #111827;
+            letter-spacing: -0.025em;
+          }
+
+          .company-info-text {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 6px;
+            line-height: 1.6;
+          }
+
+          .document-meta {
             text-align: right;
           }
-          .document-type {
-            font-size: 28px;
-            font-weight: bold;
+
+          .document-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            background-color: #eff6ff;
             color: #2563eb;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
             margin-bottom: 12px;
           }
-          .details-section {
-            margin: 16px 0;
+
+          .document-number {
+            font-size: 20px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8px;
           }
-          .section-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #e5e7eb;
+
+          .document-dates {
+            font-size: 13px;
+            color: #6b7280;
           }
-          .details-grid {
+
+          .grid-section {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            font-size: 13px;
+            gap: 30px;
+            margin-bottom: 40px;
           }
-          .detail-item {
-            margin-bottom: 6px;
+
+          .info-card {
+            padding: 20px;
+            background-color: #f9fafb;
+            border-radius: 10px;
+            border: 1px solid #f3f4f6;
           }
-          .detail-label {
-            font-weight: 600;
-            color: #374151;
+
+          .card-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            display: block;
           }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 16px 0;
-            font-size: 13px;
+
+          .info-row {
+            display: flex;
+            margin-bottom: 8px;
+            font-size: 14px;
           }
-          th {
-            background-color: #f3f4f6;
-            border: 1px solid #d1d5db;
-            padding: 8px 6px;
-            text-align: left;
-            font-weight: 600;
-            color: #374151;
-            font-size: 12px;
+
+          .info-label {
+            color: #6b7280;
+            width: 120px;
+            flex-shrink: 0;
           }
-          td {
-            border: 1px solid #d1d5db;
-            padding: 8px 6px;
-            font-size: 12px;
-          }
-          .pricing-summary {
-            width: 100%;
-            margin-left: auto;
-            margin-top: 24px;
-            margin-right: 0;
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          .pricing-summary-table {
-            width: 100%;
-            max-width: 100%;
-            border-collapse: collapse;
-            margin-top: 12px;
-            table-layout: fixed;
-          }
-          .pricing-summary-table td {
-            padding: 8px 10px;
-            border: none;
-            font-size: 13px;
-            vertical-align: middle;
-            white-space: nowrap;
-            overflow: visible;
-          }
-          .pricing-summary-table td:first-child {
-            text-align: left;
-            color: #374151;
-            font-weight: 500;
-            width: 65%;
-            padding-right: 15px;
-          }
-          .pricing-summary-table td:last-child {
-            text-align: right;
+
+          .info-value {
             color: #111827;
             font-weight: 500;
-            width: 35%;
-            white-space: nowrap;
-            padding-left: 15px;
           }
-          .pricing-row {
+
+          table.items-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-bottom: 30px;
+          }
+
+          .items-table th {
+            background-color: #f9fafb;
+            padding: 12px 15px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #e5e7eb;
+          }
+
+          .items-table td {
+            padding: 15px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 13px;
+            color: #374151;
+          }
+
+          .items-table tr:last-child td {
+            border-bottom: none;
+          }
+
+          .summary-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 30px;
+          }
+
+          .summary-box {
+            width: 320px;
+            padding: 20px;
+            background-color: #f9fafb;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+          }
+
+          .summary-row {
             display: flex;
             justify-content: space-between;
             padding: 8px 0;
             font-size: 14px;
-            page-break-inside: avoid;
-            break-inside: avoid;
-            white-space: nowrap;
-          }
-          .pricing-row span {
-            white-space: nowrap;
-          }
-          .pricing-total {
             border-top: 2px solid #374151;
             padding-top: 12px;
             margin-top: 12px;
@@ -970,7 +1107,7 @@ function QuotationsContent() {
           <div class="details-grid">
             <div class="detail-item">
               <span class="detail-label">Customer Name:</span>
-              <span> ${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}</span>
+              <span> ${quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim() || "N/A"}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">Phone Number:</span>
@@ -983,7 +1120,7 @@ function QuotationsContent() {
             </div>
             <div class="detail-item">
               <span class="detail-label">Brand and Model:</span>
-              <span> ${quotation.vehicle.make || ""} ${quotation.vehicle.model || ""}</span>
+              <span> ${quotation.vehicle.vehicleMake || quotation.vehicle.make || "N/A"} ${quotation.vehicle.vehicleModel || quotation.vehicle.model || ""}</span>
             </div>
             ` : ""}
             ${quotation.vehicleLocation ? `
@@ -1005,11 +1142,10 @@ function QuotationsContent() {
                 <th style="text-align: center;">S.No</th>
                 <th>Part Name</th>
                 <th>Part Number</th>
-                <th>HSN/SAC Code</th>
                 <th style="text-align: center;">Qty</th>
-                <th style="text-align: right;">Rate (₹)</th>
+                <th style="text-align: right;">Rate (Pre-GST)</th>
                 <th style="text-align: center;">GST %</th>
-                <th style="text-align: right;">Amount (₹)</th>
+                <th style="text-align: right;">Amount (Incl. GST)</th>
               </tr>
             </thead>
             <tbody>
@@ -1024,39 +1160,31 @@ function QuotationsContent() {
             <tbody>
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Subtotal:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${(quotation.subtotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ${quotation.discount > 0 ? `
               <tr>
-                <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Discount ${quotation.discountPercent > 0 ? `(${quotation.discountPercent.toFixed(1)}%)` : ""}:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">-₹${quotation.discount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Discount ${Number(quotation.discountPercent) >= 0 ? `(${Number(quotation.discountPercent).toFixed(1)}%)` : ""}:</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">-₹${(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
               <tr style="border-top: 1px solid #e5e7eb;">
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px; padding-top: 10px;">Pre-GST Amount:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; padding-top: 10px; white-space: nowrap;">₹${quotation.preGstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; padding-top: 10px; white-space: nowrap;">₹${(Number(quotation.preGstAmount) > 0 ? quotation.preGstAmount : (Number(quotation.subtotal || 0) - Number(quotation.discount || 0))).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ${quotation.cgstAmount > 0 ? `
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">CGST (9%):</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.cgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${((quotation as any).cgstAmount || (quotation as any).cgst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
-              ${quotation.sgstAmount > 0 ? `
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">SGST (9%):</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.sgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${((quotation as any).sgstAmount || (quotation as any).sgst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
-              ${quotation.igstAmount > 0 ? `
               <tr>
                 <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">IGST (18%):</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${quotation.igstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${((quotation as any).igstAmount || (quotation as any).igst || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ""}
               <tr class="pricing-total-row">
                 <td style="width: 65%; text-align: left; padding-right: 15px; border-top: 2px solid #374151; padding-top: 10px; font-size: 16px; font-weight: bold;">Total Amount:</td>
-                <td style="width: 35%; text-align: right; padding-left: 15px; border-top: 2px solid #374151; padding-top: 10px; font-size: 16px; font-weight: bold; white-space: nowrap;">₹${quotation.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="width: 35%; text-align: right; padding-left: 15px; border-top: 2px solid #374151; padding-top: 10px; font-size: 16px; font-weight: bold; white-space: nowrap;">₹${(quotation.totalAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
             </tbody>
           </table>
@@ -1075,9 +1203,9 @@ function QuotationsContent() {
 
   // Helper function to format WhatsApp message
   const formatWhatsAppMessage = (quotation: Quotation, serviceCenter: any): string => {
-    const customerName = quotation.customer?.firstName || "Customer";
+    const customerName = quotation.customer?.name || (quotation.customer?.firstName ? `${quotation.customer.firstName} ${quotation.customer.lastName || ""}`.trim() : "Customer");
     const vehicleInfo = quotation.vehicle
-      ? `${quotation.vehicle.make} ${quotation.vehicle.model} (${quotation.vehicle.registration})`
+      ? `${quotation.vehicle.vehicleMake || quotation.vehicle.make || ""} ${quotation.vehicle.vehicleModel || quotation.vehicle.model || ""} (${quotation.vehicle.registration})`.trim()
       : "N/A";
 
     // Show first 3 items, then count of remaining
@@ -1086,7 +1214,7 @@ function QuotationsContent() {
     const remainingCount = itemsCount > 3 ? itemsCount - 3 : 0;
 
     const itemsSummary = firstItems
-      .map((item, idx) => `${idx + 1}. ${item.partName} (Qty: ${item.quantity}) - ₹${item.amount.toLocaleString("en-IN")}`)
+      .map((item, idx) => `${idx + 1}. ${item.partName} (Qty: ${item.quantity}) - ₹${(item.amount || 0).toLocaleString("en-IN")}`)
       .join("\n");
 
     const approvalLink = `${window.location.origin}/sc/quotations?quotationId=${quotation.id}&action=approve`;
@@ -1104,8 +1232,9 @@ ${quotation.validUntil ? `⏰ Valid Till: ${new Date(quotation.validUntil).toLoc
 ${itemsSummary}
 ${remainingCount > 0 ? `... and ${remainingCount} more item${remainingCount > 1 ? "s" : ""}\n` : ""}
 💰 *Pricing:*
-Subtotal: ₹${quotation.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-${quotation.discount > 0 ? `Discount: -₹${quotation.discount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}*Total Amount: ₹${quotation.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}*
+Subtotal: ₹${(Number(quotation.subtotal) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+${Number(quotation.discount) > 0 ? `Discount: -₹${(Number(quotation.discount) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}Pre-GST Amount: ₹${(Number(quotation.preGstAmount) || (Number(quotation.subtotal) - Number(quotation.discount)) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+${Number((quotation as any).cgst) > 0 ? `CGST (9%): ₹${Number((quotation as any).cgst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}${Number((quotation as any).sgst) > 0 ? `SGST (9%): ₹${Number((quotation as any).sgst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}${Number((quotation as any).igst) > 0 ? `IGST (18%): ₹${Number((quotation as any).igst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}*Total Amount: ₹${(Number(quotation.totalAmount) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}*
 
 📄 A detailed PDF has been generated. Please review it.
 
@@ -1132,116 +1261,65 @@ Or reply with "APPROVE" or "REJECT"
         setLoading(true);
       }
 
-      const updatedQuotationData = {
-        status: "sent_to_customer" as const,
-        sentToCustomer: true,
-        sentToCustomerAt: new Date().toISOString(),
-        whatsappSent: true,
-        whatsappSentAt: new Date().toISOString(),
-      };
+      // Call backend to generate PDF and get WhatsApp number
+      const { pdfUrl, whatsappNumber } = await quotationRepository.sendToCustomer(quotationId);
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: updatedQuotationData
-      });
+      // Refresh quotations list to update status
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
 
-      // Update local object for use in PDF generation (since query might not invalidate instantly in this closure)
-      const updatedQuotation = { ...quotation, ...updatedQuotationData };
+      // Construct full PDF URL (assuming it's a relative path)
+      const fullPdfUrl = pdfUrl.startsWith('http')
+        ? pdfUrl
+        : `${window.location.origin}${pdfUrl}`;
 
+      // Format WhatsApp message with PDF link
+      const customerName = quotation.customer?.name ||
+        `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim() ||
+        "Valued Customer";
 
-      // Get service center and advisor details
-      const serviceCenterData: any = quotation.serviceCenter || {
+      const vehicleInfo = quotation.vehicle
+        ? `${quotation.vehicle.registration || "N/A"}`
+        : "N/A";
+
+      const serviceCenter = quotation.serviceCenter || {
         name: "42 EV Tech & Services",
-        address: "123 Main Street, Industrial Area",
-        city: "Pune",
-        state: "Maharashtra",
-        pincode: "411001",
         phone: "+91-20-12345678",
-        gstNumber: (quotation.serviceCenter as any)?.gstNumber || "",
-        panNumber: (quotation.serviceCenter as any)?.panNumber || "",
       };
 
-      const serviceAdvisor = {
-        name: userInfo?.name || "Service Advisor",
-        phone: (userInfo as any)?.phone || "+91-9876543210",
-      };
+      const message = `Dear ${customerName},
 
-      // Validate WhatsApp number
-      const rawWhatsapp =
-        (quotation.customer as any)?.whatsappNumber || quotation.customer?.phone || "";
-      const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
+📄 *Your Quotation is Ready!*
 
-      if (!validateWhatsAppNumber(customerWhatsapp)) {
-        alert("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
-        if (manageLoading) {
-          setLoading(false);
-        }
-        return;
+Please find your detailed quotation from *${serviceCenter.name}*:
+
+🔗 *Download PDF:* ${fullPdfUrl}
+
+📋 *Quotation Details:*
+• Quotation No: ${quotation.quotationNumber}
+• Vehicle: ${vehicleInfo}
+• Total Amount: ₹${(Number(quotation.totalAmount) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+
+Please review the PDF and let us know if you approve or have any questions.
+
+To approve, simply reply "APPROVE"
+To reject, reply "REJECT"
+
+📞 Contact us: ${serviceCenter.phone || "N/A"}
+🏢 ${serviceCenter.name}`;
+
+      // Open WhatsApp
+      const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+      window.open(whatsappUrl, '_blank');
+
+      if (manageLoading) {
+        showSuccess("Quotation PDF generated and sent to WhatsApp!");
       }
 
-      // Generate quotation HTML
-      const quotationHTML = generateQuotationHTML(quotation, serviceCenterData, serviceAdvisor);
-
-      // Print quotation
-      const printQuotation = () => {
-        try {
-          const printWindow = window.open("", "_blank");
-          if (!printWindow) {
-            alert("Please allow popups to generate PDF. The quotation details will be shown in the message.");
-            return false;
-          }
-
-          printWindow.document.write(quotationHTML);
-          printWindow.document.close();
-
-          // Wait for content to load, then trigger print
-          setTimeout(() => {
-            try {
-              printWindow.focus();
-              printWindow.print();
-              // Close window after a delay
-              setTimeout(() => {
-                if (!printWindow.closed) {
-                  printWindow.close();
-                }
-              }, 2000);
-            } catch (printError) {
-              console.error("Print error:", printError);
-              // Keep window open if print fails
-            }
-          }, 500);
-          return true;
-        } catch (error) {
-          console.error("Error opening print window:", error);
-          alert("Could not open print dialog. The quotation will still be sent via WhatsApp.");
-          return false;
-        }
-      };
-
-      // Generate PDF
-      printQuotation();
-
-      // Format WhatsApp message
-      const message = formatWhatsAppMessage(quotation, serviceCenterData);
-      const whatsappUrl = `https://wa.me/${customerWhatsapp}?text=${encodeURIComponent(message)}`;
-
-      // Open WhatsApp with delay to allow PDF generation
-      setTimeout(() => {
-        try {
-          window.open(whatsappUrl, "_blank");
-          alert("Quotation PDF generated and sent to customer via WhatsApp!\n\nCustomer can approve or reject via the links provided.");
-        } catch (error) {
-          console.error("Error opening WhatsApp:", error);
-          alert("Could not open WhatsApp. Please copy this link manually:\n\n" + whatsappUrl);
-        }
-      }, 1500);
     } catch (error) {
       console.error("Error sending quotation:", error);
-      alert("Failed to send quotation via WhatsApp. Please try again.");
+      showError(error instanceof Error ? error.message : "Failed to send quotation. Please try again.");
     } finally {
-      if (manageLoading) {
-        setLoading(false);
-      }
+      if (manageLoading) setLoading(false);
     }
   };
 
@@ -1256,7 +1334,6 @@ Or reply with "APPROVE" or "REJECT"
           serialNumber: form.items.length + 1,
           partName: "",
           partNumber: "",
-          hsnSacCode: "",
           quantity: 1,
           rate: 0,
           gstPercent: 18,
@@ -1282,8 +1359,11 @@ Or reply with "APPROVE" or "REJECT"
     newItems[index] = { ...newItems[index], [field]: value };
 
     // Recalculate amount
-    if (field === "rate" || field === "quantity") {
-      newItems[index].amount = newItems[index].rate * newItems[index].quantity;
+    if (field === "rate" || field === "quantity" || field === "gstPercent") {
+      const rate = Number(newItems[index].rate) || 0;
+      const q = Number(newItems[index].quantity) || 0;
+      const gst = Number(newItems[index].gstPercent) || 0;
+      newItems[index].amount = rate * q * (1 + gst / 100);
     }
 
     setForm({ ...form, items: newItems });
@@ -1308,7 +1388,7 @@ Or reply with "APPROVE" or "REJECT"
     // Handle check-in slip
     if (form.documentType === "Check-in Slip") {
       if (!selectedCustomer) {
-        alert("Please select a customer");
+        showWarning("Please select a customer");
         return;
       }
 
@@ -1358,15 +1438,15 @@ Or reply with "APPROVE" or "REJECT"
           discount: 0,
           discountPercent: 0,
           preGstAmount: 0,
-          cgstAmount: 0,
-          sgstAmount: 0,
-          igstAmount: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
           totalAmount: 0,
           notes: enhancedData.notes || enhancedData.customerFeedback || "",
           batterySerialNumber: enhancedData.batterySerialNumber,
           customNotes: enhancedData.technicalObservation || "",
           noteTemplateId: undefined,
-          status: "draft",
+          status: "DRAFT",
           passedToManager: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1402,11 +1482,23 @@ Or reply with "APPROVE" or "REJECT"
         };
 
         // Save check-in slip as quotation
-        const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
-        updateLocalAppointmentStatus(createdQuotation);
+        if (isEditing && editingId) {
+          const { id, quotationNumber, customer, vehicle, serviceCenter, ...updatableData } = checkInSlipQuotation;
+          await updateQuotationMutation.mutateAsync({ id: editingId, data: updatableData });
 
-        // Store enhanced check-in slip data for display
-        safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
+          // Update stored enhanced check-in slip data
+          safeStorage.setItem(`checkInSlip_${editingId}`, enhancedData);
+
+          showSuccess("Check-in slip updated successfully! You can now send it to the customer via WhatsApp.");
+        } else {
+          const createdQuotation = await createQuotationMutation.mutateAsync(checkInSlipQuotation);
+          updateLocalAppointmentStatus(createdQuotation);
+
+          // Store enhanced check-in slip data for display
+          safeStorage.setItem(`checkInSlip_${createdQuotation.id}`, enhancedData);
+
+          showSuccess("Check-in slip generated successfully! You can now send it to the customer via WhatsApp.");
+        }
 
         setShowCheckInSlipModal(true);
         // Keep form open so user can send via WhatsApp
@@ -1416,11 +1508,9 @@ Or reply with "APPROVE" or "REJECT"
         if (quotationDataFromStorage) {
           safeStorage.removeItem("pendingQuotationFromAppointment");
         }
-
-        alert("Check-in slip generated successfully! You can now send it to the customer via WhatsApp.");
       } catch (error) {
         console.error("Error creating check-in slip:", error);
-        alert("Failed to create check-in slip. Please try again.");
+        showError("Failed to create check-in slip. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -1434,17 +1524,24 @@ Or reply with "APPROVE" or "REJECT"
 
     try {
       setLoading(true);
-      const newQuotation = buildQuotationFromForm();
-      const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
-      updateLocalAppointmentStatus(createdQuotation);
-      setFilter("draft");
-
-      alert("Quotation created successfully!");
+      if (isEditing && editingId) {
+        const updatedQuotation = buildQuotationFromForm();
+        // Remove ID and other non-updatable fields if necessary, but repo.update usually handles it
+        const { id, quotationNumber, customer, vehicle, serviceCenter, ...updatableData } = updatedQuotation;
+        await updateQuotationMutation.mutateAsync({ id: editingId, data: updatableData });
+        showSuccess("Quotation updated successfully!");
+      } else {
+        const newQuotation = buildQuotationFromForm();
+        const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
+        updateLocalAppointmentStatus(createdQuotation);
+        setFilter("DRAFT");
+        showSuccess("Quotation created successfully!");
+      }
       setShowCreateModal(false);
       resetForm();
     } catch (error) {
-      console.error("Error creating quotation:", error);
-      alert("Failed to create quotation. Please try again.");
+      console.error("Error saving quotation:", error);
+      showError("Failed to save quotation. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1460,15 +1557,16 @@ Or reply with "APPROVE" or "REJECT"
       const newQuotation = buildQuotationFromForm();
       const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
       updateLocalAppointmentStatus(createdQuotation);
-      setFilter("sent_to_customer");
+      setFilter("SENT_TO_CUSTOMER");
 
       await sendQuotationToCustomerById(createdQuotation.id, { manageLoading: false });
 
       setShowCreateModal(false);
       resetForm();
+      showSuccess("Quotation created and sent successfully!");
     } catch (error) {
       console.error("Error creating and sending quotation:", error);
-      alert("Failed to create and send quotation. Please try again.");
+      showError("Failed to create and send quotation. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1477,7 +1575,11 @@ Or reply with "APPROVE" or "REJECT"
   // Generate and Send Check-in Slip to Customer
   const handleGenerateAndSendCheckInSlip = async () => {
     if (!selectedCustomer) {
-      alert("Please select a customer");
+      showWarning("Please select a customer");
+      return;
+    }
+
+    if (!validateQuotationForm()) {
       return;
     }
 
@@ -1527,15 +1629,15 @@ Or reply with "APPROVE" or "REJECT"
         discount: 0,
         discountPercent: 0,
         preGstAmount: 0,
-        cgstAmount: 0,
-        sgstAmount: 0,
-        igstAmount: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
         totalAmount: 0,
         notes: enhancedData.notes || enhancedData.customerFeedback || "",
         batterySerialNumber: enhancedData.batterySerialNumber,
         customNotes: enhancedData.technicalObservation || "",
         noteTemplateId: undefined,
-        status: "draft",
+        status: "DRAFT",
         passedToManager: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -1590,7 +1692,7 @@ Or reply with "APPROVE" or "REJECT"
       const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
 
       if (!customerWhatsapp) {
-        alert("Customer WhatsApp number not found. Check-in slip generated but could not send via WhatsApp.");
+        showWarning("Customer WhatsApp number not found. Check-in slip generated but could not send via WhatsApp.");
         setShowCheckInSlipModal(true);
         return;
       }
@@ -1625,12 +1727,12 @@ Please keep this slip safe for vehicle collection.`;
       // Open WhatsApp
       window.open(whatsappUrl, "_blank");
 
-      alert("Check-in slip generated and sent to customer via WhatsApp!");
+      showSuccess("Check-in slip generated and sent to customer via WhatsApp!");
       setShowCreateModal(false);
       resetForm();
     } catch (error) {
       console.error("Error generating and sending check-in slip:", error);
-      alert("Failed to generate and send check-in slip. Please try again.");
+      showError("Failed to generate and send check-in slip. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1639,7 +1741,7 @@ Please keep this slip safe for vehicle collection.`;
   // Send Check-in Slip to Customer via WhatsApp
   const handleSendCheckInSlipToCustomer = async () => {
     if (!checkInSlipData || !selectedCustomer) {
-      alert("Please generate a check-in slip first");
+      showWarning("Please generate a check-in slip first");
       return;
     }
 
@@ -1654,7 +1756,7 @@ Please keep this slip safe for vehicle collection.`;
       const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
 
       if (!customerWhatsapp) {
-        alert("Customer WhatsApp number not found");
+        showError("Customer WhatsApp number not found");
         return;
       }
 
@@ -1687,132 +1789,84 @@ Please keep this slip safe for vehicle collection.`;
 
       // Open WhatsApp
       window.open(whatsappUrl, "_blank");
-      alert("Check-in slip details sent to customer via WhatsApp!");
+      showSuccess("Check-in slip details sent to customer via WhatsApp!");
     } catch (error) {
       console.error("Error sending check-in slip:", error);
-      alert("Failed to send check-in slip via WhatsApp. Please try again.");
+      showError("Failed to send check-in slip via WhatsApp. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  // Delete Quotation
+  const handleDeleteQuotation = async (id: string) => {
+    openConfirm(
+      "Delete Quotation",
+      "Are you sure you want to delete this quotation? This action cannot be undone.",
+      async () => {
+        try {
+          setLoading(true);
+          await deleteQuotationMutation.mutateAsync(id);
+          showSuccess("Quotation deleted successfully!");
+        } catch (error) {
+          console.error("Error deleting quotation:", error);
+          showError("Failed to delete quotation.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      "danger"
+    );
+  };
+
+  // Edit Quotation
+  const handleEdit = (quotation: Quotation) => {
+    setForm({
+      customerId: quotation.customerId,
+      vehicleId: quotation.vehicleId || "",
+      documentType: quotation.documentType,
+      quotationNumber: quotation.quotationNumber,
+      quotationDate: quotation.quotationDate.split("T")[0],
+      validUntilDays: 30, // Default or calculate
+      hasInsurance: quotation.hasInsurance,
+      insurerId: quotation.insurerId || "",
+      insuranceCompanyName: quotation.insurer?.name || "",
+      insuranceStartDate: quotation.insuranceStartDate || "",
+      insuranceEndDate: quotation.insuranceEndDate || "",
+      items: quotation.items.map(item => ({ ...item })),
+      discount: quotation.discount,
+      notes: quotation.notes || "",
+      batterySerialNumber: quotation.batterySerialNumber || "",
+      customNotes: quotation.customNotes || "",
+      noteTemplateId: quotation.noteTemplateId || "",
+      vehicleLocation: quotation.vehicleLocation,
+      appointmentId: quotation.appointmentId || "",
+      jobCardId: quotation.jobCardId || "",
+    });
+
+    if (quotation.documentType === "Check-in Slip") {
+      const storedData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null);
+      if (storedData) {
+        setCheckInSlipFormData(storedData);
+      } else {
+        setCheckInSlipFormData({
+          notes: quotation.notes,
+          batterySerialNumber: quotation.batterySerialNumber,
+          technicalObservation: quotation.customNotes,
+        } as any);
+      }
+    }
+
+    setSelectedCustomer(quotation.customer as any);
+    setIsEditing(true);
+    setEditingId(quotation.id);
+    setShowCreateModal(true);
+  };
+
   // Send to Customer via WhatsApp
   const handleSendToCustomer = async (quotationId: string) => {
-    const quotation = quotations.find((q) => q.id === quotationId);
-    if (!quotation) return;
-
-    try {
-      setLoading(true);
-
-      // Update quotation status
-      const updateData = {
-        status: "sent_to_customer" as const,
-        sentToCustomer: true,
-        sentToCustomerAt: new Date().toISOString(),
-        whatsappSent: true,
-        whatsappSentAt: new Date().toISOString(),
-      };
-      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
-
-      // Update local reference for lead creation
-      const updatedQuotationForLead = { ...quotation, ...updateData };
-
-
-      // Create or update lead when quotation is sent to customer
-      createOrUpdateLeadFromQuotation(quotation);
-
-      // Get service center and advisor details
-      const serviceCenterData: any = quotation.serviceCenter || {
-        name: "42 EV Tech & Services",
-        address: "123 Main Street, Industrial Area",
-        city: "Pune",
-        state: "Maharashtra",
-        pincode: "411001",
-        phone: "+91-20-12345678",
-        gstNumber: (quotation.serviceCenter as any)?.gstNumber || "",
-        panNumber: (quotation.serviceCenter as any)?.panNumber || "",
-      };
-
-      const serviceAdvisor = {
-        name: userInfo?.name || "Service Advisor",
-        phone: (userInfo as any)?.phone || "+91-9876543210",
-      };
-
-      // Validate WhatsApp number
-      const rawWhatsapp =
-        (quotation.customer as any)?.whatsappNumber ||
-        quotation.customer?.phone ||
-        "";
-      const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
-
-      if (!validateWhatsAppNumber(customerWhatsapp)) {
-        alert("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
-        setLoading(false);
-        return;
-      }
-
-      // Generate quotation HTML
-      const quotationHTML = generateQuotationHTML(quotation, serviceCenterData, serviceAdvisor);
-
-      // Print quotation
-      const printQuotation = () => {
-        try {
-          const printWindow = window.open("", "_blank");
-          if (!printWindow) {
-            alert("Please allow popups to generate PDF. The quotation details will be shown in the message.");
-            return false;
-          }
-
-          printWindow.document.write(quotationHTML);
-          printWindow.document.close();
-
-          // Wait for content to load, then trigger print
-          setTimeout(() => {
-            try {
-              printWindow.focus();
-              printWindow.print();
-              // Close window after a delay
-              setTimeout(() => {
-                if (!printWindow.closed) {
-                  printWindow.close();
-                }
-              }, 2000);
-            } catch (printError) {
-              console.error("Print error:", printError);
-              // Keep window open if print fails
-            }
-          }, 500);
-          return true;
-        } catch (error) {
-          console.error("Error opening print window:", error);
-          alert("Could not open print dialog. The quotation will still be sent via WhatsApp.");
-          return false;
-        }
-      };
-
-      // Generate PDF
-      printQuotation();
-
-      // Format WhatsApp message
-      const message = formatWhatsAppMessage(quotation, serviceCenterData);
-      const whatsappUrl = `https://wa.me/${customerWhatsapp}?text=${encodeURIComponent(message)}`;
-
-      // Open WhatsApp with delay to allow PDF generation
-      setTimeout(() => {
-        try {
-          window.open(whatsappUrl, "_blank");
-          alert("Quotation PDF generated and sent to customer via WhatsApp!\n\nCustomer can approve or reject via the links provided.");
-        } catch (error) {
-          console.error("Error opening WhatsApp:", error);
-          alert("Could not open WhatsApp. Please copy this link manually:\n\n" + whatsappUrl);
-        }
-      }, 1500);
-    } catch (error) {
-      console.error("Error sending quotation:", error);
-      alert("Failed to send quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    // Unify with the existing robust implementation
+    return sendQuotationToCustomerById(quotationId);
   };
 
   // Convert Quotation to Job Card
@@ -1836,7 +1890,7 @@ Please keep this slip safe for vehicle collection.`;
       serviceCenterId: quotation.serviceCenterId || resolvedServiceCenterId,
       serviceCenterCode,
       customerId: quotation.customerId,
-      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
       vehicleId: quotation.vehicleId,
       vehicle: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "Unknown",
       registration: quotation.vehicle?.registration || "",
@@ -1844,8 +1898,8 @@ Please keep this slip safe for vehicle collection.`;
       vehicleModel: quotation.vehicle?.model,
       serviceType: quotation.items?.[0]?.partName || "Service",
       description: quotation.notes || quotation.customNotes || "Service as per quotation",
-      status: "Created" as const,
-      priority: "Normal" as const,
+      status: "CREATED" as const,
+      priority: "NORMAL" as const,
       assignedEngineer: null,
       estimatedCost: `₹${quotation.totalAmount.toLocaleString("en-IN")}`,
       estimatedTime: "To be determined",
@@ -1854,7 +1908,7 @@ Please keep this slip safe for vehicle collection.`;
       location: "STATION" as const,
       quotationId: quotation.id,
       hasInsurance: quotation.hasInsurance,
-      insurerName: quotation.insurer?.name,
+      insurerName: (quotation as any).insurer?.name,
     };
 
     // Save job card via API
@@ -1877,7 +1931,7 @@ Please keep this slip safe for vehicle collection.`;
 
     const leadData: any = {
       customerId: quotation.customerId,
-      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
       phone: quotation.customer?.phone || "",
       email: quotation.customer?.email,
       vehicleDetails: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "",
@@ -1947,7 +2001,7 @@ Please keep this slip safe for vehicle collection.`;
       const newLead: any = {
         id: `lead-${Date.now()}`,
         customerId: quotation.customerId,
-        customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+        customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
         phone: quotation.customer?.phone || "",
         email: quotation.customer?.email,
         vehicleDetails: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "",
@@ -1981,7 +2035,7 @@ Please keep this slip safe for vehicle collection.`;
     const newLead: any = {
       id: `lead-${Date.now()}`,
       customerId: quotation.customerId,
-      customerName: quotation.customer?.firstName + " " + (quotation.customer?.lastName || "") || "Customer",
+      customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
       phone: quotation.customer?.phone || "",
       email: quotation.customer?.email,
       vehicleDetails: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "",
@@ -2009,190 +2063,240 @@ Please keep this slip safe for vehicle collection.`;
 
   // Customer Approval
   const handleCustomerApproval = async (quotationId: string) => {
-    if (!confirm("Customer has approved this quotation. Convert to job card and notify advisor?")) {
-      return;
-    }
+    openConfirm(
+      "Confirm Approval",
+      "Customer has approved this quotation. Convert to job card and notify advisor?",
+      async () => {
+        try {
+          setLoading(true);
+          const quotation = quotations.find((q) => q.id === quotationId);
+          if (!quotation) {
+            showError("Quotation not found!");
+            return;
+          }
 
-    try {
-      setLoading(true);
+          // Update quotation status
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "CUSTOMER_APPROVED" as const,
+              customerApproved: true,
+              customerApprovedAt: new Date().toISOString(),
+            }
+          });
 
-      const quotation = quotations.find((q) => q.id === quotationId);
-      if (!quotation) {
-        alert("Quotation not found!");
-        return;
-      }
+          // Create job card
+          const jobCard = await convertQuotationToJobCard(quotation);
 
-      // Update quotation status
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "customer_approved" as const,
-          customerApproved: true,
-          customerApprovedAt: new Date().toISOString(),
+          // Update lead status
+          updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
+
+          showSuccess(`Customer Approved! Quotation ${quotation.quotationNumber} has been approved and Job Card ${jobCard.jobCardNumber} created.`);
+        } catch (error) {
+          console.error("Error approving quotation:", error);
+          showError("Failed to approve quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
-
-
-      // Create job card (we skip looking for temp job card in local storage as we migrated)
-      const jobCard = await convertQuotationToJobCard(quotation);
-
-      // Update lead status to job_card_in_progress or converted
-      updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
-
-      // Show notification to advisor
-      alert(`✅ Customer Approved!\n\nQuotation ${quotation.quotationNumber} has been approved by the customer.\n\nJob Card: ${jobCard.jobCardNumber}\n\nJob card has been automatically sent to Service Manager for technician assignment and parts monitoring.`);
-
-      // In production, you would send a notification/email to the advisor and manager here
-      console.log("Notification to advisor:", {
-        advisorId: quotation.serviceAdvisorId,
-        message: `Quotation ${quotation.quotationNumber} approved by customer. Job Card ${jobCard.jobCardNumber} created and sent to manager.`,
-        quotationId: quotation.id,
-        jobCardId: jobCard.id,
-      });
-
-      console.log("Notification to manager:", {
-        message: `New job card ${jobCard.jobCardNumber} requires technician assignment and parts monitoring.`,
-        jobCardId: jobCard.id,
-        jobCardNumber: jobCard.jobCardNumber,
-      });
-
-    } catch (error) {
-      console.error("Error approving quotation:", error);
-      alert("Failed to approve quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      },
+      "success"
+    );
   };
 
   // Customer Rejection
   const handleCustomerRejection = async (quotationId: string) => {
-    if (!confirm("Customer has rejected this quotation. Add to leads for follow-up?")) {
-      return;
-    }
+    openConfirm(
+      "Confirm Rejection",
+      "Customer has rejected this quotation. Add to leads for follow-up?",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          const quotation = quotations.find((q) => q.id === quotationId);
+          if (!quotation) {
+            showError("Quotation not found!");
+            return;
+          }
 
-      const quotation = quotations.find((q) => q.id === quotationId);
-      if (!quotation) {
-        alert("Quotation not found!");
-        return;
-      }
+          // Update quotation status
+          const updateData = {
+            status: "CUSTOMER_REJECTED" as const,
+            customerRejected: true,
+            customerRejectedAt: new Date().toISOString(),
+          };
+          await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
 
-      // Update quotation status
-      const updateData = {
-        status: "customer_rejected" as const,
-        customerRejected: true,
-        customerRejectedAt: new Date().toISOString(),
-      };
-      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
+          const updatedQuotation = { ...quotation, ...updateData };
 
-      const updatedQuotation = { ...quotation, ...updateData };
+          // Add to leads for follow-up
+          const lead = addRejectedQuotationToLeads(updatedQuotation);
 
-      // Add to leads for follow-up
-      const lead = addRejectedQuotationToLeads(updatedQuotation);
+          // Show notification to advisor
+          showWarning(`Customer Rejected Quotation ${quotation.quotationNumber}. Added to Leads for follow-up.`);
 
-      // Show notification to advisor
-      alert(`⚠️ Customer Rejected Quotation\n\nQuotation ${quotation.quotationNumber} has been rejected by the customer.\n\nAdded to Leads for follow-up.\n\nLead ID: ${lead.id}\n\nPlease follow up with the customer to understand their concerns.`);
-
-      // In production, you would send a notification/email to the advisor here
-      console.log("Notification to advisor:", {
-        advisorId: quotation.serviceAdvisorId,
-        message: `Quotation ${quotation.quotationNumber} rejected by customer. Added to leads for follow-up.`,
-        quotationId: quotation.id,
-        leadId: lead.id,
-      });
-
-      alert("Quotation marked as customer rejected.");
-    } catch (error) {
-      console.error("Error rejecting quotation:", error);
-      alert("Failed to reject quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+          showInfo("Quotation marked as customer rejected.");
+        } catch (error) {
+          console.error("Error rejecting quotation:", error);
+          showError("Failed to reject quotation. Please try again.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      "info"
+    );
   };
 
   // Send to Manager
   const handleSendToManager = async (quotationId: string) => {
-    if (!confirm("Send this quotation to manager for approval?")) {
-      return;
-    }
+    openConfirm(
+      "Send to Manager",
+      "Send this quotation to manager for approval?",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "SENT_TO_MANAGER" as const,
+              sentToManager: true,
+              sentToManagerAt: new Date().toISOString(),
+            }
+          });
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "sent_to_manager" as const,
-          sentToManager: true,
-          sentToManagerAt: new Date().toISOString(),
+          showSuccess("Quotation sent to manager!");
+        } catch (error) {
+          console.error("Error sending to manager:", error);
+          showError("Failed to send quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
-
-      alert("Quotation sent to manager!");
-    } catch (error) {
-      console.error("Error sending to manager:", error);
-      alert("Failed to send quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      },
+      "info"
+    );
   };
 
   // Manager Approval
   const handleManagerApproval = async (quotationId: string) => {
-    if (!confirm("Approve this quotation? This will allow job card creation.")) {
-      return;
-    }
+    openConfirm(
+      "Approve Quotation",
+      "Approve this quotation? This will allow job card creation.",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "MANAGER_APPROVED" as const,
+              managerApproved: true,
+              managerApprovedAt: new Date().toISOString(),
+              managerId: userInfo?.id || "",
+            }
+          });
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "manager_approved" as const,
-          managerApproved: true,
-          managerApprovedAt: new Date().toISOString(),
-          managerId: userInfo?.id || "",
+          showSuccess("Quotation approved by manager!");
+        } catch (error) {
+          console.error("Error approving quotation:", error);
+          showError("Failed to approve quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
-
-      alert("Quotation approved by manager!");
-    } catch (error) {
-      console.error("Error approving quotation:", error);
-      alert("Failed to approve quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      },
+      "success"
+    );
   };
 
   // Manager Rejection
   const handleManagerRejection = async (quotationId: string) => {
-    if (!confirm("Reject this quotation?")) {
-      return;
-    }
+    openConfirm(
+      "Reject Quotation",
+      "Reject this quotation?",
+      async () => {
+        try {
+          setLoading(true);
 
-    try {
-      setLoading(true);
+          await updateQuotationMutation.mutateAsync({
+            id: quotationId,
+            data: {
+              status: "MANAGER_REJECTED" as const,
+              managerRejected: true,
+              managerRejectedAt: new Date().toISOString(),
+              managerId: userInfo?.id || "",
+            }
+          });
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: {
-          status: "manager_rejected" as const,
-          managerRejected: true,
-          managerRejectedAt: new Date().toISOString(),
-          managerId: userInfo?.id || "",
+          showInfo("Quotation rejected by manager.");
+        } catch (error) {
+          console.error("Error rejecting quotation:", error);
+          showError("Failed to reject quotation. Please try again.");
+        } finally {
+          setLoading(false);
         }
-      });
+      },
+      "danger"
+    );
+  };
 
-      alert("Quotation rejected by manager.");
-    } catch (error) {
-      console.error("Error rejecting quotation:", error);
-      alert("Failed to reject quotation. Please try again.");
-    } finally {
-      setLoading(false);
+  // Open Quotation/Check-in Slip for Viewing
+  const handleOpenQuotation = (quotation: Quotation) => {
+    if (quotation.documentType === "Check-in Slip") {
+      // Load check-in slip data and display
+      const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
+
+      if (storedCheckInSlipData) {
+        setCheckInSlipData(storedCheckInSlipData);
+        // Find and set customer for WhatsApp sending
+        const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
+        const customer = customers.find(c => c.id?.toString() === quotation.customerId);
+        if (customer) {
+          setSelectedCustomer(customer);
+        }
+        setShowCheckInSlipModal(true);
+      } else {
+        // Fallback: reconstruct from quotation data
+        const reconstructedData: EnhancedCheckInSlipData = {
+          slipNumber: quotation.quotationNumber,
+          customerName: `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim(),
+          phone: quotation.customer?.phone || "",
+          email: quotation.customer?.email,
+          vehicleMake: quotation.vehicle?.make || "",
+          vehicleModel: quotation.vehicle?.model || "",
+          registrationNumber: quotation.vehicle?.registration || "",
+          vin: quotation.vehicle?.vin,
+          checkInDate: quotation.quotationDate,
+          checkInTime: new Date().toTimeString().slice(0, 5),
+          serviceCenterName: quotation.serviceCenter?.name || "",
+          serviceCenterAddress: quotation.serviceCenter?.address || "",
+          serviceCenterCity: quotation.serviceCenter?.city || "",
+          serviceCenterState: quotation.serviceCenter?.state || "",
+          serviceCenterPincode: quotation.serviceCenter?.pincode || "",
+          serviceCenterPhone: quotation.serviceCenter?.phone,
+          notes: quotation.notes,
+        };
+        setCheckInSlipData(reconstructedData);
+        const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
+        const customer = customers.find(c => c.id?.toString() === quotation.customerId);
+        if (customer) {
+          setSelectedCustomer(customer);
+        }
+        setShowCheckInSlipModal(true);
+      }
+    } else {
+      setSelectedQuotation(quotation);
+      setShowViewModal(true);
     }
+  };
+
+  const getCustomerDisplayName = (customer: Quotation["customer"]) => {
+    if (!customer) return null;
+    const name = (
+      customer.name ||
+      `${customer.firstName || ""} ${customer.lastName || ""}`.trim()
+    ).replace(/\s+/g, " ");
+
+    if (!name || name === customer.phone) return null;
+    return name;
   };
 
   // Reset form
@@ -2200,6 +2304,7 @@ Please keep this slip safe for vehicle collection.`;
     setForm({
       customerId: "",
       vehicleId: "",
+      quotationNumber: "",
       documentType: "Quotation",
       quotationDate: new Date().toISOString().split("T")[0],
       validUntilDays: 30,
@@ -2214,12 +2319,16 @@ Please keep this slip safe for vehicle collection.`;
       batterySerialNumber: "",
       customNotes: "",
       noteTemplateId: "",
+      appointmentId: "",
+      jobCardId: "",
     });
-    setCheckInSlipFormData({});
+    setCheckInSlipFormData({} as CheckInSlipFormData);
     setSelectedCustomer(null);
     setActiveCustomerId("");
     setCustomerSearchQuery("");
     clearCustomerSearch();
+    setIsEditing(false);
+    setEditingId(null);
   }, [clearCustomerSearch]);
 
   // Filtered quotations
@@ -2239,194 +2348,186 @@ Please keep this slip safe for vehicle collection.`;
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "draft":
-        return "bg-gray-100 text-gray-700 border-gray-300";
-      case "sent_to_customer":
-        return "bg-blue-100 text-blue-700 border-blue-300";
-      case "customer_approved":
-        return "bg-green-100 text-green-700 border-green-300";
-      case "customer_rejected":
-        return "bg-red-100 text-red-700 border-red-300";
-      case "sent_to_manager":
-        return "bg-purple-100 text-purple-700 border-purple-300";
-      case "manager_approved":
-        return "bg-green-100 text-green-700 border-green-300";
-      case "manager_rejected":
-        return "bg-red-100 text-red-700 border-red-300";
+      case "DRAFT":
+        return "bg-slate-50 text-slate-600 border-slate-200";
+      case "SENT_TO_CUSTOMER":
+        return "bg-sky-50 text-sky-700 border-sky-100";
+      case "CUSTOMER_APPROVED":
+        return "bg-emerald-50 text-emerald-700 border-emerald-100";
+      case "CUSTOMER_REJECTED":
+        return "bg-rose-50 text-rose-700 border-rose-100";
+      case "SENT_TO_MANAGER":
+        return "bg-violet-50 text-violet-700 border-violet-100";
+      case "MANAGER_APPROVED":
+        return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      case "MANAGER_REJECTED":
+        return "bg-rose-100 text-rose-800 border-rose-200";
       default:
-        return "bg-gray-100 text-gray-700 border-gray-300";
+        return "bg-slate-100 text-slate-700 border-slate-200";
     }
   };
 
   return (
-    <div className="bg-[#f9f9fb] min-h-screen">
-      <div className="pt-6 pb-10">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-blue-600 mb-2">Quotations</h1>
-            <p className="text-gray-500">Create and manage service quotations</p>
+    <div className="bg-slate-50 min-h-screen">
+      <div className="max-w-[1600px] mx-auto pt-8 pb-12 px-4 sm:px-6 lg:px-8">
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-10 gap-6">
+          <div className="space-y-1">
+            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">
+              Service <span className="text-blue-600">Quotations</span>
+            </h1>
+            <p className="text-lg text-slate-500 font-medium">
+              Oversee, generate, and track all service center quotations in one place.
+            </p>
           </div>
           <button
             onClick={() => {
               resetForm();
               setShowCreateModal(true);
             }}
-            className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition shadow-md inline-flex items-center gap-2"
+            className="group bg-blue-600 text-white px-8 py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-all duration-200 shadow-lg shadow-blue-200 flex items-center justify-center gap-2.5 active:scale-95"
           >
-            <PlusCircle size={20} />
-            Create Quotation
+            <PlusCircle size={22} className="group-hover:rotate-90 transition-transform duration-300" />
+            <span>Create New Quotation</span>
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-4 items-center">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        {/* Search and Filters Card */}
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/60 p-5 mb-8">
+          <div className="flex flex-col xl:flex-row gap-5">
+            <div className="flex-1 relative group">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
               <input
                 type="text"
-                placeholder="Search by quotation number, customer, or vehicle..."
+                placeholder="Find by number, customer, or registration..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 focus:outline-none transition-all placeholder:text-slate-400 font-medium"
               />
             </div>
-            <div className="flex gap-2">
-              {(["all", "draft", "sent_to_customer", "customer_approved", "customer_rejected", "sent_to_manager", "manager_approved", "manager_rejected"] as QuotationFilterType[]).map((f) => (
+            <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-50 rounded-2xl border border-slate-200">
+              {(["all", "DRAFT", "SENT_TO_CUSTOMER", "CUSTOMER_APPROVED", "CUSTOMER_REJECTED", "SENT_TO_MANAGER", "MANAGER_APPROVED", "MANAGER_REJECTED"] as QuotationFilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${filter === f
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${filter === f
+                    ? "bg-white text-blue-600 shadow-sm border border-blue-100"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                     }`}
                 >
                   {f === "all"
-                    ? "All"
-                    : f.charAt(0).toUpperCase() + f.slice(1).replace(/_/g, " ")}
+                    ? "All Statuses"
+                    : f.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ")}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Quotations List */}
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+        {/* Quotations Content Section */}
+        <div className="bg-white rounded-3xl shadow-lg shadow-slate-200/50 border border-slate-200 overflow-hidden">
           {loading ? (
-            <div className="p-12 text-center">
-              <Loader2 className="animate-spin mx-auto mb-4 text-blue-600" size={32} />
-              <p className="text-gray-600">Loading quotations...</p>
+            <div className="p-24 text-center">
+              <div className="relative inline-block">
+                <div className="absolute inset-0 bg-blue-100 rounded-full animate-ping opacity-25"></div>
+                <Loader2 className="animate-spin mb-6 text-blue-600 relative z-10" size={48} />
+              </div>
+              <p className="text-xl font-bold text-slate-800">Refreshing records...</p>
+              <p className="text-slate-500 mt-2">Just a moment while we fetch the latest data.</p>
             </div>
           ) : filteredQuotations.length === 0 ? (
-            <div className="p-12 text-center">
-              <FileText className="mx-auto mb-4 text-gray-400" size={48} />
-              <p className="text-gray-600">No quotations found</p>
+            <div className="p-24 text-center bg-slate-50/50">
+              <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <FileText className="text-slate-400" size={40} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-800">No records found</h3>
+              <p className="text-slate-500 mt-2 max-w-sm mx-auto">Try adjusting your filters or search query to find what you're looking for.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quotation #</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Document Details</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Customer</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Vehicle</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Creation Date</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Total Valuation</th>
+                    <th className="px-8 py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-widest">Current Status</th>
+                    <th className="px-8 py-5 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-slate-100">
                   {filteredQuotations.map((quotation) => (
-                    <tr key={quotation.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{quotation.quotationNumber}</div>
-                        <div className="text-xs text-gray-500">{quotation.documentType}</div>
+                    <tr
+                      key={quotation.id}
+                      onClick={() => handleOpenQuotation(quotation)}
+                      className="hover:bg-blue-50/30 transition-colors group cursor-pointer"
+                    >
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{quotation.quotationNumber}</div>
+                        <div className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{quotation.documentType}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {quotation.customer?.firstName} {quotation.customer?.lastName}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 font-bold border border-slate-200">
+                            {quotation.customer?.firstName?.[0] || 'C'}
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold text-slate-800">
+                              {getCustomerDisplayName(quotation.customer) || "Customer"}
+                            </div>
+                            <div className="text-xs font-medium text-slate-500 mt-0.5">{quotation.customer?.phone}</div>
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500">{quotation.customer?.phone}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "N/A"}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <div className="text-sm font-bold text-slate-800">
+                            {quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "Not Specified"}
+                          </div>
+                          <div className="text-xs font-semibold text-blue-600 mt-1 bg-blue-50 w-fit px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-wider">
+                            {quotation.vehicle?.registration || "N/A"}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500">{quotation.vehicle?.registration}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(quotation.quotationDate).toLocaleDateString()}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                          <Clock size={14} className="text-slate-400" />
+                          {new Date(quotation.quotationDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-8 py-6 whitespace-nowrap">
                         {quotation.documentType === "Check-in Slip" ? (
-                          <div className="text-sm text-gray-500">N/A</div>
+                          <div className="text-sm font-medium text-slate-400 italic">No Valuation</div>
                         ) : (
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-sm font-extrabold text-slate-900 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 w-fit shadow-sm">
                             ₹{quotation.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full border ${quotation.documentType === "Check-in Slip" ? "bg-indigo-100 text-indigo-700 border-indigo-300" : getStatusColor(quotation.status)}`}>
-                          {quotation.documentType === "Check-in Slip" ? "Check-in Slip" : quotation.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                      <td className="px-8 py-6 whitespace-nowrap">
+                        <span className={`px-4 py-1.5 text-xs font-extrabold rounded-full border-2 uppercase tracking-widest ${quotation.documentType === "Check-in Slip" ? "bg-indigo-50 text-indigo-700 border-indigo-100" : getStatusColor(quotation.status)} shadow-sm`}>
+                          {quotation.documentType === "Check-in Slip" ? "Entry Registered" : quotation.status.replace(/_/g, " ")}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex gap-2">
+                      <td className="px-8 py-6 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-3">
                           {quotation.documentType === "Check-in Slip" ? (
                             <>
                               <button
-                                onClick={() => {
-                                  // Load check-in slip data and display
-                                  const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
-                                  if (storedCheckInSlipData) {
-                                    setCheckInSlipData(storedCheckInSlipData);
-                                    // Find and set customer for WhatsApp sending
-                                    const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
-                                    const customer = customers.find(c => c.id?.toString() === quotation.customerId);
-                                    if (customer) {
-                                      setSelectedCustomer(customer);
-                                    }
-                                    setShowCheckInSlipModal(true);
-                                  } else {
-                                    // Fallback: reconstruct from quotation data
-                                    const reconstructedData: EnhancedCheckInSlipData = {
-                                      slipNumber: quotation.quotationNumber,
-                                      customerName: `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim(),
-                                      phone: quotation.customer?.phone || "",
-                                      email: quotation.customer?.email,
-                                      vehicleMake: quotation.vehicle?.make || "",
-                                      vehicleModel: quotation.vehicle?.model || "",
-                                      registrationNumber: quotation.vehicle?.registration || "",
-                                      vin: quotation.vehicle?.vin,
-                                      checkInDate: quotation.quotationDate,
-                                      checkInTime: new Date().toTimeString().slice(0, 5),
-                                      serviceCenterName: quotation.serviceCenter?.name || "",
-                                      serviceCenterAddress: quotation.serviceCenter?.address || "",
-                                      serviceCenterCity: quotation.serviceCenter?.city || "",
-                                      serviceCenterState: quotation.serviceCenter?.state || "",
-                                      serviceCenterPincode: quotation.serviceCenter?.pincode || "",
-                                      serviceCenterPhone: quotation.serviceCenter?.phone,
-                                      notes: quotation.notes,
-                                    };
-                                    setCheckInSlipData(reconstructedData);
-                                    const customers = safeStorage.getItem<CustomerWithVehicles[]>("customers", []);
-                                    const customer = customers.find(c => c.id?.toString() === quotation.customerId);
-                                    if (customer) {
-                                      setSelectedCustomer(customer);
-                                    }
-                                    setShowCheckInSlipModal(true);
-                                  }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenQuotation(quotation);
                                 }}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
                                 title="View Check-in Slip"
                               >
                                 <Eye size={18} />
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   // Load check-in slip data and send
                                   const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
                                   if (storedCheckInSlipData) {
@@ -2438,48 +2539,94 @@ Please keep this slip safe for vehicle collection.`;
                                       setSelectedCustomer(customer);
                                       handleSendCheckInSlipToCustomer();
                                     } else {
-                                      alert("Customer not found");
+                                      showError("Customer not found");
                                     }
                                   } else {
-                                    alert("Check-in slip data not found");
+                                    showError("Check-in slip data not found");
                                   }
                                 }}
-                                className="text-green-600 hover:text-green-900"
-                                title="Send to Customer via WhatsApp"
+                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Send via WhatsApp"
                               >
                                 <MessageCircle size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(quotation);
+                                }}
+                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Edit Check-in Slip"
+                              >
+                                <Edit size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteQuotation(quotation.id);
+                                }}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Delete Check-in Slip"
+                              >
+                                <Trash2 size={18} />
                               </button>
                             </>
                           ) : (
                             <>
                               <button
-                                onClick={() => {
-                                  setSelectedQuotation(quotation);
-                                  setShowViewModal(true);
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenQuotation(quotation);
                                 }}
-                                className="text-blue-600 hover:text-blue-900"
-                                title="View"
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Detailed View"
                               >
                                 <Eye size={18} />
                               </button>
-                              {isServiceAdvisor && quotation.status === "draft" && (
+                              {isServiceAdvisor && quotation.status === "DRAFT" && (
                                 <button
-                                  onClick={() => handleSendToCustomer(quotation.id)}
-                                  className="text-green-600 hover:text-green-900"
-                                  title="Send to Customer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendToCustomer(quotation.id);
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                  title="Send to Client"
                                 >
                                   <MessageCircle size={18} />
                                 </button>
                               )}
-                              {isServiceAdvisor && quotation.status === "customer_approved" && (
+                              {isServiceAdvisor && quotation.status === "CUSTOMER_APPROVED" && (
                                 <button
-                                  onClick={() => handleSendToManager(quotation.id)}
-                                  className="text-purple-600 hover:text-purple-900"
-                                  title="Send to Manager"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendToManager(quotation.id);
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                  title="Submit to Manager"
                                 >
                                   <ArrowRight size={18} />
                                 </button>
                               )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(quotation);
+                                }}
+                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Edit Quotation"
+                              >
+                                <Edit size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteQuotation(quotation.id);
+                                }}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
+                                title="Delete Quotation"
+                              >
+                                <Trash2 size={18} />
+                              </button>
                             </>
                           )}
                         </div>
@@ -2524,6 +2671,7 @@ Please keep this slip safe for vehicle collection.`;
             resetForm();
           }}
           loading={loading}
+          isEditing={isEditing}
         />
       )}
 
@@ -2560,6 +2708,15 @@ Please keep this slip safe for vehicle collection.`;
           onManagerRejection={handleManagerRejection}
         />
       )}
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type={confirmModal.type}
+      />
     </div>
   );
 }

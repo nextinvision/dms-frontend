@@ -4,22 +4,21 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FileText, CheckCircle, Clock, XCircle, Package, TrendingUp } from "lucide-react";
-import { partsOrderService, type PartsOrder } from "@/features/inventory/services/partsOrder.service";
+import { inventoryPurchaseOrderService, type InventoryPurchaseOrder } from "@/features/inventory/services/inventoryPurchaseOrder.service";
 
 export default function PartsOrderViewPage() {
-  const [orders, setOrders] = useState<PartsOrder[]>([]);
+  const [orders, setOrders] = useState<InventoryPurchaseOrder[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-
     fetchOrders();
   }, []);
 
   const fetchOrders = async () => {
     try {
       setIsLoading(true);
-      const data = await partsOrderService.getAll();
+      const data = await inventoryPurchaseOrderService.getAll();
       setOrders(data);
     } catch (error) {
       console.error("Failed to fetch orders:", error);
@@ -30,18 +29,23 @@ export default function PartsOrderViewPage() {
 
   const filteredOrders = statusFilter === "all"
     ? orders
-    : orders.filter((o) => o.status === statusFilter);
+    : orders.filter((o) => o.status.toLowerCase() === statusFilter.toLowerCase());
 
   const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Badge variant="warning">Pending</Badge>;
+    const statusLower = status.toLowerCase();
+    switch (statusLower) {
+      case "draft":
+        return <Badge variant="default" className="bg-gray-500 text-white">Draft</Badge>;
+      case "pending_approval":
+        return <Badge variant="warning">Pending Approval</Badge>;
       case "approved":
         return <Badge variant="success">Approved</Badge>;
-      case "received":
-        return <Badge variant="info">Received</Badge>;
-      case "rejected":
-        return <Badge variant="danger">Rejected</Badge>;
+      case "issued":
+        return <Badge variant="info">Issued</Badge>;
+      case "completed":
+        return <Badge variant="success">Completed</Badge>;
+      case "cancelled":
+        return <Badge variant="danger">Cancelled</Badge>;
       default:
         return <Badge>{status}</Badge>;
     }
@@ -60,7 +64,7 @@ export default function PartsOrderViewPage() {
     }
   };
 
-  const getHighestUrgency = (order: PartsOrder): "low" | "medium" | "high" => {
+  const getHighestUrgency = (order: InventoryPurchaseOrder): "low" | "medium" | "high" => {
     if (order.items.length === 0) return "low";
     const urgencies = order.items.map(item => item.urgency);
     if (urgencies.includes("high")) return "high";
@@ -82,10 +86,12 @@ export default function PartsOrderViewPage() {
             className="px-4 py-2 border border-gray-300 rounded-lg bg-white"
           >
             <option value="all">All Status</option>
-            <option value="pending">Pending</option>
+            <option value="draft">Draft</option>
+            <option value="pending_approval">Pending Approval</option>
             <option value="approved">Approved</option>
-            <option value="received">Received</option>
-            <option value="rejected">Rejected</option>
+            <option value="issued">Issued</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
           </select>
         </div>
 
@@ -103,7 +109,7 @@ export default function PartsOrderViewPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <Package className="text-indigo-600" size={20} />
-                        <h3 className="text-lg font-semibold text-gray-900">{order.orderNumber}</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">{order.poNumber}</h3>
                       </div>
                       <p className="text-sm text-gray-600">
                         {order.items.length} {order.items.length === 1 ? 'part' : 'parts'}

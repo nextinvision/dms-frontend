@@ -271,7 +271,7 @@ export function ViewQuotationModal({
                             <div>
                                 <p className="text-sm font-semibold text-gray-700 mb-1">Customer Name</p>
                                 <p className="text-gray-900">
-                                    {quotation.customer?.firstName || ""} {quotation.customer?.lastName || ""}
+                                    {quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim() || "N/A"}
                                 </p>
                             </div>
                             <div>
@@ -287,7 +287,7 @@ export function ViewQuotationModal({
                                     <div>
                                         <p className="text-sm font-semibold text-gray-700 mb-1">Brand and Model</p>
                                         <p className="text-gray-900">
-                                            {quotation.vehicle.make || "N/A"} {quotation.vehicle.model || ""}
+                                            {quotation.vehicle.vehicleMake || quotation.vehicle.make || "N/A"} {quotation.vehicle.vehicleModel || quotation.vehicle.model || ""}
                                         </p>
                                     </div>
                                 </>
@@ -378,13 +378,13 @@ export function ViewQuotationModal({
                                             Quantity
                                         </th>
                                         <th className="border border-gray-300 px-4 py-2 text-right text-sm font-semibold text-gray-700">
-                                            Rate (₹)
+                                            Rate (Pre-GST)
                                         </th>
                                         <th className="border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-700">
                                             GST %
                                         </th>
                                         <th className="border border-gray-300 px-4 py-2 text-right text-sm font-semibold text-gray-700">
-                                            Amount (₹)
+                                            Amount (Incl. GST)
                                         </th>
                                     </tr>
                                 </thead>
@@ -393,7 +393,7 @@ export function ViewQuotationModal({
                                         quotation.items.map((item: QuotationItem, index: number) => (
                                             <tr key={item.id || index} className="hover:bg-gray-50">
                                                 <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
-                                                    {item.serialNumber}
+                                                    {item.serialNumber || index + 1}
                                                 </td>
                                                 <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
                                                     {item.partName}
@@ -411,13 +411,13 @@ export function ViewQuotationModal({
                                                     {item.gstPercent}%
                                                 </td>
                                                 <td className="border border-gray-300 px-4 py-2 text-sm text-right text-gray-900 font-medium">
-                                                    {(item.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                                    {(item.amount || (item.rate * item.quantity * (1 + (item.gstPercent || 18) / 100))).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                                                 </td>
                                             </tr>
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={7} className="border border-gray-300 px-4 py-4 text-center text-gray-500">
+                                            <td colSpan={6} className="border border-gray-300 px-4 py-4 text-center text-gray-500">
                                                 No items added
                                             </td>
                                         </tr>
@@ -435,52 +435,59 @@ export function ViewQuotationModal({
                         <div className="w-full">
                             <table className="w-full pricing-summary-table border-collapse" style={{ tableLayout: 'fixed' }}>
                                 <tbody>
-                                    <tr className="pricing-summary-row">
-                                        <td className="text-gray-700 text-sm py-2 pr-4" style={{ width: '65%' }}>Subtotal:</td>
-                                        <td className="text-gray-900 font-medium text-sm py-2 text-right" style={{ width: '35%', whiteSpace: 'nowrap' }}>
+                                    <tr className="pricing-summary-row border-t border-gray-200">
+                                        <td className="text-gray-700 text-sm py-2 pr-4 pt-3">Subtotal:</td>
+                                        <td className="text-gray-900 font-medium text-sm py-2 pt-3 text-right" style={{ whiteSpace: 'nowrap' }}>
                                             ₹{(quotation.subtotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                                         </td>
                                     </tr>
-                                    {quotation.discount > 0 && (
-                                        <tr className="pricing-summary-row">
-                                            <td className="text-gray-700 text-sm py-2 pr-4">
-                                                Discount {quotation.discountPercent > 0 ? `(${quotation.discountPercent.toFixed(1)}%)` : ""}:
-                                            </td>
-                                            <td className="text-gray-900 font-medium text-sm py-2 text-right" style={{ whiteSpace: 'nowrap' }}>
-                                                -₹{(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                                            </td>
-                                        </tr>
-                                    )}
-                                    <tr className="pricing-summary-row border-t border-gray-200">
-                                        <td className="text-gray-700 text-sm py-2 pr-4 pt-3">Pre-GST Amount:</td>
-                                        <td className="text-gray-900 font-medium text-sm py-2 pt-3 text-right" style={{ whiteSpace: 'nowrap' }}>
-                                            ₹{(quotation.preGstAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                    <tr className="pricing-summary-row">
+                                        <td className="text-gray-700 text-sm py-2 pr-4">
+                                            Discount {Number(quotation.discountPercent || 0) > 0 ? `(${Number(quotation.discountPercent).toFixed(1)}%)` : "(0.0%)"}:
+                                        </td>
+                                        <td className="text-gray-900 font-medium text-sm py-2 text-right" style={{ whiteSpace: 'nowrap' }}>
+                                            -₹{(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                                         </td>
                                     </tr>
-                                    {quotation.cgstAmount > 0 && (
-                                        <tr className="pricing-summary-row">
-                                            <td className="text-gray-700 text-sm py-2 pr-4">CGST (9%):</td>
-                                            <td className="text-gray-900 font-medium text-sm py-2 text-right" style={{ whiteSpace: 'nowrap' }}>
-                                                ₹{(quotation.cgstAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                                            </td>
-                                        </tr>
-                                    )}
-                                    {quotation.sgstAmount > 0 && (
-                                        <tr className="pricing-summary-row">
-                                            <td className="text-gray-700 text-sm py-2 pr-4">SGST (9%):</td>
-                                            <td className="text-gray-900 font-medium text-sm py-2 text-right" style={{ whiteSpace: 'nowrap' }}>
-                                                ₹{(quotation.sgstAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                                            </td>
-                                        </tr>
-                                    )}
-                                    {quotation.igstAmount > 0 && (
-                                        <tr className="pricing-summary-row">
-                                            <td className="text-gray-700 text-sm py-2 pr-4">IGST (18%):</td>
-                                            <td className="text-gray-900 font-medium text-sm py-2 text-right" style={{ whiteSpace: 'nowrap' }}>
-                                                ₹{(quotation.igstAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                                            </td>
-                                        </tr>
-                                    )}
+                                    {(() => {
+                                        const q = quotation as any;
+                                        const cgst = q.cgst ?? q.cgstAmount ?? 0;
+                                        const sgst = q.sgst ?? q.sgstAmount ?? 0;
+                                        const igst = q.igst ?? q.igstAmount ?? 0;
+                                        const preGst = q.preGstAmount && Number(q.preGstAmount) > 0
+                                            ? q.preGstAmount
+                                            : (Number(q.subtotal || 0) - Number(q.discount || 0));
+
+                                        return (
+                                            <>
+                                                <tr className="pricing-summary-row border-t border-gray-200">
+                                                    <td className="text-gray-700 text-sm py-2 pr-4 pt-3">Pre-GST Amount:</td>
+                                                    <td className="text-gray-900 font-medium text-sm py-2 pt-3 text-right" style={{ whiteSpace: 'nowrap' }}>
+                                                        ₹{Number(preGst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                </tr>
+                                                {/* GST Breakdown */}
+                                                <tr className="pricing-summary-row">
+                                                    <td className="text-gray-700 text-sm py-2 pr-4">CGST (9%):</td>
+                                                    <td className="text-gray-900 font-medium text-sm py-2 text-right">
+                                                        ₹{Number(cgst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                </tr>
+                                                <tr className="pricing-summary-row">
+                                                    <td className="text-gray-700 text-sm py-2 pr-4">SGST (9%):</td>
+                                                    <td className="text-gray-900 font-medium text-sm py-2 text-right">
+                                                        ₹{Number(sgst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                </tr>
+                                                <tr className="pricing-summary-row">
+                                                    <td className="text-gray-700 text-sm py-2 pr-4">IGST (18%):</td>
+                                                    <td className="text-gray-900 font-medium text-sm py-2 text-right">
+                                                        ₹{Number(igst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                </tr>
+                                            </>
+                                        );
+                                    })()}
                                     <tr className="pricing-summary-row border-t-2 border-gray-400">
                                         <td className="text-lg font-bold text-gray-900 py-2 pt-3">Total Amount:</td>
                                         <td className="text-lg font-bold text-blue-600 py-2 pt-3 text-right" style={{ whiteSpace: 'nowrap' }}>

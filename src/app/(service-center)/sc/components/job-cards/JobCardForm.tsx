@@ -14,6 +14,8 @@ import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/
 import { getServiceCenterCode } from "@/shared/utils/service-center.utils";
 import { JobCard } from "@/shared/types/job-card.types";
 import { Quotation } from "@/shared/types/quotation.types";
+import { quotationsService } from "@/features/quotations/services/quotations.service";
+import { userRepository } from "@/core/repositories/user.repository";
 
 // Hooks, Utils and Sections
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
@@ -39,7 +41,9 @@ export default function JobCardForm({
     mode = "create",
 }: JobCardFormProps) {
     const router = useRouter();
-    const { userInfo } = useRole();
+    const { userInfo, userRole } = useRole();
+    const isServiceAdvisor = userRole === "service_advisor";
+    const isServiceManager = userRole === "sc_manager";
     const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
     const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
     const serviceCenterCode = getServiceCenterCode(serviceCenterId);
@@ -75,28 +79,46 @@ export default function JobCardForm({
     // Load existing job card if editing
     useEffect(() => {
         if (mode === "edit" && jobCardId) {
+            // Priority 1: API
             jobCardService.getById(jobCardId).then(jc => {
                 if (jc) {
                     setExistingJobCard(jc);
                     setPreviewJobCardNumber(jc.jobCardNumber);
+                } else {
+                    // Priority 2: Local Fallback
+                    const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+                    const localJc = migrateAllJobCards().find((item: any) => item.id === jobCardId);
+                    if (localJc) {
+                        setExistingJobCard(localJc);
+                        setPreviewJobCardNumber(localJc.jobCardNumber);
+                    }
                 }
             });
         }
+
     }, [mode, jobCardId]);
 
     // Use hydration hook for live data
     const { jobCard: hydratedCard } = useHydratedJobCard(existingJobCard);
 
     // Update form with hydrated data when it becomes available
+    const [formInitialized, setFormInitialized] = useState(false);
     useEffect(() => {
-        if (hydratedCard && mode === "edit") {
+        if (hydratedCard && mode === "edit" && !formInitialized) {
             const mappedFormData = jobCardAdapter.mapJobCardToForm(hydratedCard);
             setForm((prev: CreateJobCardForm) => ({
                 ...prev,
                 ...mappedFormData
             }));
+            setFormInitialized(true);
         }
-    }, [hydratedCard, mode, setForm]);
+    }, [hydratedCard, mode, setForm, formInitialized]);
+
+    // Reset initialization when ID changes
+    useEffect(() => {
+        setFormInitialized(false);
+    }, [jobCardId]);
+
 
     // Generate preview job card number
     useEffect(() => {
@@ -182,77 +204,21 @@ export default function JobCardForm({
         setIsSubmitting(true);
 
         try {
-            const jobCardData: Omit<JobCard, "id"> & { part2A?: any } = {
-                jobCardNumber: mode === "edit" && existingJobCard ? existingJobCard.jobCardNumber : previewJobCardNumber,
+            const jobCardToSave = jobCardAdapter.mapFormToJobCard(
+                form,
                 serviceCenterId,
                 serviceCenterCode,
-                serviceCenterName: serviceCenterContext.serviceCenterName || "",
-                customerId: form.customerId,
-                customerName: form.customerName,
-                vehicleId: form.vehicleId,
-                vehicle: `${form.vehicleMake} ${form.vehicleModel}`,
-                registration: form.vehicleRegistration,
-                vehicleMake: form.vehicleMake,
-                vehicleModel: form.vehicleModel,
-                customerType: form.customerType as any,
-                serviceType: "General Service",
-                description: form.description || "",
-                status: mode === "edit" && existingJobCard ? existingJobCard.status : "CREATED",
-                priority: "NORMAL",
-                assignedEngineer: null,
-                estimatedCost: "",
-                estimatedTime: "",
-                createdAt: mode === "edit" && existingJobCard ? existingJobCard.createdAt : new Date().toISOString(),
-                parts: form.part2Items.map((item) => item.partName),
-                location: "STATION",
-                isTemporary: true,
-                part1: {
-                    fullName: form.customerName,
-                    mobilePrimary: form.mobilePrimary,
-                    customerType: form.customerType,
-                    vehicleBrand: form.vehicleMake,
-                    vehicleModel: form.vehicleModel,
-                    registrationNumber: form.vehicleRegistration,
-                    vinChassisNumber: form.vinChassisNumber,
-                    variantBatteryCapacity: form.variantBatteryCapacity || "",
-                    warrantyStatus: form.warrantyStatus || "",
-                    estimatedDeliveryDate: form.estimatedDeliveryDate || "",
-                    customerAddress: form.customerAddress,
-                    jobCardNumber: mode === "edit" && existingJobCard ? existingJobCard.jobCardNumber : previewJobCardNumber,
-                    customerFeedback: form.customerFeedback,
-                    technicianObservation: form.technicianObservation || "",
-                    insuranceStartDate: form.insuranceStartDate || "",
-                    insuranceEndDate: form.insuranceEndDate || "",
-                    insuranceCompanyName: form.insuranceCompanyName || "",
-                    batterySerialNumber: form.batterySerialNumber || "",
-                    mcuSerialNumber: form.mcuSerialNumber || "",
-                    vcuSerialNumber: form.vcuSerialNumber || "",
-                    otherPartSerialNumber: form.otherPartSerialNumber || "",
-                },
-                part2: form.part2Items,
-                part2A: {
-                    issueDescription: form.issueDescription || "",
-                    numberOfObservations: form.numberOfObservations || "",
-                    symptom: form.symptom || "",
-                    defectPart: form.defectPart || "",
-                    videoEvidence: (form.videoEvidence.urls && form.videoEvidence.urls.length > 0) ? "Yes" : "No",
-                    vinImage: (form.vinImage.urls && form.vinImage.urls.length > 0) ? "Yes" : "No",
-                    odoImage: (form.odoImage.urls && form.odoImage.urls.length > 0) ? "Yes" : "No",
-                    damageImages: (form.damageImages.urls && form.damageImages.urls.length > 0) ? "Yes" : "No",
-                    // Include metadata for the DTO mapper
-                    videoEvidenceMetadata: form.videoEvidence?.metadata || [],
-                    vinImageMetadata: form.vinImage?.metadata || [],
-                    odoImageMetadata: form.odoImage?.metadata || [],
-                    damageImagesMetadata: form.damageImages?.metadata || [],
-                }
-            };
+                existingJobCard
+            );
 
             let savedJobCard: JobCard;
             if (mode === "edit" && jobCardId) {
-                savedJobCard = await jobCardService.update(jobCardId, { ...jobCardData, id: jobCardId });
+                savedJobCard = await jobCardService.update(jobCardId, { ...jobCardToSave, id: jobCardId });
+
                 console.log("✅ Job card updated:", savedJobCard.id);
             } else {
-                savedJobCard = await jobCardService.create({ ...jobCardData }, userInfo?.id);
+                savedJobCard = await jobCardService.create({ ...jobCardToSave }, userInfo?.id);
+
                 console.log("✅ Job card created:", savedJobCard.id);
 
                 if (activeId && activeId.startsWith('TEMP_')) {
@@ -298,6 +264,96 @@ export default function JobCardForm({
         };
         setCheckInSlipData(checkInData);
         setShowCheckInSlip(true);
+    };
+
+    const handlePassToManager = async () => {
+        if (!jobCardId || !hydratedCard) return;
+
+        if (!confirm("Pass this job card to manager for approval?")) {
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+
+            // Fetch manager for this service center
+            const managers = await userRepository.getByRole("sc_manager", serviceCenterId);
+
+            if (managers.length === 0) {
+                // Try without service center filter if none found specifically
+                const allManagers = await userRepository.getByRole("sc_manager");
+                if (allManagers.length === 0) {
+                    throw new Error("No manager found to pass this job card to.");
+                }
+                await jobCardService.passToManager(jobCardId, allManagers[0].id);
+            } else {
+                await jobCardService.passToManager(jobCardId, managers[0].id);
+            }
+
+            alert("Job card passed to manager successfully!");
+            router.push("/sc/job-cards");
+        } catch (error: any) {
+            console.error("Error passing to manager:", error);
+            alert(error.message || "Failed to pass to manager. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleCreateQuotation = async () => {
+        if (!form.customerId || !form.vehicleId) {
+            alert("Please select a customer and vehicle first.");
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            const now = new Date();
+
+            // Fetch the actual job card from API to get the real serviceCenterId UUID
+            let actualServiceCenterId = serviceCenterId;
+
+            if (jobCardId) {
+                try {
+                    const jobCardFromApi = await jobCardService.getById(jobCardId);
+                    if (jobCardFromApi?.serviceCenterId) {
+                        actualServiceCenterId = jobCardFromApi.serviceCenterId;
+                    }
+                } catch (err) {
+                    console.warn("Could not fetch job card from API, using prop:", err);
+                }
+            }
+
+            const quotationData = {
+                serviceCenterId: actualServiceCenterId,
+                customerId: form.customerId,
+                vehicleId: form.vehicleId,
+                quotationDate: now.toISOString().split('T')[0],
+                documentType: "Quotation",
+                hasInsurance: false,
+                discount: 0,
+                jobCardId: jobCardId, // Correctly link to the job card
+                items: form.part2Items?.map((item) => ({
+                    partName: item.partName || "Service Item",
+                    partNumber: item.partCode || undefined,
+                    quantity: item.qty || 1,
+                    rate: item.rate || (item.amount / (1 + (item.gstPercent || 18) / 100)) || 0,
+                    gstPercent: item.gstPercent || 18,
+                })) || [],
+                customNotes: form.description || undefined,
+            };
+
+            const createdQuotation = await quotationsService.create(quotationData as any);
+            console.log("Quotation created successfully:", createdQuotation);
+
+            router.push(`/sc/quotations?highlight=${createdQuotation.id}`);
+        } catch (error: any) {
+            console.error("Error creating quotation:", error);
+            const errorMessage = error.response?.data?.message || error.message || "Unknown error";
+            alert(`Failed to create quotation: ${errorMessage}`);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -410,8 +466,8 @@ export default function JobCardForm({
                     />
 
                     {/* Footer Actions */}
-                    <div className="bg-white rounded-xl shadow-md p-6 mt-6">
-                        <div className="flex items-center justify-between gap-4">
+                    <div className="bg-white rounded-xl shadow-md p-6 mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="flex flex-wrap gap-3">
                             <button
                                 type="button"
                                 onClick={handleGenerateCheckInSlip}
@@ -421,33 +477,79 @@ export default function JobCardForm({
                                 Generate Check-in Slip
                             </button>
 
-                            <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={handleCreateQuotation}
+                                disabled={isSubmitting || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${!!hydratedCard?.quotationId || !!hydratedCard?.quotation
+                                    ? "bg-gray-100 text-gray-400 border border-gray-200"
+                                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                                    }`}
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 className="animate-spin" size={20} />
+                                        Creating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileText size={20} />
+                                        {!!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
+                                    </>
+                                )}
+                            </button>
+
+                            {mode === "edit" && isServiceAdvisor && (
                                 <button
                                     type="button"
-                                    onClick={() => router.back()}
-                                    className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all"
-                                    disabled={isSubmitting}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg disabled:opacity-50"
+                                    onClick={handlePassToManager}
+                                    disabled={isSubmitting || hydratedCard?.passedToManager}
+                                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${hydratedCard?.passedToManager
+                                        ? "bg-gray-100 text-gray-400 border border-gray-200"
+                                        : "bg-purple-600 text-white hover:bg-purple-700"
+                                        }`}
                                 >
                                     {isSubmitting ? (
                                         <>
-                                            <Loader2 size={20} className="animate-spin" />
-                                            {mode === "edit" ? "Updating..." : "Creating..."}
+                                            <Loader2 className="animate-spin" size={20} />
+                                            Processing...
                                         </>
                                     ) : (
                                         <>
-                                            <CheckCircle size={20} />
-                                            {mode === "edit" ? "Update Job Card" : "Create Job Card"}
+                                            <ArrowLeft size={20} className="transform rotate-180" />
+                                            {hydratedCard?.passedToManager ? "Sent to Manager" : "Pass to Manager"}
                                         </>
                                     )}
                                 </button>
-                            </div>
+                            )}
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => router.back()}
+                                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all"
+                                disabled={isSubmitting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg disabled:opacity-50"
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 size={20} className="animate-spin" />
+                                        {mode === "edit" ? "Updating..." : "Creating..."}
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle size={20} />
+                                        {mode === "edit" ? "Update Job Card" : "Create Job Card"}
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </form>

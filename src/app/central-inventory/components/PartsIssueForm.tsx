@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PlusCircle, MinusCircle, X, Package, CheckCircle } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -24,6 +24,8 @@ interface PartsIssueFormProps {
   serviceCenter: ServiceCenterInfo;
   availableStock: CentralStock[];
   availablePurchaseOrders?: PurchaseOrder[];
+  initialItems?: IssueItem[];
+  initialPurchaseOrderId?: string;
   onSubmit: (formData: PartsIssueFormData) => Promise<void>;
   onCancel?: () => void;
   isLoading?: boolean;
@@ -33,21 +35,30 @@ export function PartsIssueForm({
   serviceCenter,
   availableStock,
   availablePurchaseOrders = [],
+  initialItems = [],
+  initialPurchaseOrderId,
   onSubmit,
   onCancel,
   isLoading = false,
 }: PartsIssueFormProps) {
-  const [issueItems, setIssueItems] = useState<IssueItem[]>([]);
+  const [issueItems, setIssueItems] = useState<IssueItem[]>(initialItems);
   const [selectedPart, setSelectedPart] = useState<CentralStock | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
-  const [purchaseOrderId, setPurchaseOrderId] = useState("");
+  const [purchaseOrderId, setPurchaseOrderId] = useState(initialPurchaseOrderId || "");
   const [notes, setNotes] = useState("");
   const [transportDetails, setTransportDetails] = useState({
     transporter: "",
     trackingNumber: "",
     expectedDelivery: "",
   });
+
+  // Update items when initialItems change
+  useEffect(() => {
+    if (initialItems.length > 0) {
+      setIssueItems(initialItems);
+    }
+  }, [initialItems]);
 
   const handleAddItem = () => {
     if (!selectedPart || quantity <= 0) {
