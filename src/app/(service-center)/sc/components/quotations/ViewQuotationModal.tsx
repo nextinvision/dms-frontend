@@ -443,7 +443,7 @@ export function ViewQuotationModal({
                                     </tr>
                                     <tr className="pricing-summary-row">
                                         <td className="text-gray-700 text-sm py-2 pr-4">
-                                            Discount {quotation.discountPercent > 0 ? `(${quotation.discountPercent.toFixed(1)}%)` : "(0.0%)"}:
+                                            Discount {Number(quotation.discountPercent || 0) > 0 ? `(${Number(quotation.discountPercent).toFixed(1)}%)` : "(0.0%)"}:
                                         </td>
                                         <td className="text-gray-900 font-medium text-sm py-2 text-right" style={{ whiteSpace: 'nowrap' }}>
                                             -₹{(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}

@@ -506,7 +506,10 @@ function QuotationsContent() {
 
     // Determine if IGST or CGST/SGST should be applied
     const customerState = selectedCustomer?.address?.toLowerCase().trim();
-    const scState = serviceCenterContext.serviceCenterLocation?.toLowerCase().trim();
+    const serviceCenter = serviceCenters.find(
+      (center) => normalizeServiceCenterId(center.id) === normalizeServiceCenterId(activeServiceCenterId || serviceCenterContext.serviceCenterId)
+    );
+    const scState = serviceCenter?.state?.toLowerCase().trim();
     const isInterState = customerState && scState && !customerState.includes(scState) && !scState.includes(customerState);
 
     const itemsWithAmounts = form.items.map((item, index) => {
@@ -764,18 +767,18 @@ function QuotationsContent() {
         .map(
           (item, index) => `
           <tr>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.serialNumber || index + 1}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${item.partName || "-"}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${item.partNumber || "-"}</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.quantity || 0}</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">₹${(item.rate || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.gstPercent || 0}%</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-weight: bold;">₹${(item.amount || (item.rate * item.quantity * (1 + (item.gstPercent || 18) / 100))).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+            <td style="text-align: center; color: #6b7280;">${item.serialNumber || index + 1}</td>
+            <td style="font-weight: 500; color: #111827;">${item.partName || "-"}</td>
+            <td style="color: #6b7280;">${item.partNumber || "-"}</td>
+            <td style="text-align: center;">${item.quantity || 0}</td>
+            <td style="text-align: right;">₹${(item.rate || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+            <td style="text-align: center; color: #6b7280;">${item.gstPercent || 0}%</td>
+            <td style="text-align: right; font-weight: 600; color: #111827;">₹${(item.amount || (item.rate * item.quantity * (1 + (item.gstPercent || 18) / 100))).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
           </tr>
         `
         )
         .join("")
-      : '<tr><td colspan="7" style="border: 1px solid #ddd; padding: 8px; text-align: center;">No items added</td></tr>';
+      : '<tr><td colspan="7" style="border: 1px solid #ddd; padding: 20px; text-align: center; color: #9ca3af;">No items found in this quotation</td></tr>';
 
     const insuranceHTML =
       quotation.hasInsurance && (quotation.insurer || quotation.insuranceStartDate || quotation.insuranceEndDate)
@@ -797,6 +800,9 @@ function QuotationsContent() {
       <head>
         <title>${quotation.documentType === "Proforma Invoice" ? "Proforma Invoice" : "Quotation"} ${quotation.quotationNumber}</title>
         <meta charset="UTF-8">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
           @media print {
             * {
@@ -810,199 +816,202 @@ function QuotationsContent() {
               height: auto !important;
             }
             body {
-              padding: 10px 15px !important;
-              font-size: 12px !important;
+              padding: 0 !important;
+              font-size: 11px !important;
             }
             .no-print { display: none !important; }
             @page {
-              margin: 0.8cm !important;
+              margin: 1.2cm !important;
               size: A4;
             }
-            @page :first {
-              margin: 0.8cm !important;
-            }
-            .header {
-              padding-bottom: 10px !important;
-              margin-bottom: 12px !important;
-            }
-            .company-name {
-              font-size: 18px !important;
-            }
-            .document-type {
-              font-size: 20px !important;
-            }
-            .header-content {
-              margin-bottom: 8px !important;
-            }
-            .details-section {
-              margin: 12px 0 !important;
-            }
-            table {
-              font-size: 11px !important;
-              margin: 12px 0 !important;
-            }
-            th, td {
-              padding: 6px 4px !important;
-            }
-            .section-title {
-              font-size: 14px !important;
-              margin-bottom: 8px !important;
-              padding-bottom: 4px !important;
-            }
-            .details-grid {
-              gap: 8px !important;
-              font-size: 11px !important;
-            }
-            .pricing-summary {
-              margin-top: 12px !important;
-            }
-            .pricing-summary-table {
-              font-size: 12px !important;
-              margin-top: 8px !important;
-            }
-            .pricing-summary-table td {
-              padding: 6px 8px !important;
-              font-size: 12px !important;
-            }
-            .pricing-total-row td {
-              font-size: 14px !important;
-              padding-top: 8px !important;
-            }
-            .notes-section {
-              margin-top: 12px !important;
-              padding: 10px !important;
-              font-size: 11px !important;
+            .main-container {
+              padding: 0 !important;
+              box-shadow: none !important;
+              border: none !important;
             }
           }
+
           body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f3f4f6;
+            padding: 40px 20px;
             color: #1f2937;
-            line-height: 1.5;
-            font-size: 14px;
+            margin: 0;
           }
+
+          .main-container {
+            max-width: 850px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+          }
+
           .header {
-            border-bottom: 2px solid #374151;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-          }
-          .header-content {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            margin-bottom: 40px;
+            padding-bottom: 30px;
+            border-bottom: 2px solid #f3f4f6;
           }
-          .company-info {
-            flex: 1;
+
+          .company-brand {
+            display: flex;
+            align-items: center;
+            gap: 15px;
           }
-          .company-name {
+
+          .company-logo-circle {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
             font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 8px;
-            color: #111827;
+            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
           }
-          .document-info {
+
+          .company-details h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0;
+            color: #111827;
+            letter-spacing: -0.025em;
+          }
+
+          .company-info-text {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 6px;
+            line-height: 1.6;
+          }
+
+          .document-meta {
             text-align: right;
           }
-          .document-type {
-            font-size: 28px;
-            font-weight: bold;
+
+          .document-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            background-color: #eff6ff;
             color: #2563eb;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
             margin-bottom: 12px;
           }
-          .details-section {
-            margin: 16px 0;
+
+          .document-number {
+            font-size: 20px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8px;
           }
-          .section-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #e5e7eb;
+
+          .document-dates {
+            font-size: 13px;
+            color: #6b7280;
           }
-          .details-grid {
+
+          .grid-section {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            font-size: 13px;
+            gap: 30px;
+            margin-bottom: 40px;
           }
-          .detail-item {
-            margin-bottom: 6px;
+
+          .info-card {
+            padding: 20px;
+            background-color: #f9fafb;
+            border-radius: 10px;
+            border: 1px solid #f3f4f6;
           }
-          .detail-label {
-            font-weight: 600;
-            color: #374151;
+
+          .card-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            display: block;
           }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 16px 0;
-            font-size: 13px;
+
+          .info-row {
+            display: flex;
+            margin-bottom: 8px;
+            font-size: 14px;
           }
-          th {
-            background-color: #f3f4f6;
-            border: 1px solid #d1d5db;
-            padding: 8px 6px;
-            text-align: left;
-            font-weight: 600;
-            color: #374151;
-            font-size: 12px;
+
+          .info-label {
+            color: #6b7280;
+            width: 120px;
+            flex-shrink: 0;
           }
-          td {
-            border: 1px solid #d1d5db;
-            padding: 8px 6px;
-            font-size: 12px;
-          }
-          .pricing-summary {
-            width: 100%;
-            margin-left: auto;
-            margin-top: 24px;
-            margin-right: 0;
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          .pricing-summary-table {
-            width: 100%;
-            max-width: 100%;
-            border-collapse: collapse;
-            margin-top: 12px;
-            table-layout: fixed;
-          }
-          .pricing-summary-table td {
-            padding: 8px 10px;
-            border: none;
-            font-size: 13px;
-            vertical-align: middle;
-            white-space: nowrap;
-            overflow: visible;
-          }
-          .pricing-summary-table td:first-child {
-            text-align: left;
-            color: #374151;
-            font-weight: 500;
-            width: 65%;
-            padding-right: 15px;
-          }
-          .pricing-summary-table td:last-child {
-            text-align: right;
+
+          .info-value {
             color: #111827;
             font-weight: 500;
-            width: 35%;
-            white-space: nowrap;
-            padding-left: 15px;
           }
-          .pricing-row {
+
+          table.items-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-bottom: 30px;
+          }
+
+          .items-table th {
+            background-color: #f9fafb;
+            padding: 12px 15px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #e5e7eb;
+          }
+
+          .items-table td {
+            padding: 15px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 13px;
+            color: #374151;
+          }
+
+          .items-table tr:last-child td {
+            border-bottom: none;
+          }
+
+          .summary-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 30px;
+          }
+
+          .summary-box {
+            width: 320px;
+            padding: 20px;
+            background-color: #f9fafb;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+          }
+
+          .summary-row {
             display: flex;
             justify-content: space-between;
             padding: 8px 0;
             font-size: 14px;
-            page-break-inside: avoid;
-            break-inside: avoid;
-            white-space: nowrap;
-          }
-          .pricing-row span {
-            white-space: nowrap;
-          }
-          .pricing-total {
             border-top: 2px solid #374151;
             padding-top: 12px;
             margin-top: 12px;
@@ -1154,7 +1163,7 @@ function QuotationsContent() {
                 <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">₹${(quotation.subtotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
-                <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Discount ${quotation.discountPercent >= 0 ? `(${quotation.discountPercent.toFixed(1)}%)` : ""}:</td>
+                <td style="width: 65%; text-align: left; padding-right: 15px; padding: 8px 10px;">Discount ${Number(quotation.discountPercent) >= 0 ? `(${Number(quotation.discountPercent).toFixed(1)}%)` : ""}:</td>
                 <td style="width: 35%; text-align: right; padding-left: 15px; padding: 8px 10px; white-space: nowrap;">-₹${(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr style="border-top: 1px solid #e5e7eb;">
@@ -1223,8 +1232,9 @@ ${quotation.validUntil ? `⏰ Valid Till: ${new Date(quotation.validUntil).toLoc
 ${itemsSummary}
 ${remainingCount > 0 ? `... and ${remainingCount} more item${remainingCount > 1 ? "s" : ""}\n` : ""}
 💰 *Pricing:*
-Subtotal: ₹${(quotation.subtotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-${quotation.discount > 0 ? `Discount: -₹${(quotation.discount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}*Total Amount: ₹${(quotation.totalAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}*
+Subtotal: ₹${(Number(quotation.subtotal) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+${Number(quotation.discount) > 0 ? `Discount: -₹${(Number(quotation.discount) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}Pre-GST Amount: ₹${(Number(quotation.preGstAmount) || (Number(quotation.subtotal) - Number(quotation.discount)) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+${Number((quotation as any).cgst) > 0 ? `CGST (9%): ₹${Number((quotation as any).cgst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}${Number((quotation as any).sgst) > 0 ? `SGST (9%): ₹${Number((quotation as any).sgst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}${Number((quotation as any).igst) > 0 ? `IGST (18%): ₹${Number((quotation as any).igst).toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n` : ""}*Total Amount: ₹${(Number(quotation.totalAmount) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}*
 
 📄 A detailed PDF has been generated. Please review it.
 
@@ -1251,116 +1261,65 @@ Or reply with "APPROVE" or "REJECT"
         setLoading(true);
       }
 
-      const updatedQuotationData = {
-        status: "SENT_TO_CUSTOMER" as const,
-        sentToCustomer: true,
-        sentToCustomerAt: new Date().toISOString(),
-        whatsappSent: true,
-        whatsappSentAt: new Date().toISOString(),
-      };
+      // Call backend to generate PDF and get WhatsApp number
+      const { pdfUrl, whatsappNumber } = await quotationRepository.sendToCustomer(quotationId);
 
-      await updateQuotationMutation.mutateAsync({
-        id: quotationId,
-        data: updatedQuotationData
-      });
+      // Refresh quotations list to update status
+      queryClient.invalidateQueries({ queryKey: ['quotations'] });
 
-      // Update local object for use in PDF generation (since query might not invalidate instantly in this closure)
-      const updatedQuotation = { ...quotation, ...updatedQuotationData };
+      // Construct full PDF URL (assuming it's a relative path)
+      const fullPdfUrl = pdfUrl.startsWith('http')
+        ? pdfUrl
+        : `${window.location.origin}${pdfUrl}`;
 
+      // Format WhatsApp message with PDF link
+      const customerName = quotation.customer?.name ||
+        `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim() ||
+        "Valued Customer";
 
-      // Get service center and advisor details
-      const serviceCenterData: any = quotation.serviceCenter || {
+      const vehicleInfo = quotation.vehicle
+        ? `${quotation.vehicle.registration || "N/A"}`
+        : "N/A";
+
+      const serviceCenter = quotation.serviceCenter || {
         name: "42 EV Tech & Services",
-        address: "123 Main Street, Industrial Area",
-        city: "Pune",
-        state: "Maharashtra",
-        pincode: "411001",
         phone: "+91-20-12345678",
-        gstNumber: (quotation.serviceCenter as any)?.gstNumber || "",
-        panNumber: (quotation.serviceCenter as any)?.panNumber || "",
       };
 
-      const serviceAdvisor = {
-        name: userInfo?.name || "Service Advisor",
-        phone: (userInfo as any)?.phone || "+91-9876543210",
-      };
+      const message = `Dear ${customerName},
 
-      // Validate WhatsApp number
-      const rawWhatsapp =
-        (quotation.customer as any)?.whatsappNumber || quotation.customer?.phone || "";
-      const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
+📄 *Your Quotation is Ready!*
 
-      if (!validateWhatsAppNumber(customerWhatsapp)) {
-        showWarning("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
-        if (manageLoading) {
-          setLoading(false);
-        }
-        return;
+Please find your detailed quotation from *${serviceCenter.name}*:
+
+🔗 *Download PDF:* ${fullPdfUrl}
+
+📋 *Quotation Details:*
+• Quotation No: ${quotation.quotationNumber}
+• Vehicle: ${vehicleInfo}
+• Total Amount: ₹${(Number(quotation.totalAmount) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+
+Please review the PDF and let us know if you approve or have any questions.
+
+To approve, simply reply "APPROVE"
+To reject, reply "REJECT"
+
+📞 Contact us: ${serviceCenter.phone || "N/A"}
+🏢 ${serviceCenter.name}`;
+
+      // Open WhatsApp
+      const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+      window.open(whatsappUrl, '_blank');
+
+      if (manageLoading) {
+        showSuccess("Quotation PDF generated and sent to WhatsApp!");
       }
 
-      // Generate quotation HTML
-      const quotationHTML = generateQuotationHTML(quotation, serviceCenterData, serviceAdvisor);
-
-      // Print quotation
-      const printQuotation = () => {
-        try {
-          const printWindow = window.open("", "_blank");
-          if (!printWindow) {
-            showWarning("Please allow popups to generate PDF. The quotation details will be shown in the message.");
-            return false;
-          }
-
-          printWindow.document.write(quotationHTML);
-          printWindow.document.close();
-
-          // Wait for content to load, then trigger print
-          setTimeout(() => {
-            try {
-              printWindow.focus();
-              printWindow.print();
-              // Close window after a delay
-              setTimeout(() => {
-                if (!printWindow.closed) {
-                  printWindow.close();
-                }
-              }, 2000);
-            } catch (printError) {
-              console.error("Print error:", printError);
-              // Keep window open if print fails
-            }
-          }, 500);
-          return true;
-        } catch (error) {
-          console.error("Error opening print window:", error);
-          showWarning("Could not open print dialog. The quotation will still be sent via WhatsApp.");
-          return false;
-        }
-      };
-
-      // Generate PDF
-      printQuotation();
-
-      // Format WhatsApp message
-      const message = formatWhatsAppMessage(quotation, serviceCenterData);
-      const whatsappUrl = `https://wa.me/${customerWhatsapp}?text=${encodeURIComponent(message)}`;
-
-      // Open WhatsApp with delay to allow PDF generation
-      setTimeout(() => {
-        try {
-          window.open(whatsappUrl, "_blank");
-          showSuccess("Quotation PDF generated and sent to customer via WhatsApp!");
-        } catch (error) {
-          console.error("Error opening WhatsApp:", error);
-          showError("Could not open WhatsApp. Please copy the link manually.");
-        }
-      }, 1500);
     } catch (error) {
       console.error("Error sending quotation:", error);
-      showError("Failed to send quotation via WhatsApp. Please try again.");
+      showError(error instanceof Error ? error.message : "Failed to send quotation. Please try again.");
     } finally {
-      if (manageLoading) {
-        setLoading(false);
-      }
+      if (manageLoading) setLoading(false);
     }
   };
 
@@ -1479,9 +1438,9 @@ Or reply with "APPROVE" or "REJECT"
           discount: 0,
           discountPercent: 0,
           preGstAmount: 0,
-          cgstAmount: 0,
-          sgstAmount: 0,
-          igstAmount: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
           totalAmount: 0,
           notes: enhancedData.notes || enhancedData.customerFeedback || "",
           batterySerialNumber: enhancedData.batterySerialNumber,
@@ -1670,9 +1629,9 @@ Or reply with "APPROVE" or "REJECT"
         discount: 0,
         discountPercent: 0,
         preGstAmount: 0,
-        cgstAmount: 0,
-        sgstAmount: 0,
-        igstAmount: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
         totalAmount: 0,
         notes: enhancedData.notes || enhancedData.customerFeedback || "",
         batterySerialNumber: enhancedData.batterySerialNumber,
@@ -1906,121 +1865,8 @@ Please keep this slip safe for vehicle collection.`;
 
   // Send to Customer via WhatsApp
   const handleSendToCustomer = async (quotationId: string) => {
-    const quotation = quotations.find((q) => q.id === quotationId);
-    if (!quotation) return;
-
-    try {
-      setLoading(true);
-
-      // Update quotation status
-      const updateData = {
-        status: "SENT_TO_CUSTOMER" as const,
-        sentToCustomer: true,
-        sentToCustomerAt: new Date().toISOString(),
-        whatsappSent: true,
-        whatsappSentAt: new Date().toISOString(),
-      };
-      await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
-
-      // Update local reference for lead creation
-      const updatedQuotationForLead = { ...quotation, ...updateData };
-
-
-      // Create or update lead when quotation is sent to customer
-      createOrUpdateLeadFromQuotation(quotation);
-
-      // Get service center and advisor details
-      const serviceCenterData: any = quotation.serviceCenter || {
-        name: "42 EV Tech & Services",
-        address: "123 Main Street, Industrial Area",
-        city: "Pune",
-        state: "Maharashtra",
-        pincode: "411001",
-        phone: "+91-20-12345678",
-        gstNumber: (quotation.serviceCenter as any)?.gstNumber || "",
-        panNumber: (quotation.serviceCenter as any)?.panNumber || "",
-      };
-
-      const serviceAdvisor = {
-        name: userInfo?.name || "Service Advisor",
-        phone: (userInfo as any)?.phone || "+91-9876543210",
-      };
-
-      // Validate WhatsApp number
-      const rawWhatsapp =
-        (quotation.customer as any)?.whatsappNumber ||
-        quotation.customer?.phone ||
-        "";
-      const customerWhatsapp = rawWhatsapp.replace(/\D/g, "");
-
-      if (!validateWhatsAppNumber(customerWhatsapp)) {
-        showWarning("Customer WhatsApp number is missing or invalid. Please update customer contact information.");
-        setLoading(false);
-        return;
-      }
-
-      // Generate quotation HTML
-      const quotationHTML = generateQuotationHTML(quotation, serviceCenterData, serviceAdvisor);
-
-      // Print quotation
-      const printQuotation = () => {
-        try {
-          const printWindow = window.open("", "_blank");
-          if (!printWindow) {
-            showWarning("Please allow popups to generate PDF. The quotation details will be shown in the message.");
-            return false;
-          }
-
-          printWindow.document.write(quotationHTML);
-          printWindow.document.close();
-
-          // Wait for content to load, then trigger print
-          setTimeout(() => {
-            try {
-              printWindow.focus();
-              printWindow.print();
-              // Close window after a delay
-              setTimeout(() => {
-                if (!printWindow.closed) {
-                  printWindow.close();
-                }
-              }, 2000);
-            } catch (printError) {
-              console.error("Print error:", printError);
-              // Keep window open if print fails
-            }
-          }, 500);
-          return true;
-        } catch (error) {
-          console.error("Error opening print window:", error);
-          showWarning("Could not open print dialog. The quotation will still be sent via WhatsApp.");
-          return false;
-        }
-      };
-
-      // Generate PDF
-      printQuotation();
-
-      // Format WhatsApp message
-      const message = formatWhatsAppMessage(quotation, serviceCenterData);
-      const whatsappUrl = `https://wa.me/${customerWhatsapp}?text=${encodeURIComponent(message)}`;
-
-      // Open WhatsApp with delay to allow PDF generation
-      setTimeout(() => {
-        try {
-          window.open(whatsappUrl, "_blank");
-          showSuccess("Quotation PDF generated and sent to customer via WhatsApp!");
-        } catch (error) {
-          console.error("Error opening WhatsApp:", error);
-          showError("Could not open WhatsApp. Please copy the link manually.");
-        }
-      }, 1500);
-    } catch (error) {
-      console.error("Error sending quotation:", error);
-      showError("Failed to send quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    // Unify with the existing robust implementation
+    return sendQuotationToCustomerById(quotationId);
   };
 
   // Convert Quotation to Job Card
