@@ -56,56 +56,16 @@ export default function Leads() {
     followUpDate: "",
   });
 
-  const queryClient = useQueryClient();
-  const { data: leads = [], isLoading } = useQuery({
-    queryKey: ['leads', activeServiceCenterId],
-    queryFn: () => leadRepository.getAll({ serviceCenterId: activeServiceCenterId }),
-  });
-
-  const { data: leadCustomer } = useQuery({
-    queryKey: ['lead-customer', selectedLead?.customerId],
-    queryFn: () => customerRepository.getById(selectedLead!.customerId!),
-    enabled: !!selectedLead?.customerId && !!showViewModal,
-  });
-
-
-  const createLeadMutation = useMutation({
-    mutationFn: (data: Partial<Lead>) => leadRepository.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
-      alert("Lead created successfully!");
-      setShowCreateModal(false);
-      resetForm();
-    },
-    onError: (error) => {
-      console.error("Error creating lead:", error);
-      alert("Failed to create lead.");
-    }
-  });
-
-  const updateLeadMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Lead> }) => leadRepository.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
-      alert("Lead updated successfully!");
-      setEditingLead(null);
-      setShowCreateModal(false);
-    },
-    onError: (error) => {
-      console.error("Error updating lead:", error);
-      alert("Failed to update lead.");
-    }
-  });
-
-  const deleteLeadMutation = useMutation({
-    mutationFn: (id: string) => leadRepository.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
-      alert("Lead deleted successfully!");
-    },
-    onError: (error) => {
-      console.error("Error deleting lead:", error);
-      alert("Failed to delete lead.");
+  // Load leads from localStorage or use mock data
+  useEffect(() => {
+    const storedLeads = safeStorage.getItem<Lead[]>("leads", []);
+    if (storedLeads.length > 0) {
+      setLeads(storedLeads);
+    } else {
+      // Initialize with empty array if no stored leads
+      const defaultLeads: Lead[] = [];
+      setLeads(defaultLeads);
+      safeStorage.setItem("leads", defaultLeads);
     }
   });
 

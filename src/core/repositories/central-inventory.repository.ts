@@ -1,6 +1,7 @@
 import { BaseRepository } from './base.repository';
 import { apiClient } from '@/core/api/client';
-import type { PartsIssue, PartsIssueFormData } from '@/shared/types/central-inventory.types';
+import type { PartsIssue, PartsIssueFormData, ServiceCenterInfo } from '@/shared/types/central-inventory.types';
+import type { ServiceCenter } from '@/shared/types/service-center.types';
 
 export interface CentralInventoryItem {
     id: string;
@@ -254,6 +255,25 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
             }) || [],
             priority: 'normal' as const
         };
+    }
+
+    /**
+     * Get all service centers
+     * Maps ServiceCenter to ServiceCenterInfo format
+     */
+    async getAllServiceCenters(): Promise<ServiceCenterInfo[]> {
+        const response = await apiClient.get<ServiceCenter[]>('/service-centers');
+        const serviceCenters = Array.isArray(response.data) ? response.data : [];
+        
+        return serviceCenters.map((sc: ServiceCenter): ServiceCenterInfo => ({
+            id: sc.id,
+            name: sc.name,
+            location: sc.city || sc.address || undefined,
+            contactPerson: undefined, // Not available in ServiceCenter type
+            contactEmail: sc.email || undefined,
+            contactPhone: sc.phone || undefined,
+            active: sc.status === 'Active' || sc.status === 'active'
+        }));
     }
 }
 
