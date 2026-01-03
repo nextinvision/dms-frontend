@@ -21,42 +21,22 @@ import {
   ArrowRight,
   FileText,
 } from "lucide-react";
-import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { leadRepository } from "@/core/repositories/lead.repository";
+import { customerRepository } from "@/core/repositories/customer.repository";
+import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
+import type { Lead, LeadStatus } from "@/shared/types/lead.types";
 
 
-interface Lead {
-  id: string;
-  customerId?: string;
-  customerName: string;
-  phone: string;
-  email?: string;
-  vehicleDetails?: string;
-  vehicleMake?: string;
-  vehicleModel?: string;
-  inquiryType: string;
-  serviceType?: string;
-  source?: string;
-  status: "new" | "in_discussion" | "job_card_in_progress" | "converted" | "lost";
-  convertedTo?: "appointment" | "quotation" | "job_card";
-  convertedId?: string;
-  quotationId?: string; // Link to quotation
-  jobCardId?: string; // Link to job card
-  notes?: string;
-  followUpDate?: string;
-  assignedTo?: string;
-  serviceCenterId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
-type LeadStatus = "new" | "in_discussion" | "job_card_in_progress" | "converted" | "lost";
 type LeadFilterType = "all" | LeadStatus;
 
 export default function Leads() {
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
+  const activeServiceCenterId = serviceCenterContext.serviceCenterId || "sc-001";
+
   const [filter, setFilter] = useState<LeadFilterType>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [showViewModal, setShowViewModal] = useState<boolean>(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -76,16 +56,61 @@ export default function Leads() {
     followUpDate: "",
   });
 
-  // Load leads from localStorage or use mock data
-  useEffect(() => {
-    const storedLeads = safeStorage.getItem<Lead[]>("leads", []);
-    if (storedLeads.length > 0) {
-      setLeads(storedLeads);
-    } else {
-      setLeads(defaultLeads);
-      safeStorage.setItem("leads", defaultLeads);
+  const queryClient = useQueryClient();
+  const { data: leads = [], isLoading } = useQuery({
+    queryKey: ['leads', activeServiceCenterId],
+    queryFn: () => leadRepository.getAll({ serviceCenterId: activeServiceCenterId }),
+  });
+
+  const { data: leadCustomer } = useQuery({
+    queryKey: ['lead-customer', selectedLead?.customerId],
+    queryFn: () => customerRepository.getById(selectedLead!.customerId!),
+    enabled: !!selectedLead?.customerId && !!showViewModal,
+  });
+
+
+  const createLeadMutation = useMutation({
+    mutationFn: (data: Partial<Lead>) => leadRepository.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      alert("Lead created successfully!");
+      setShowCreateModal(false);
+      resetForm();
+    },
+    onError: (error) => {
+      console.error("Error creating lead:", error);
+      alert("Failed to create lead.");
     }
-  }, []);
+  });
+
+  const updateLeadMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Lead> }) => leadRepository.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      alert("Lead updated successfully!");
+      setEditingLead(null);
+      setShowCreateModal(false);
+    },
+    onError: (error) => {
+      console.error("Error updating lead:", error);
+      alert("Failed to update lead.");
+    }
+  });
+
+  const deleteLeadMutation = useMutation({
+    mutationFn: (id: string) => leadRepository.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      alert("Lead deleted successfully!");
+    },
+    onError: (error) => {
+      console.error("Error deleting lead:", error);
+      alert("Failed to delete lead.");
+    }
+  });
+
+  const isSaving = createLeadMutation.isPending || updateLeadMutation.isPending;
+
 
   // Create lead
   const handleCreate = async (e: React.FormEvent) => {
@@ -95,71 +120,31 @@ export default function Leads() {
       return;
     }
 
-    try {
-      setLoading(true);
+    const leadData: Partial<Lead> = {
+      customerName: form.customerName,
+      phone: form.phone,
+      email: form.email || undefined,
+      vehicleMake: form.vehicleMake || undefined,
+      vehicleModel: form.vehicleModel || undefined,
+      inquiryType: form.inquiryType || "Service",
+      serviceType: form.serviceType || undefined,
+      source: form.source || "walk_in",
+      status: (editingLead?.status || "NEW") as any,
+      notes: form.notes || undefined,
+      followUpDate: form.followUpDate || undefined,
+      serviceCenterId: "sc-001", // Should come from context
+    };
 
-      const newLead: Lead = {
-        id: `lead-${Date.now()}`,
-        serviceCenterId: "sc-001",
-        customerName: form.customerName,
-        phone: form.phone,
-        email: form.email || undefined,
-        vehicleMake: form.vehicleMake || undefined,
-        vehicleModel: form.vehicleModel || undefined,
-        inquiryType: form.inquiryType || "Service",
-        serviceType: form.serviceType || undefined,
-        source: form.source || "walk_in",
-        status: editingLead?.status || "new",
-        notes: form.notes || undefined,
-        followUpDate: form.followUpDate || undefined,
-        createdAt: editingLead?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (editingLead) {
-        // Update existing lead
-        const updatedLeads = leads.map((l) => (l.id === editingLead.id ? newLead : l));
-        setLeads(updatedLeads);
-        safeStorage.setItem("leads", updatedLeads);
-        alert("Lead updated successfully!");
-      } else {
-        // Create new lead
-        const updatedLeads = [newLead, ...leads];
-        setLeads(updatedLeads);
-        safeStorage.setItem("leads", updatedLeads);
-        alert("Lead created successfully!");
-      }
-
-      setShowCreateModal(false);
-      setEditingLead(null);
-      resetForm();
-    } catch (error) {
-      console.error("Error saving lead:", error);
-      alert("Failed to save lead. Please try again.");
-    } finally {
-      setLoading(false);
+    if (editingLead) {
+      updateLeadMutation.mutate({ id: editingLead.id, data: leadData });
+    } else {
+      createLeadMutation.mutate(leadData);
     }
   };
 
   // Update lead
   const handleUpdate = async (leadId: string, updates: Partial<Lead>) => {
-    try {
-      setLoading(true);
-
-      const updatedLeads = leads.map((l) =>
-        l.id === leadId ? { ...l, ...updates, updatedAt: new Date().toISOString() } : l
-      );
-
-      setLeads(updatedLeads);
-      safeStorage.setItem("leads", updatedLeads);
-      alert("Lead updated successfully!");
-      setEditingLead(null);
-    } catch (error) {
-      console.error("Error updating lead:", error);
-      alert("Failed to update lead. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    updateLeadMutation.mutate({ id: leadId, data: updates });
   };
 
   // Delete lead
@@ -167,21 +152,7 @@ export default function Leads() {
     if (!confirm("Are you sure you want to delete this lead?")) {
       return;
     }
-
-    try {
-      setLoading(true);
-
-      const updatedLeads = leads.filter((l) => l.id !== leadId);
-      setLeads(updatedLeads);
-      safeStorage.setItem("leads", updatedLeads);
-
-      alert("Lead deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting lead:", error);
-      alert("Failed to delete lead. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    deleteLeadMutation.mutate(leadId);
   };
 
   const resetForm = () => {
@@ -207,20 +178,14 @@ export default function Leads() {
     }
 
     try {
-      const updatedLeads = leads.map((l) =>
-        l.id === lead.id
-          ? {
-            ...l,
-            status: "converted" as const,
-            convertedTo: "appointment" as const,
-            convertedId: `appt-${Date.now()}`,
-            updatedAt: new Date().toISOString(),
-          }
-          : l
-      );
-
-      setLeads(updatedLeads);
-      safeStorage.setItem("leads", updatedLeads);
+      updateLeadMutation.mutate({
+        id: lead.id,
+        data: {
+          status: "CONVERTED",
+          convertedTo: "appointment",
+          convertedId: `appt-${Date.now()}`,
+        },
+      });
       alert("Lead converted to appointment successfully!");
     } catch (error) {
       console.error("Error converting lead:", error);
@@ -235,20 +200,14 @@ export default function Leads() {
     }
 
     try {
-      const updatedLeads = leads.map((l) =>
-        l.id === lead.id
-          ? {
-            ...l,
-            status: "converted" as const,
-            convertedTo: "quotation" as const,
-            convertedId: `qt-${Date.now()}`,
-            updatedAt: new Date().toISOString(),
-          }
-          : l
-      );
-
-      setLeads(updatedLeads);
-      safeStorage.setItem("leads", updatedLeads);
+      updateLeadMutation.mutate({
+        id: lead.id,
+        data: {
+          status: "CONVERTED",
+          convertedTo: "quotation",
+          convertedId: `qt-${Date.now()}`,
+        },
+      });
       alert("Lead converted to quotation successfully!");
     } catch (error) {
       console.error("Error converting lead:", error);
@@ -273,15 +232,15 @@ export default function Leads() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "new":
+      case "NEW":
         return "bg-blue-100 text-blue-700 border-blue-300";
-      case "in_discussion":
+      case "IN_DISCUSSION":
         return "bg-yellow-100 text-yellow-700 border-yellow-300";
-      case "job_card_in_progress":
+      case "JOB_CARD_IN_PROGRESS":
         return "bg-purple-100 text-purple-700 border-purple-300";
-      case "converted":
+      case "CONVERTED":
         return "bg-green-100 text-green-700 border-green-300";
-      case "lost":
+      case "LOST":
         return "bg-red-100 text-red-700 border-red-300";
       default:
         return "bg-gray-100 text-gray-700 border-gray-300";
@@ -323,13 +282,13 @@ export default function Leads() {
               />
             </div>
             <div className="flex gap-2">
-              {(["all", "new", "in_discussion", "job_card_in_progress", "converted", "lost"] as LeadFilterType[]).map((f) => (
+              {(["all", "NEW", "IN_DISCUSSION", "JOB_CARD_IN_PROGRESS", "CONVERTED", "LOST"] as LeadFilterType[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`px-4 py-2 rounded-lg font-medium transition ${filter === f
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                 >
                   {f === "all"
@@ -343,7 +302,7 @@ export default function Leads() {
 
         {/* Leads List */}
         <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-          {loading ? (
+          {isLoading ? (
             <div className="p-12 text-center">
               <Loader2 className="animate-spin mx-auto mb-4 text-blue-600" size={32} />
               <p className="text-gray-600">Loading leads...</p>
@@ -397,7 +356,7 @@ export default function Leads() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(lead.status)}`}>
-                          {lead.status === "job_card_in_progress"
+                          {lead.status === "JOB_CARD_IN_PROGRESS"
                             ? "Job Card In Progress"
                             : lead.status.charAt(0).toUpperCase() + lead.status.slice(1).replace(/_/g, " ")}
                         </span>
@@ -586,10 +545,10 @@ export default function Leads() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={isSaving}
                   className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
                 >
-                  {loading ? "Saving..." : editingLead ? "Update Lead" : "Create Lead"}
+                  {isSaving ? "Saving..." : editingLead ? "Update Lead" : "Create Lead"}
                 </button>
               </div>
             </form>
@@ -599,13 +558,8 @@ export default function Leads() {
 
       {/* View Lead Modal */}
       {showViewModal && selectedLead && (() => {
-        // Try to fetch customer details if customerId exists
-        const customers = safeStorage.getItem<any[]>("customers", []);
-        const mockCustomers = safeStorage.getItem<any[]>("mockCustomers", []);
-        const allCustomers = [...customers, ...mockCustomers];
-        const customer = selectedLead.customerId
-          ? allCustomers.find((c: any) => c.id?.toString() === selectedLead.customerId?.toString())
-          : null;
+        // Use fetched customer details
+        const customer = leadCustomer;
 
         return (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4">
@@ -762,7 +716,7 @@ export default function Leads() {
                       <label className="text-sm font-medium text-gray-500 block mb-1">Status</label>
                       <div>
                         <span className={`px-3 py-1 text-xs font-medium rounded-full border ${getStatusColor(selectedLead.status)}`}>
-                          {selectedLead.status === "job_card_in_progress"
+                          {selectedLead.status === "JOB_CARD_IN_PROGRESS"
                             ? "Job Card In Progress"
                             : selectedLead.status.charAt(0).toUpperCase() + selectedLead.status.slice(1).replace(/_/g, " ")}
                         </span>

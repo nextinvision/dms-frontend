@@ -60,6 +60,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { quotationRepository } from "@/core/repositories/quotation.repository";
 import { serviceCenterRepository } from "@/core/repositories/service-center.repository";
 import { jobCardRepository } from "@/core/repositories/job-card.repository";
+import { appointmentRepository } from "@/core/repositories/appointment.repository";
 import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
 
 import { defaultInsurers, defaultNoteTemplates } from "./defaults";
@@ -715,22 +716,13 @@ function QuotationsContent() {
     };
   };
 
-  const updateLocalAppointmentStatus = (quotation: Quotation) => {
+  const updateLocalAppointmentStatus = async (quotation: Quotation) => {
     // Update appointment status if quotation is linked to an appointment
     if (quotation.appointmentId) {
-      const appointments = safeStorage.getItem<any[]>("appointments", []);
-      const appointmentIndex = appointments.findIndex((apt) => apt.id === quotation.appointmentId);
-
-      if (appointmentIndex !== -1) {
-        const appointment = appointments[appointmentIndex];
-        // Update appointment status to "Quotation Created" if not already
-        if (appointment.status !== "Quotation Created") {
-          appointments[appointmentIndex] = {
-            ...appointment,
-            status: "Quotation Created",
-          };
-          safeStorage.setItem("appointments", appointments);
-        }
+      try {
+        await appointmentRepository.updateStatus(quotation.appointmentId, "QUOTATION_CREATED");
+      } catch (error) {
+        console.error("Failed to update appointment status:", error);
       }
     }
   };
@@ -1884,31 +1876,36 @@ Please keep this slip safe for vehicle collection.`;
     // Using simple creation payload and letting backend handle logic is best.
 
     // Create job card from quotation
+    // Create job card from quotation
     const newJobCard = {
-      // id: `JC-${Date.now()}`, // Let backend handle ID
-      // jobCardNumber, // Let backend handle Number
       serviceCenterId: quotation.serviceCenterId || resolvedServiceCenterId,
-      serviceCenterCode,
       customerId: quotation.customerId,
-      customerName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
       vehicleId: quotation.vehicleId,
-      vehicle: quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "Unknown",
-      registration: quotation.vehicle?.registration || "",
-      vehicleMake: quotation.vehicle?.make,
-      vehicleModel: quotation.vehicle?.model,
       serviceType: quotation.items?.[0]?.partName || "Service",
-      description: quotation.notes || quotation.customNotes || "Service as per quotation",
-      status: "CREATED" as const,
       priority: "NORMAL" as const,
-      assignedEngineer: null,
-      estimatedCost: `₹${quotation.totalAmount.toLocaleString("en-IN")}`,
-      estimatedTime: "To be determined",
-      createdAt: new Date().toISOString(),
-      parts: quotation.items?.map((item) => item.partName) || [],
       location: "STATION" as const,
-      quotationId: quotation.id,
-      hasInsurance: quotation.hasInsurance,
-      insurerName: (quotation as any).insurer?.name,
+      isTemporary: true,
+      part1Data: {
+        fullName: (quotation.customer?.name || `${quotation.customer?.firstName || ""} ${quotation.customer?.lastName || ""}`.trim()).replace(/\s+/g, " ") || "Customer",
+        mobilePrimary: quotation.customer?.phone || "",
+        vehicleBrand: quotation.vehicle?.vehicleMake || (quotation.vehicle as any)?.make || "Unknown",
+        vehicleModel: quotation.vehicle?.vehicleModel || (quotation.vehicle as any)?.model || "Unknown",
+        registrationNumber: quotation.vehicle?.registration || "Unknown",
+        vinChassisNumber: quotation.vehicle?.vin || "Unknown",
+        customerFeedback: quotation.notes || quotation.customNotes || "Service as per quotation",
+      },
+      // Note: items are not passed to create temporary job card typically, 
+      // but if we wanted to pre-fill Part 2, we would map them to 'items' field.
+      // However, the backend create logic stores 'items' into 'part2' JSON column.
+      items: quotation.items?.map((item: any) => ({
+        srNo: item.serialNumber || 1,
+        partName: item.partName,
+        partCode: item.partNumber || "NA",
+        qty: item.quantity,
+        amount: item.amount || (item.rate * item.quantity),
+        itemType: "part", // Assuming all quotation items are parts for now
+
+      })).map((item: any, idx: number) => ({ ...item, srNo: idx + 1 }))
     };
 
     // Save job card via API
@@ -2075,18 +2072,19 @@ Please keep this slip safe for vehicle collection.`;
             return;
           }
 
-          // Update quotation status
+          // Create job card first
+          const jobCard = await convertQuotationToJobCard(quotation);
+
+          // Update quotation status and link job card
           await updateQuotationMutation.mutateAsync({
             id: quotationId,
             data: {
               status: "CUSTOMER_APPROVED" as const,
               customerApproved: true,
               customerApprovedAt: new Date().toISOString(),
+              jobCardId: jobCard.id,
             }
           });
-
-          // Create job card
-          const jobCard = await convertQuotationToJobCard(quotation);
 
           // Update lead status
           updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
