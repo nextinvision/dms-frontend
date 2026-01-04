@@ -36,6 +36,8 @@ interface WarrantyDocumentationModalProps {
     jobCardId?: string; // For Cloudinary folder organization
     itemIndex?: number; // For folder organization
     userId?: string; // User ID for file metadata
+    customerId?: string;
+    vehicleId?: string;
 }
 
 export default function WarrantyDocumentationModal({
@@ -48,6 +50,8 @@ export default function WarrantyDocumentationModal({
     jobCardId = "temp",
     itemIndex = 0,
     userId,
+    customerId,
+    vehicleId,
 }: WarrantyDocumentationModalProps) {
     const { uploadMultipleWithMetadata, isUploading, progress } = useCloudinaryUploadWithMetadata();
     const [formData, setFormData] = useState<WarrantyDocumentationData>({
@@ -63,13 +67,20 @@ export default function WarrantyDocumentationModal({
     });
 
     useEffect(() => {
-        if (initialData) {
-            setFormData({
-                ...initialData,
-                fileMetadata: initialData.fileMetadata || {},
+        if (open) {
+            setFormData(initialData || {
+                videoEvidence: [],
+                vinImage: [],
+                odoImage: [],
+                damageImages: [],
+                issueDescription: "",
+                numberOfObservations: "",
+                symptom: "",
+                defectPart: "",
+                fileMetadata: {},
             });
         }
-    }, [initialData]);
+    }, [open, initialData]);
 
     const handleFileUpload = useCallback(
         async (
@@ -84,6 +95,7 @@ export default function WarrantyDocumentationModal({
             let folder: string;
             let category: FileCategory;
             switch (field) {
+                // ... (switch cases remain same)
                 case 'videoEvidence':
                     folder = CLOUDINARY_FOLDERS.warrantyVideo(jobCardId, itemIndex);
                     category = FileCategory.WARRANTY_VIDEO;
@@ -113,6 +125,8 @@ export default function WarrantyDocumentationModal({
                     entityId: jobCardId,
                     entityType: RelatedEntityType.JOB_CARD,
                     uploadedBy: userId,
+                    customerId, // explicit relation
+                    vehicleId,  // explicit relation
                     cloudinaryOptions: {
                         tags: [field, 'warranty', 'job-card'],
                         context: {
@@ -124,7 +138,7 @@ export default function WarrantyDocumentationModal({
                     },
                 });
 
-                // Store Cloudinary URLs and metadata
+                // ... (rest of success logic)
                 const newUrls = fileMetadatas.map(result => result.url);
                 setFormData((prev) => ({
                     ...prev,
@@ -141,7 +155,7 @@ export default function WarrantyDocumentationModal({
                 alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
             }
         },
-        [jobCardId, itemIndex, itemDescription, uploadMultipleWithMetadata, userId]
+        [jobCardId, itemIndex, itemDescription, uploadMultipleWithMetadata, userId, customerId, vehicleId]
     );
 
     const handleRemoveFile = useCallback(

@@ -6,12 +6,11 @@ import WarrantyDocumentationModal from "../modals/WarrantyDocumentationModal";
 import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
 import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
 import { saveFileMetadata } from "@/services/files/fileMetadata.service";
-import { FileCategory, RelatedEntityType } from "@/services/files/types";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { apiClient } from "@/core/api/client";
 import type { Part } from "@/features/inventory/types/inventory.types";
 
-import { FileMetadata } from "@/services/cloudinary/fileMetadata.service";
+import { FileMetadata, FileCategory, RelatedEntityType } from "@/services/cloudinary/fileMetadata.service";
 
 interface WarrantyDocumentationData {
     videoEvidence: string[];
@@ -88,6 +87,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
     }, []);
 
     // Handle part search - filter locally from allParts
+    // Handle part search - filter locally from allParts
     useEffect(() => {
         const query = newItem.partName;
 
@@ -108,6 +108,117 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
         setSearchResults(filtered.slice(0, 10)); // Limit to 10 results
         setShowResults(true);
     }, [newItem.partName, allParts]);
+
+    // Hydrate warranty documents from form props on mount or when form changes meaningfully
+    useEffect(() => {
+        // Check if we have global warranty data in the form
+        const hasGlobalWarrantyData =
+            !!form.issueDescription ||
+            (form.videoEvidence?.urls && form.videoEvidence.urls.length > 0) ||
+            (form.vinImage?.urls && form.vinImage.urls.length > 0);
+
+        if (hasGlobalWarrantyData && form.part2Items.length > 0) {
+            // Construct the data object from global form fields
+            const globalDocs: WarrantyDocumentationData = {
+                videoEvidence: form.videoEvidence?.urls || [],
+                vinImage: form.vinImage?.urls || [],
+                odoImage: form.odoImage?.urls || [],
+                damageImages: form.damageImages?.urls || [],
+                issueDescription: form.issueDescription || "",
+                numberOfObservations: form.numberOfObservations || "",
+                symptom: form.symptom || "",
+                defectPart: form.defectPart || "",
+                // Re-construct metadata if available
+                fileMetadata: {
+                    videoEvidence: (form.videoEvidence?.metadata || []).map(m => ({
+                        id: m.fileId,
+                        url: m.url,
+                        publicId: m.publicId,
+                        filename: m.filename,
+                        format: m.format,
+                        bytes: m.bytes,
+                        category: FileCategory.WARRANTY_VIDEO,
+                        relatedEntityId: jobCardId,
+                        relatedEntityType: RelatedEntityType.JOB_CARD,
+                        metadata: { uploadedAt: m.uploadedAt }
+                    })),
+                    vinImage: (form.vinImage?.metadata || []).map(m => ({
+                        id: m.fileId,
+                        url: m.url,
+                        publicId: m.publicId,
+                        filename: m.filename,
+                        format: m.format,
+                        bytes: m.bytes,
+                        category: FileCategory.WARRANTY_VIN,
+                        relatedEntityId: jobCardId,
+                        relatedEntityType: RelatedEntityType.JOB_CARD,
+                        metadata: { uploadedAt: m.uploadedAt }
+                    })),
+                    odoImage: (form.odoImage?.metadata || []).map(m => ({
+                        id: m.fileId,
+                        url: m.url,
+                        publicId: m.publicId,
+                        filename: m.filename,
+                        format: m.format,
+                        bytes: m.bytes,
+                        category: FileCategory.WARRANTY_ODO,
+                        relatedEntityId: jobCardId,
+                        relatedEntityType: RelatedEntityType.JOB_CARD,
+                        metadata: { uploadedAt: m.uploadedAt }
+                    })),
+                    damageImages: (form.damageImages?.metadata || []).map(m => ({
+                        id: m.fileId,
+                        url: m.url,
+                        publicId: m.publicId,
+                        filename: m.filename,
+                        format: m.format,
+                        bytes: m.bytes,
+                        category: FileCategory.WARRANTY_DAMAGE,
+                        relatedEntityId: jobCardId,
+                        relatedEntityType: RelatedEntityType.JOB_CARD,
+                        metadata: { uploadedAt: m.uploadedAt }
+                    })),
+                }
+            };
+
+            // Heuristic to find which item this data belongs to
+            let targetIndex = -1;
+
+            // 1. Try to match by defect part name
+            if (form.defectPart) {
+                targetIndex = form.part2Items.findIndex(item =>
+                    item.partName.toLowerCase() === form.defectPart.toLowerCase()
+                );
+            }
+
+            // 2. If no match or no defect part, default to first item with warranty tag
+            if (targetIndex === -1) {
+                targetIndex = form.part2Items.findIndex(item => item.partWarrantyTag);
+            }
+
+            // 3. If still nothing found but we have data, fallback to first item
+            if (targetIndex === -1 && form.part2Items.length > 0) {
+                targetIndex = 0;
+            }
+
+            if (targetIndex !== -1) {
+                setWarrantyDocuments(prev => ({
+                    ...prev,
+                    [targetIndex]: globalDocs
+                }));
+            }
+        }
+    }, [
+        // Only trigger on specific field changes to avoid loops, 
+        // though typically this should stabilize quickly
+        form.issueDescription,
+        form.videoEvidence?.urls, // Check reference equality of arrays
+        form.defectPart,
+        // We include part2Items length to retry if items are loaded later
+        form.part2Items.length,
+        jobCardId
+        // NOTE: purposefully excluding the whole form object or part2Items deep content to prevent loops
+    ]);
 
     const handleSelectPart = (part: any) => {
         setNewItem(prev => ({
@@ -131,10 +242,10 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
         }));
 
         // 2. Sync Case Details with top-level form fields for submission
-        if (data.issueDescription) updateField('issueDescription', data.issueDescription);
-        if (data.numberOfObservations) updateField('numberOfObservations', data.numberOfObservations);
-        if (data.symptom) updateField('symptom', data.symptom);
-        if (data.defectPart) updateField('defectPart', data.defectPart);
+        updateField('issueDescription', data.issueDescription || "");
+        updateField('numberOfObservations', data.numberOfObservations || "");
+        updateField('symptom', data.symptom || "");
+        updateField('defectPart', data.defectPart || "");
 
         // 3. Sync Files with top-level form fields
         if (data.fileMetadata) {
@@ -436,7 +547,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                     partCode: "",
                                     qty: 1,
                                     amount: 0,
-                                    technician: "",
+                                    // technician: "",
                                     labourCode: "",
                                     itemType: "part",
                                 });
@@ -505,19 +616,34 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                                             {item.partWarrantyTag ? (
                                                 <div className="flex gap-1">
                                                     {warrantyDocuments[index] ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedItemIndex(index);
-                                                                setWarrantyModalMode("view");
-                                                                setShowWarrantyModal(true);
-                                                            }}
-                                                            className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition inline-flex items-center gap-1"
-                                                            title="View Documentation"
-                                                        >
-                                                            <Eye size={12} />
-                                                            View
-                                                        </button>
+                                                        <div className="flex gap-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedItemIndex(index);
+                                                                    setWarrantyModalMode("view");
+                                                                    setShowWarrantyModal(true);
+                                                                }}
+                                                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition inline-flex items-center gap-1"
+                                                                title="View Documentation"
+                                                            >
+                                                                <Eye size={12} />
+                                                                View
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedItemIndex(index);
+                                                                    setWarrantyModalMode("upload");
+                                                                    setShowWarrantyModal(true);
+                                                                }}
+                                                                className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition inline-flex items-center gap-1"
+                                                                title="Edit Documentation"
+                                                            >
+                                                                <Edit2 size={12} />
+                                                                Edit
+                                                            </button>
+                                                        </div>
                                                     ) : (
                                                         <button
                                                             type="button"
@@ -582,6 +708,8 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                         jobCardId={propJobCardId || form.vehicleId || "temp"}
                         itemIndex={selectedItemIndex}
                         userId={userId}
+                        customerId={form.customerId}
+                        vehicleId={form.vehicleId}
                     />
                 )
             }

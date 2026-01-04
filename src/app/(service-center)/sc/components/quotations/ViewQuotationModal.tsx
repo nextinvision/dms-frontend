@@ -20,9 +20,7 @@ export function ViewQuotationModal({
     onSendToCustomer,
     onCustomerApproval,
     onCustomerRejection,
-    onSendToManager,
-    onManagerApproval,
-    onManagerRejection,
+
     userInfo,
     userRole,
     isServiceAdvisor,
@@ -625,41 +623,12 @@ export function ViewQuotationModal({
                                     </button>
                                 </>
                             )}
-                            {quotation.status?.toUpperCase() === "CUSTOMER_APPROVED" && onSendToManager && (
-                                <button
-                                    onClick={() => onSendToManager(quotation.id)}
-                                    className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium inline-flex items-center gap-2"
-                                >
-                                    <ArrowRight size={18} />
-                                    Send to Manager
-                                </button>
-                            )}
+
                         </>
                     )}
 
                     {/* Service Manager Actions */}
-                    {isServiceManager && onManagerApproval && onManagerRejection && (
-                        <>
-                            {quotation.status?.toUpperCase() === "SENT_TO_MANAGER" && (
-                                <>
-                                    <button
-                                        onClick={() => onManagerRejection(quotation.id)}
-                                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium inline-flex items-center gap-2"
-                                    >
-                                        <ShieldX size={18} />
-                                        Reject
-                                    </button>
-                                    <button
-                                        onClick={() => onManagerApproval(quotation.id)}
-                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
-                                    >
-                                        <ShieldCheck size={18} />
-                                        Approve
-                                    </button>
-                                </>
-                            )}
-                        </>
-                    )}
+
                 </div>
             </div>
         </div>

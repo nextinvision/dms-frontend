@@ -14,7 +14,7 @@ class CustomerRepository extends BaseRepository<CustomerWithVehicles> {
                 params: { query, type }
             }
         );
-        
+
         // Handle response structure - backend TransformInterceptor wraps responses
         // Response format: { data: T, success: true, meta: {...} }
         if (Array.isArray(response.data)) {
@@ -27,6 +27,18 @@ class CustomerRepository extends BaseRepository<CustomerWithVehicles> {
         }
         // Return empty array if no valid data found
         return [];
+    }
+
+    async getByPhone(phone: string): Promise<CustomerWithVehicles | null> {
+        try {
+            const response = await apiClient.get<CustomerWithVehicles>(
+                `${this.endpoint}/phone/${encodeURIComponent(phone)}`
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching customer by phone:', error);
+            return null;
+        }
     }
 }
 

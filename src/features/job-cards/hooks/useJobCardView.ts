@@ -43,9 +43,29 @@ export function useJobCardView() {
 
         // Technician only sees job cards assigned to them
         if (isTechnician) {
-            const engineerName = userInfo?.name || "Service Engineer";
+            const engineerName = (userInfo?.name || "Service Engineer").toLowerCase();
+            const engineerId = userInfo?.id ? String(userInfo.id) : null;
+
             filtered = filtered.filter(
-                (job) => job.assignedEngineer === engineerName || job.assignedEngineer === "Service Engineer"
+                (job) => {
+                    const assigned = job.assignedEngineer;
+                    if (!assigned) return false;
+
+                    // Case 1: assignedEngineer is a String (ID or Name)
+                    if (typeof assigned === 'string') {
+                        if (engineerId && assigned === engineerId) return true;
+                        if (assigned.toLowerCase().includes(engineerName)) return true;
+                        if (assigned === "Service Engineer") return true;
+                    }
+                    // Case 2: assignedEngineer is an Object (User/Engineer entity)
+                    else if (typeof assigned === 'object') {
+                        const assignedObj = assigned as any;
+                        if (engineerId && assignedObj.id && String(assignedObj.id) === engineerId) return true;
+                        if (assignedObj.name && String(assignedObj.name).toLowerCase().includes(engineerName)) return true;
+                    }
+
+                    return false;
+                }
             );
         }
 
@@ -60,6 +80,7 @@ export function useJobCardView() {
             if (filter === "assigned" && job.status !== "ASSIGNED") return false;
             if (filter === "in_progress" && job.status !== "IN_PROGRESS") return false;
             if (filter === "completed" && job.status !== "COMPLETED") return false;
+            if (filter === "pending_approval" && !job.passedToManager) return false;
 
             // Search filter
             if (searchQuery) {
@@ -95,6 +116,11 @@ export function useJobCardView() {
         [visibleJobCards]
     );
 
+    const pendingApprovalCount = useMemo(
+        () => visibleJobCards.filter((card) => card.passedToManager).length,
+        [visibleJobCards]
+    );
+
     const kanbanColumns: KanbanColumn[] = [
         { id: "created", title: "Created", status: "CREATED" },
         { id: "assigned", title: "Assigned", status: "ASSIGNED" },
@@ -119,6 +145,7 @@ export function useJobCardView() {
         visibleJobCards,
         filteredJobs,
         draftCount,
+        pendingApprovalCount,
         kanbanColumns,
         getJobsByStatus,
         isLoading,

@@ -332,6 +332,28 @@ export function useJobCardActions(
         }
     };
 
+    const handleManagerReview = async (jobId: string, status: "APPROVED" | "REJECTED", notes?: string) => {
+        try {
+            setLoading(true);
+            await jobCardService.managerReview(jobId, { status, notes });
+
+            // Optimistic update
+            const updatedJobCards = jobCards.map(j =>
+                j.id === jobId
+                    ? { ...j, managerReviewStatus: status, managerReviewedAt: new Date().toISOString() }
+                    : j
+            );
+            setJobCards(updatedJobCards);
+
+            showSuccess(`Job Card ${status === "APPROVED" ? "Approved" : "Rejected"} successfully.`);
+        } catch (error) {
+            console.error("Failed to review job card:", error);
+            showError("Failed to submitting review.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleCreateInvoice = (jobCard?: JobCard) => {
         // handleCreateInvoice signature in previous code was () => void, but also referenced jobCard.
         // Let's support both or just simplify.
@@ -416,6 +438,7 @@ export function useJobCardActions(
         handleInventoryManagerPartsApproval,
         handleWorkCompletionNotification,
         handleSubmitToManager,
+        handleManagerReview,
         handleCreateInvoice,
         handleSendInvoiceToCustomer,
 

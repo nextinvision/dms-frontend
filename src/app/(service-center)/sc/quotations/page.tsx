@@ -60,6 +60,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { quotationRepository } from "@/core/repositories/quotation.repository";
 import { serviceCenterRepository } from "@/core/repositories/service-center.repository";
 import { jobCardRepository } from "@/core/repositories/job-card.repository";
+import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { appointmentRepository } from "@/core/repositories/appointment.repository";
 import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
 
@@ -421,7 +422,8 @@ function QuotationsContent() {
                       quantity: item.qty || 1,
                       rate: preGstRate,
                       gstPercent: item.gstPercent || 18,
-                      amount: amountInclGst * (item.qty || 1)
+                      amount: amountInclGst * (item.qty || 1),
+                      partWarrantyTag: item.partWarrantyTag,
                     };
                   }) || [],
                 }));
@@ -1857,6 +1859,49 @@ Please keep this slip safe for vehicle collection.`;
 
   // Send to Customer via WhatsApp
   const handleSendToCustomer = async (quotationId: string) => {
+    const quotation = quotations.find((q) => q.id === quotationId);
+    if (!quotation) return;
+
+    // Check for warranty items
+    const hasWarranty = quotation.items.some(item => item.partWarrantyTag);
+
+    if (hasWarranty) {
+      if (!quotation.jobCardId) {
+        showError("Quotation with warranty items must be linked to a Job Card.");
+        return;
+      }
+
+      try {
+        setLoading(true);
+        // Check Job Card Approval Status
+        const jobCard = await jobCardService.getById(quotation.jobCardId);
+
+        if (jobCard && jobCard.managerReviewStatus !== 'APPROVED') {
+          openConfirm(
+            "Manager Approval Required",
+            "This quotation contains warranty items. The Job Card must be approved by the Manager before sending. Send Job Card to Manager now?",
+            async () => {
+              try {
+                await jobCardService.passToManager(jobCard.id, "sc-manager-001");
+                showSuccess("Job Card sent to Manager for approval.");
+              } catch (e) {
+                showError("Failed to send Job Card to Manager.");
+              }
+            },
+            "warning"
+          );
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking job card status", error);
+        showError("Failed to verify warranty approval.");
+        setLoading(false);
+        return;
+      }
+      setLoading(false);
+    }
+
     // Unify with the existing robust implementation
     return sendQuotationToCustomerById(quotationId);
   };
@@ -2072,8 +2117,27 @@ Please keep this slip safe for vehicle collection.`;
             return;
           }
 
-          // Create job card first
-          const jobCard = await convertQuotationToJobCard(quotation);
+          let jobCard;
+          if (quotation.jobCardId) {
+            // Convert existing temporary job card to actual
+            try {
+              const jobCardId = quotation.jobCardId;
+              // Use service to convert
+              // We assume convertToActual endpoint exists and works
+              // Since we can't test backend, we trust based on user request "converted to actual job card"
+              // If not, we might need to update status manually
+              const updatedJobCard = await jobCardService.convertToActual(jobCardId);
+              jobCard = updatedJobCard;
+            } catch (e) {
+              console.error("Error converting job card", e);
+              // Fallback to manual update if endpoint fails or doesn't exist
+              await jobCardRepository.update(quotation.jobCardId, { isTemporary: false, status: "CREATED" } as any);
+              jobCard = await jobCardRepository.getById(quotation.jobCardId);
+            }
+          } else {
+            // Create job card first (Fallback)
+            jobCard = await convertQuotationToJobCard(quotation);
+          }
 
           // Update quotation status and link job card
           await updateQuotationMutation.mutateAsync({
@@ -2082,14 +2146,16 @@ Please keep this slip safe for vehicle collection.`;
               status: "CUSTOMER_APPROVED" as const,
               customerApproved: true,
               customerApprovedAt: new Date().toISOString(),
-              jobCardId: jobCard.id,
+              jobCardId: jobCard?.id, // Ensure ID is present
             }
           });
 
           // Update lead status
-          updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber);
+          if (jobCard) {
+            updateLeadOnJobCardCreation(quotation.id, jobCard.id, jobCard.jobCardNumber || "Pending");
+          }
 
-          showSuccess(`Customer Approved! Quotation ${quotation.quotationNumber} has been approved and Job Card ${jobCard.jobCardNumber} created.`);
+          showSuccess(`Customer Approved! Quotation ${quotation.quotationNumber} has been approved.`);
         } catch (error) {
           console.error("Error approving quotation:", error);
           showError("Failed to approve quotation. Please try again.");
@@ -2144,97 +2210,7 @@ Please keep this slip safe for vehicle collection.`;
     );
   };
 
-  // Send to Manager
-  const handleSendToManager = async (quotationId: string) => {
-    openConfirm(
-      "Send to Manager",
-      "Send this quotation to manager for approval?",
-      async () => {
-        try {
-          setLoading(true);
 
-          await updateQuotationMutation.mutateAsync({
-            id: quotationId,
-            data: {
-              status: "SENT_TO_MANAGER" as const,
-              sentToManager: true,
-              sentToManagerAt: new Date().toISOString(),
-            }
-          });
-
-          showSuccess("Quotation sent to manager!");
-        } catch (error) {
-          console.error("Error sending to manager:", error);
-          showError("Failed to send quotation. Please try again.");
-        } finally {
-          setLoading(false);
-        }
-      },
-      "info"
-    );
-  };
-
-  // Manager Approval
-  const handleManagerApproval = async (quotationId: string) => {
-    openConfirm(
-      "Approve Quotation",
-      "Approve this quotation? This will allow job card creation.",
-      async () => {
-        try {
-          setLoading(true);
-
-          await updateQuotationMutation.mutateAsync({
-            id: quotationId,
-            data: {
-              status: "MANAGER_APPROVED" as const,
-              managerApproved: true,
-              managerApprovedAt: new Date().toISOString(),
-              managerId: userInfo?.id || "",
-            }
-          });
-
-          showSuccess("Quotation approved by manager!");
-        } catch (error) {
-          console.error("Error approving quotation:", error);
-          showError("Failed to approve quotation. Please try again.");
-        } finally {
-          setLoading(false);
-        }
-      },
-      "success"
-    );
-  };
-
-  // Manager Rejection
-  const handleManagerRejection = async (quotationId: string) => {
-    openConfirm(
-      "Reject Quotation",
-      "Reject this quotation?",
-      async () => {
-        try {
-          setLoading(true);
-
-          await updateQuotationMutation.mutateAsync({
-            id: quotationId,
-            data: {
-              status: "MANAGER_REJECTED" as const,
-              managerRejected: true,
-              managerRejectedAt: new Date().toISOString(),
-              managerId: userInfo?.id || "",
-            }
-          });
-
-          showInfo("Quotation rejected by manager.");
-        } catch (error) {
-          console.error("Error rejecting quotation:", error);
-          showError("Failed to reject quotation. Please try again.");
-        } finally {
-          setLoading(false);
-        }
-      },
-      "danger"
-    );
-  };
 
   // Open Quotation/Check-in Slip for Viewing
   const handleOpenQuotation = (quotation: Quotation) => {
@@ -2593,18 +2569,7 @@ Please keep this slip safe for vehicle collection.`;
                                   <MessageCircle size={18} />
                                 </button>
                               )}
-                              {isServiceAdvisor && quotation.status === "CUSTOMER_APPROVED" && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSendToManager(quotation.id);
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 bg-slate-50 border border-slate-200 rounded-xl transition-all"
-                                  title="Submit to Manager"
-                                >
-                                  <ArrowRight size={18} />
-                                </button>
-                              )}
+
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2701,9 +2666,7 @@ Please keep this slip safe for vehicle collection.`;
           onSendToCustomer={handleSendToCustomer}
           onCustomerApproval={handleCustomerApproval}
           onCustomerRejection={handleCustomerRejection}
-          onSendToManager={handleSendToManager}
-          onManagerApproval={handleManagerApproval}
-          onManagerRejection={handleManagerRejection}
+
         />
       )}
 

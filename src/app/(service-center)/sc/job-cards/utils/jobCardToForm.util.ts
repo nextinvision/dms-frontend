@@ -11,12 +11,12 @@ import { INITIAL_DOCUMENTATION_FILES } from "@/shared/types/documentation.types"
 /**
  * Convert PART 2A field (Yes/No string) to DocumentationFiles format
  */
+/**
+ * Convert PART 2A field to DocumentationFiles format
+ * Now blindly returns empty for "Yes" since we can't recover URLs from just "Yes".
+ * Real file hydration happens in jobCardAdapter.
+ */
 function convertPart2AFieldToDocFiles(value: "Yes" | "No" | "" | undefined): DocumentationFiles {
-  // If value is "Yes", we assume files exist but can't restore actual URLs
-  // User will need to re-upload if needed
-  if (value === "Yes") {
-    return { ...INITIAL_DOCUMENTATION_FILES };
-  }
   return { ...INITIAL_DOCUMENTATION_FILES };
 }
 

@@ -9,6 +9,7 @@ export interface Lead {
     email?: string;
     vehicleMake?: string;
     vehicleModel?: string;
+    vehicleDetails?: string;
     inquiryType: string;
     serviceType?: string;
     source: string;

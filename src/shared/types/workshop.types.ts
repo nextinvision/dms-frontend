@@ -8,7 +8,7 @@ export type EngineerStatus = "Available" | "Busy";
 export type Workload = "Low" | "Medium" | "High";
 
 export interface Engineer {
-  id: number;
+  id: string | number;
   name: string;
   status: EngineerStatus;
   currentJobs: number;

@@ -52,22 +52,12 @@ export interface SaveFileMetadataRequest {
     relatedEntityId: string;
     relatedEntityType: RelatedEntityType;
     uploadedBy?: string;
+    customerId?: string;
+    vehicleId?: string;
     metadata?: Record<string, any>;
 }
 
-/**
- * Generate a temporary entity ID for files uploaded before entity creation
- */
-export function generateTempEntityId(): string {
-    return `TEMP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
- * Check if an entity ID is temporary
- */
-export function isTempEntityId(entityId: string): boolean {
-    return entityId.startsWith('TEMP_');
-}
+// ... existing code ...
 
 /**
  * Save file metadata to backend
@@ -80,6 +70,8 @@ export async function saveFileMetadata(
         relatedEntityId: string;
         relatedEntityType: RelatedEntityType;
         uploadedBy?: string;
+        customerId?: string;
+        vehicleId?: string;
     }
 ): Promise<FileMetadata> {
     const payload: SaveFileMetadataRequest = {
@@ -95,6 +87,8 @@ export async function saveFileMetadata(
         relatedEntityId: metadata.relatedEntityId,
         relatedEntityType: metadata.relatedEntityType,
         uploadedBy: metadata.uploadedBy,
+        customerId: metadata.customerId,
+        vehicleId: metadata.vehicleId,
         metadata: {
             originalName: originalFile.name,
             uploadedAt: new Date().toISOString(),
@@ -118,6 +112,8 @@ export async function saveMultipleFileMetadata(
         relatedEntityId: string;
         relatedEntityType: RelatedEntityType;
         uploadedBy?: string;
+        customerId?: string;
+        vehicleId?: string;
     }
 ): Promise<FileMetadata[]> {
     const payloads: SaveFileMetadataRequest[] = uploadResults.map((result, index) => ({
@@ -133,6 +129,8 @@ export async function saveMultipleFileMetadata(
         relatedEntityId: metadata.relatedEntityId,
         relatedEntityType: metadata.relatedEntityType,
         uploadedBy: metadata.uploadedBy,
+        customerId: metadata.customerId,
+        vehicleId: metadata.vehicleId,
         metadata: {
             originalName: originalFiles[index]?.name,
             uploadedAt: new Date().toISOString(),
@@ -203,4 +201,11 @@ export async function deleteFilesByEntity(
     entityId: string
 ): Promise<void> {
     await apiClient.delete(`${API_ENDPOINTS.FILES}/entity/${entityType}/${entityId}`);
+}
+
+/**
+ * Generate a temporary entity ID for new records
+ */
+export function generateTempEntityId(): string {
+    return `temp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
