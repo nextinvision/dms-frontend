@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
+import { downloadCentralInvoicePDF } from "@/shared/utils/central-invoice-pdf.utils";
 import type { Invoice } from "@/shared/types/invoice.types";
 import type { ServiceCenterInfo, PartsIssue } from "@/shared/types/central-inventory.types";
 
@@ -28,7 +29,15 @@ export default function InvoicesPage() {
         
         // Map PartsIssue to Invoice format
         const mappedInvoices: Invoice[] = partsIssues
-          .filter((issue) => issue.status === 'issued' || issue.status === 'received' || issue.status === 'admin_approved')
+          .filter((issue) => 
+            issue.status === 'issued' || 
+            issue.status === 'received' || 
+            issue.status === 'admin_approved' ||
+            issue.status === 'dispatched' ||
+            issue.status === 'DISPATCHED' ||
+            issue.status === 'completed' ||
+            issue.status === 'COMPLETED'
+          )
           .map((issue: PartsIssue) => ({
             id: issue.id,
             invoiceNumber: `INV-${issue.issueNumber}`,
@@ -40,15 +49,15 @@ export default function InvoicesPage() {
             issuedBy: issue.issuedBy,
             issuedAt: issue.issuedAt,
             status: mapPartsIssueStatusToInvoiceStatus(issue.status),
-            items: issue.items.map((item) => ({
-              id: item.id,
-              partId: item.partId,
-              partName: item.partName,
-              partNumber: item.partNumber,
-              hsnCode: item.hsnCode,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              totalPrice: item.totalPrice,
+            items: (issue.items || []).map((item: any) => ({
+              id: item.id || '',
+              partId: item.partId || item.fromStock || '',
+              partName: item.partName || 'Unknown Part',
+              partNumber: item.partNumber || '',
+              hsnCode: item.hsnCode || '',
+              quantity: item.quantity || item.requestedQty || item.issuedQty || 0,
+              unitPrice: item.unitPrice || 0,
+              totalPrice: item.totalPrice || (item.unitPrice || 0) * (item.quantity || item.requestedQty || item.issuedQty || 0),
             })),
             subtotal: issue.totalAmount,
             totalAmount: issue.totalAmount,
@@ -69,13 +78,18 @@ export default function InvoicesPage() {
 
   // Map PartsIssue status to Invoice status
   const mapPartsIssueStatusToInvoiceStatus = (status: PartsIssue['status']): Invoice['status'] => {
-    const statusMap: Record<PartsIssue['status'], Invoice['status']> = {
+    const statusMap: Record<string, Invoice['status']> = {
       'pending': 'draft',
       'pending_admin_approval': 'draft',
+      'cim_approved': 'draft',
       'admin_approved': 'sent',
       'admin_rejected': 'cancelled',
+      'dispatched': 'sent',
+      'DISPATCHED': 'sent',
       'issued': 'sent',
       'received': 'paid',
+      'completed': 'paid',
+      'COMPLETED': 'paid',
       'cancelled': 'cancelled',
     };
     return statusMap[status] || 'draft';
@@ -233,17 +247,31 @@ export default function InvoicesPage() {
                                 </p>
                                 <Badge className={statusBadge.color}>{statusBadge.label}</Badge>
                               </div>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(`/central-inventory/invoices/${invoice.id}`);
-                                }}
-                                variant="outline"
-                                className="flex items-center gap-2"
-                              >
-                                <Download size={16} />
-                                View
-                              </Button>
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    downloadCentralInvoicePDF(invoice);
+                                  }}
+                                  variant="outline"
+                                  className="flex items-center gap-2"
+                                  title="Download PDF"
+                                >
+                                  <Download size={16} />
+                                  Download
+                                </Button>
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(`/central-inventory/invoices/${invoice.id}`);
+                                  }}
+                                  variant="outline"
+                                  className="flex items-center gap-2"
+                                >
+                                  <FileText size={16} />
+                                  View
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         );

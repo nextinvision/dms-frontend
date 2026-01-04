@@ -3,4 +3,4 @@ import OTCOrdersComponent from "@/shared/components/otc-orders/OTCOrdersComponen
 
 export default function OTCOrders() {
   return <OTCOrdersComponent />;
-}
+    }

@@ -72,18 +72,34 @@ export type PurchaseOrderPriority = "low" | "normal" | "high" | "urgent";
  */
 export interface PurchaseOrderItem {
   id: string;
-  partId: string;
-  partName: string;
-  partNumber: string;
-  hsnCode: string; // HSN Code
+  partId?: string; // May not always be present
+  partName?: string;
+  partNumber?: string;
+  oemPartNumber?: string;
+  category?: string;
+  originType?: string; // OLD/NEW
+  description?: string;
+  brandName?: string;
+  variant?: string;
+  partType?: string;
+  color?: string;
+  unit?: string; // Unit of measurement
+  hsnCode?: string; // HSN Code
   partCode?: string;
-  requestedQty: number;
+  quantity: number; // Backend uses 'quantity' not 'requestedQty'
+  requestedQty?: number; // For backward compatibility
+  receivedQty?: number;
   approvedQty?: number;
   issuedQty?: number;
   unitPrice: number;
-  totalPrice: number;
-  status: "pending" | "approved" | "rejected" | "issued";
+  totalPrice?: number;
+  gstRate?: number;
+  status?: "pending" | "approved" | "rejected" | "issued";
+  urgency?: string; // low, medium, high
   notes?: string;
+  itemId?: string; // Alias for id in some contexts
+  centralInventoryPartId?: string;
+  inventoryPartId?: string;
 }
 
 /**
@@ -139,9 +155,20 @@ export interface PartsIssue {
     partNumber: string;
     hsnCode: string; // HSN Code
     quantity: number;
+    requestedQty?: number;
+    approvedQty?: number;
+    issuedQty?: number;
     unitPrice: number;
     totalPrice: number;
     fromStock: string; // Central stock ID
+    subPoNumber?: string;
+    dispatches?: Array<{
+      id: string;
+      quantity: number;
+      subPoNumber: string;
+      isFullyFulfilled: boolean;
+      dispatchedAt: string;
+    }>;
   }>;
   totalAmount: number;
   purchaseOrderId?: string;
@@ -236,6 +263,8 @@ export interface PartsIssueFormData {
     partId: string;
     quantity: number;
     fromStock: string;
+    partNumber?: string; // Optional: for flexible matching if ID doesn't match
+    partName?: string; // Optional: for flexible matching if ID doesn't match
   }>;
   notes?: string;
   transportDetails?: {

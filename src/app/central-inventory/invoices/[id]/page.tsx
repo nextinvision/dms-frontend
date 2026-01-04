@@ -5,24 +5,83 @@ import { ArrowLeft, Download, FileText, Building, Calendar, DollarSign, CheckCir
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { invoiceService } from "@/services/central-inventory/invoice.service";
+import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
+import { downloadCentralInvoicePDF } from "@/shared/utils/central-invoice-pdf.utils";
+import { useToast } from "@/contexts/ToastContext";
 import type { Invoice } from "@/shared/types/invoice.types";
+import type { PartsIssue } from "@/shared/types/central-inventory.types";
 
 export default function InvoiceDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const { showError } = useToast();
   const invoiceId = params.id as string;
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Map PartsIssue status to Invoice status
+  const mapPartsIssueStatusToInvoiceStatus = (status: PartsIssue['status']): Invoice['status'] => {
+    const statusMap: Record<string, Invoice['status']> = {
+      'pending': 'draft',
+      'pending_admin_approval': 'draft',
+      'cim_approved': 'draft',
+      'admin_approved': 'sent',
+      'admin_rejected': 'cancelled',
+      'dispatched': 'sent',
+      'DISPATCHED': 'sent',
+      'issued': 'sent',
+      'received': 'paid',
+      'completed': 'paid',
+      'COMPLETED': 'paid',
+      'cancelled': 'cancelled',
+    };
+    return statusMap[status] || 'draft';
+  };
+
   useEffect(() => {
     const fetchInvoice = async () => {
       try {
-        const inv = await invoiceService.getInvoiceById(invoiceId);
-        setInvoice(inv);
+        // In CIM, invoices are mapped from parts issues, so fetch directly as parts issue
+        const issue = await centralInventoryRepository.getPartsIssueById(invoiceId);
+        
+        if (!issue) {
+          showError("Invoice/Parts Issue not found");
+          return;
+        }
+
+        // Convert PartsIssue to Invoice format
+        const mappedInvoice: Invoice = {
+          id: issue.id,
+          invoiceNumber: `INV-${issue.issueNumber}`,
+          serviceCenterId: issue.serviceCenterId,
+          serviceCenterName: issue.serviceCenterName,
+          partsIssueId: issue.id,
+          partsIssueNumber: issue.issueNumber,
+          purchaseOrderId: issue.purchaseOrderId,
+          issuedBy: issue.issuedBy,
+          issuedAt: issue.issuedAt,
+          status: mapPartsIssueStatusToInvoiceStatus(issue.status),
+          items: (issue.items || []).map((item: any) => ({
+            id: item.id || '',
+            partId: item.partId || item.fromStock || '',
+            partName: item.partName || 'Unknown Part',
+            partNumber: item.partNumber || '',
+            hsnCode: item.hsnCode || '',
+            quantity: item.quantity || item.requestedQty || item.issuedQty || 0,
+            unitPrice: item.unitPrice || 0,
+            totalPrice: item.totalPrice || (item.unitPrice || 0) * (item.quantity || item.requestedQty || item.issuedQty || 0),
+          })),
+          subtotal: issue.totalAmount,
+          totalAmount: issue.totalAmount,
+          createdAt: issue.issuedAt,
+          createdBy: issue.issuedBy,
+        };
+
+        setInvoice(mappedInvoice);
       } catch (error) {
         console.error("Failed to fetch invoice:", error);
+        showError("Failed to load invoice. Please try again.");
       } finally {
         setIsLoading(false);
       }
@@ -31,11 +90,11 @@ export default function InvoiceDetailPage() {
     if (invoiceId) {
       fetchInvoice();
     }
-  }, [invoiceId]);
+  }, [invoiceId, showError]);
 
   const handleDownloadPDF = () => {
-    // TODO: Implement PDF generation
-    window.print();
+    if (!invoice) return;
+    downloadCentralInvoicePDF(invoice);
   };
 
   if (isLoading) {

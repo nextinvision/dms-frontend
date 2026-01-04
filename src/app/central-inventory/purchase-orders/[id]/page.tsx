@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import React from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle,
@@ -26,14 +26,17 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useToast } from "@/contexts/ToastContext";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { useRole } from "@/shared/hooks/useRole";
+import { validateItemsAgainstStock } from "@/shared/utils/part-matching.utils";
 import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
 
 export default function PurchaseOrderDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { showSuccess, showError, showWarning } = useToast();
   const { userRole } = useRole();
   const poId = params.id as string;
+  const issueRemaining = searchParams.get('issueRemaining') === 'true';
   const isAdmin = userRole === 'admin';
   const isCIM = userRole === 'central_inventory_manager';
   const canApprovePO = isAdmin || isCIM; // Both admin and CIM can approve POs
@@ -48,6 +51,7 @@ export default function PurchaseOrderDetailPage() {
   const [approvedItems, setApprovedItems] = useState<Array<{ itemId: string; approvedQty: number }>>([]);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [partDetails, setPartDetails] = useState<Record<string, any>>({});
+  const [itemIssuedQty, setItemIssuedQty] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     const fetchPurchaseOrder = async () => {
@@ -58,6 +62,58 @@ export default function PurchaseOrderDetailPage() {
           return;
         }
         setPurchaseOrder(po);
+        
+        // Calculate issued quantities for each item
+        const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
+        const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
+        
+        const issuedQtyMap = new Map<string, number>();
+        
+        relatedIssues.forEach(issue => {
+          issue.items.forEach((issueItem: any) => {
+            // Match parts issue items to PO items
+            const poItem = po.items.find((poItem: any) => {
+              return (
+                (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
+                (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
+                (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
+                (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
+                (poItem.partName && issueItem.partName && 
+                 poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
+                (poItem.partNumber && issueItem.partNumber && 
+                 poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
+              );
+            });
+            
+            if (poItem) {
+              const currentIssued = issuedQtyMap.get(poItem.id) || 0;
+              let issueQty = Number(issueItem.issuedQty) || 0;
+              const dispatches = issueItem.dispatches;
+              if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
+                const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
+                  return sum + (Number(dispatch.quantity) || 0);
+                }, 0);
+                if (dispatchQty > issueQty) {
+                  issueQty = dispatchQty;
+                }
+              }
+              issuedQtyMap.set(poItem.id, currentIssued + issueQty);
+            }
+          });
+        });
+        
+        setItemIssuedQty(issuedQtyMap);
+        
+        // If issueRemaining is true, automatically trigger issue parts flow
+        if (issueRemaining && isCIM && po.status === "approved") {
+          // Trigger the issue parts button click after a short delay
+          setTimeout(() => {
+            const issueButton = document.querySelector('[data-issue-parts-button]') as HTMLButtonElement;
+            if (issueButton && !issueButton.disabled) {
+              issueButton.click();
+            }
+          }, 500);
+        }
       } catch (error) {
         console.error("Failed to fetch purchase order:", error);
       } finally {
@@ -68,7 +124,7 @@ export default function PurchaseOrderDetailPage() {
     if (poId) {
       fetchPurchaseOrder();
     }
-  }, [poId, router]);
+  }, [poId, router, issueRemaining, isCIM]);
 
   const handleApprove = async () => {
     if (!purchaseOrder || !canApprovePO) return;
@@ -90,7 +146,7 @@ export default function PurchaseOrderDetailPage() {
             purchaseOrder.items.map(item => ({
               partId: item.partId,
               partName: item.partName,
-              quantity: item.quantity,
+              quantity: item.requestedQty || item.quantity || 0,
               unitPrice: item.unitPrice,
             }))
           ));
@@ -228,17 +284,117 @@ export default function PurchaseOrderDetailPage() {
             {purchaseOrder.status === "approved" && isCIM && (
               <div className="flex gap-3">
                 <Button
-                  onClick={() => {
-                    // Redirect to issue page with purchase order data
-                    const itemsParam = encodeURIComponent(JSON.stringify(
-                      purchaseOrder.items.map(item => ({
-                        partId: item.partId,
-                        partName: item.partName,
-                        quantity: item.quantity,
-                        unitPrice: item.unitPrice,
-                      }))
-                    ));
-                    router.push(`/central-inventory/stock/issue/${purchaseOrder.serviceCenterId}?poId=${poId}&items=${itemsParam}`);
+                  data-issue-parts-button
+                  onClick={async () => {
+                    try {
+                      // Fetch all central inventory stock to validate parts
+                      const allStock = await centralInventoryRepository.getAllStock();
+                      
+                      // Use the already-calculated itemIssuedQty from state, or recalculate if needed
+                      let currentIssuedQty = itemIssuedQty;
+                      if (currentIssuedQty.size === 0) {
+                        // Recalculate if state is empty
+                        const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
+                        const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
+                        const calculatedIssuedQty = new Map<string, number>();
+                        
+                        relatedIssues.forEach(issue => {
+                          issue.items.forEach((issueItem: any) => {
+                            // Match parts issue items to PO items
+                            const poItem = purchaseOrder.items.find((poItem: any) => {
+                              return (
+                                (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
+                                (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
+                                (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
+                                (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
+                                (poItem.partName && issueItem.partName && 
+                                 poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
+                                (poItem.partNumber && issueItem.partNumber && 
+                                 poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
+                              );
+                            });
+                            
+                            if (poItem) {
+                              const currentIssued = calculatedIssuedQty.get(poItem.id) || 0;
+                              // Use issuedQty from parts issue item, or sum from dispatch records
+                              let issueQty = Number(issueItem.issuedQty) || 0;
+                              const dispatches = issueItem.dispatches;
+                              if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
+                                const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
+                                  return sum + (Number(dispatch.quantity) || 0);
+                                }, 0);
+                                if (dispatchQty > issueQty) {
+                                  issueQty = dispatchQty;
+                                }
+                              }
+                              calculatedIssuedQty.set(poItem.id, currentIssued + issueQty);
+                            }
+                          });
+                        });
+                        currentIssuedQty = calculatedIssuedQty;
+                      }
+                      
+                      // Calculate remaining quantities for each PO item using the issued quantities
+                      const itemsWithRemaining = purchaseOrder.items.map(item => {
+                        const requestedQty = Number(item.requestedQty || item.quantity || 0);
+                        const issuedQty = Number(currentIssuedQty.get(item.id) || 0);
+                        const remainingQty = Math.max(0, requestedQty - issuedQty);
+                        
+                        return {
+                          partId: item.partId,
+                          partName: item.partName,
+                          partNumber: item.partNumber,
+                          quantity: remainingQty, // Use remaining quantity, not full requested quantity
+                          unitPrice: item.unitPrice,
+                          requestedQty: requestedQty,
+                          issuedQty: issuedQty,
+                        };
+                      }).filter(item => item.quantity > 0); // Only include items with remaining quantity
+                      
+                      if (itemsWithRemaining.length === 0) {
+                        showError("All parts from this purchase order have already been issued.");
+                        return;
+                      }
+                      
+                      // Validate items using utility function
+                      const { validItems, invalidItems } = validateItemsAgainstStock(
+                        itemsWithRemaining,
+                        allStock
+                      );
+                      
+                      // If all items are valid, redirect with autofilled data (only remaining quantities)
+                      if (invalidItems.length === 0) {
+                        const itemsParam = encodeURIComponent(JSON.stringify(
+                          validItems.map(item => ({
+                            partId: item.matchedPartId,
+                            partName: item.partName,
+                            partNumber: item.partNumber,
+                            quantity: item.quantity, // This is already the remaining quantity
+                            unitPrice: item.unitPrice,
+                          }))
+                        ));
+                        router.push(`/central-inventory/stock/issue/${purchaseOrder.serviceCenterId}?poId=${poId}&items=${itemsParam}`);
+                      } else {
+                        // Some parts don't exist - redirect without autofill
+                        const invalidPartNames = invalidItems.map(i => 
+                          `${i.partName || 'Unknown'}${i.partNumber ? ` (${i.partNumber})` : ''}`
+                        ).join(', ');
+                        
+                        if (confirm(
+                          `The following parts are not found in Central Inventory (both part number and part name must match):\n\n${invalidPartNames}\n\n` +
+                          `You will be redirected to the issue page where you can manually select the correct parts.\n\n` +
+                          `Continue?`
+                        )) {
+                          // Redirect without items param - user must select manually
+                          router.push(`/central-inventory/stock/issue/${purchaseOrder.serviceCenterId}?poId=${poId}`);
+                        }
+                      }
+                    } catch (error) {
+                      console.error("Error validating parts:", error);
+                      showError("Failed to validate parts. Redirecting to issue page without autofill.");
+                      // Fallback: redirect without autofill
+                      router.push(`/central-inventory/stock/issue/${purchaseOrder.serviceCenterId}?poId=${poId}`);
+                    }
                   }}
                   disabled={isProcessing}
                   className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
@@ -262,7 +418,7 @@ export default function PurchaseOrderDetailPage() {
               <CardBody>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex items-start gap-3 md:col-span-2">
-                    <Building className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
+                    <Building className="w-5 h-5 text-blue-600 mt-1 shrink-0" />
                     <div className="flex-1">
                       <p className="text-sm text-gray-500 mb-1">Service Center</p>
                       <p className="font-semibold text-lg text-gray-900 mb-2">
@@ -413,6 +569,16 @@ export default function PurchaseOrderDetailPage() {
                         <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
                           Approved Qty
                         </th>
+                        {purchaseOrder.status === "approved" && (
+                          <>
+                            <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
+                              Issued Qty
+                            </th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold text-orange-700">
+                              Remaining Qty
+                            </th>
+                          </>
+                        )}
                         <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">
                           Unit Price
                         </th>
@@ -427,6 +593,11 @@ export default function PurchaseOrderDetailPage() {
                     <tbody>
                       {purchaseOrder.items.map((item) => {
                         const isExpanded = expandedItems.has(item.id);
+                        const requestedQty = item.requestedQty || item.quantity || 0;
+                        const issuedQty = itemIssuedQty.get(item.id) || 0;
+                        const remainingQty = Math.max(0, requestedQty - issuedQty);
+                        const colSpan = purchaseOrder.status === "approved" ? 9 : 7;
+                        
                         return (
                           <React.Fragment key={item.id}>
                             <tr 
@@ -458,7 +629,7 @@ export default function PurchaseOrderDetailPage() {
                                 </div>
                               </td>
                               <td className="py-3 px-4 text-sm text-gray-600">{item.hsnCode || 'N/A'}</td>
-                              <td className="py-3 px-4 text-right font-medium">{item.requestedQty}</td>
+                              <td className="py-3 px-4 text-right font-medium">{requestedQty}</td>
                               <td className="py-3 px-4 text-right">
                                 {item.approvedQty !== undefined ? (
                                   <span className="font-medium">{item.approvedQty}</span>
@@ -466,9 +637,29 @@ export default function PurchaseOrderDetailPage() {
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
+                              {purchaseOrder.status === "approved" && (
+                                <>
+                                  <td className="py-3 px-4 text-right">
+                                    <span className={`font-medium ${issuedQty > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                                      {issuedQty > 0 ? issuedQty : '-'}
+                                    </span>
+                                    {issuedQty > 0 && (
+                                      <p className="text-xs text-gray-500 mt-1">issued before</p>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <span className={`font-medium ${remainingQty > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                                      {remainingQty > 0 ? remainingQty : '-'}
+                                    </span>
+                                    {remainingQty > 0 && (
+                                      <p className="text-xs text-gray-500 mt-1">to fulfill</p>
+                                    )}
+                                  </td>
+                                </>
+                              )}
                               <td className="py-3 px-4 text-right">₹{item.unitPrice.toLocaleString()}</td>
                               <td className="py-3 px-4 text-right font-medium">
-                                ₹{item.totalPrice.toLocaleString()}
+                                ₹{(item.totalPrice || (item.unitPrice * requestedQty)).toLocaleString()}
                               </td>
                               <td className="py-3 px-4 text-center">
                                 <Badge
@@ -486,7 +677,7 @@ export default function PurchaseOrderDetailPage() {
                             </tr>
                             {isExpanded && (
                               <tr key={`${item.id}-details`} className="bg-blue-50">
-                                <td colSpan={7} className="py-4 px-4">
+                                <td colSpan={colSpan} className="py-4 px-4">
                                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                                     <div>
                                       <p className="text-gray-500 font-medium mb-1">Part Information</p>
@@ -527,14 +718,14 @@ export default function PurchaseOrderDetailPage() {
                                     )}
                                     <div>
                                       <p className="text-gray-500 font-medium mb-1">Quantity Details</p>
-                                      <p className="text-gray-700"><span className="font-medium">Requested:</span> {item.requestedQty}</p>
+                                      <p className="text-gray-700"><span className="font-medium">Requested:</span> {item.requestedQty || item.quantity || 0}</p>
                                       <p className="text-gray-700"><span className="font-medium">Approved:</span> {item.approvedQty !== undefined ? item.approvedQty : 'Pending'}</p>
                                       <p className="text-gray-700"><span className="font-medium">Issued:</span> {item.issuedQty !== undefined ? item.issuedQty : 'Not issued'}</p>
                                     </div>
                                     <div>
                                       <p className="text-gray-500 font-medium mb-1">Pricing</p>
                                       <p className="text-gray-700"><span className="font-medium">Unit Price:</span> ₹{item.unitPrice.toLocaleString()}</p>
-                                      <p className="text-gray-700"><span className="font-medium">Total Price:</span> ₹{item.totalPrice.toLocaleString()}</p>
+                                      <p className="text-gray-700"><span className="font-medium">Total Price:</span> ₹{(item.totalPrice || (item.unitPrice * (item.requestedQty || item.quantity || 0))).toLocaleString()}</p>
                                     </div>
                                     {item.urgency && (
                                       <div>
@@ -593,7 +784,7 @@ export default function PurchaseOrderDetailPage() {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Quantity</span>
                     <span className="font-medium">
-                      {purchaseOrder.items.reduce((sum, item) => sum + item.requestedQty, 0)}
+                      {purchaseOrder.items.reduce((sum, item) => sum + (item.requestedQty || item.quantity || 0), 0)}
                     </span>
                   </div>
                   <div className="border-t pt-4">
@@ -641,13 +832,14 @@ export default function PurchaseOrderDetailPage() {
             <CardBody>
               <div className="space-y-4">
                 {purchaseOrder.items.map((item, index) => {
-                  const approvedItem = approvedItems.find(ai => ai.itemId === (item.itemId || item.id));
+                  const itemQuantity = item.requestedQty || item.quantity || 0;
+                  const approvedItem = approvedItems.find(ai => ai.itemId === item.id);
                   return (
                     <div key={item.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">{item.partName || `Part ${index + 1}`}</p>
-                          <p className="text-sm text-gray-600">Requested: {item.quantity}</p>
+                          <p className="text-sm text-gray-600">Requested: {itemQuantity}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -657,27 +849,27 @@ export default function PurchaseOrderDetailPage() {
                         <input
                           type="number"
                           min="0"
-                          max={item.quantity}
-                          value={approvedItem?.approvedQty || item.quantity}
+                          max={itemQuantity}
+                          value={approvedItem?.approvedQty || itemQuantity}
                           onChange={(e) => {
                             const qty = parseInt(e.target.value) || 0;
                             const updatedItems = approvedItems.map(ai =>
-                              ai.itemId === (item.itemId || item.id)
-                                ? { ...ai, approvedQty: Math.min(qty, item.quantity) }
+                              ai.itemId === item.id
+                                ? { ...ai, approvedQty: Math.min(qty, itemQuantity) }
                                 : ai
                             );
                             // If item not in list, add it
                             if (!approvedItem) {
                               updatedItems.push({
-                                itemId: item.itemId || item.id,
-                                approvedQty: Math.min(qty, item.quantity)
+                                itemId: item.id,
+                                approvedQty: Math.min(qty, itemQuantity)
                               });
                             }
                             setApprovedItems(updatedItems);
                           }}
                           className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
-                        <span className="text-sm text-gray-600">of {item.quantity}</span>
+                        <span className="text-sm text-gray-600">of {itemQuantity}</span>
                       </div>
                     </div>
                   );

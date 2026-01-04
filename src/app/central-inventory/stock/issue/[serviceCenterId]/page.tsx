@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { useToast } from "@/contexts/ToastContext";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { PartsIssueForm } from "@/app/central-inventory/components/PartsIssueForm";
+import { findMatchingPartInStock } from "@/shared/utils/part-matching.utils";
 import type {
   ServiceCenterInfo,
   CentralStock,
@@ -70,26 +71,158 @@ export default function StockIssuePage() {
         setAvailableStock(stock.filter((s) => s.stockQuantity > 0));
 
         // Parse initial items from query params if available
-        if (itemsParam) {
+        // If poId is provided, calculate remaining quantities from existing parts issues
+        if (poId && !itemsParam) {
+          try {
+            // Fetch PO and existing parts issues to calculate remaining quantities
+            const po = await centralInventoryRepository.getPurchaseOrderById(poId);
+            if (po) {
+              const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
+              const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
+              
+              // Calculate already issued quantities per PO item
+              const itemIssuedQty = new Map<string, number>();
+              
+              relatedIssues.forEach(issue => {
+                issue.items.forEach((issueItem: any) => {
+                  // Match parts issue items to PO items
+                  const poItem = po.items.find(poItem => {
+                    return (
+                      (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
+                      (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
+                      (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
+                      (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
+                      (poItem.partName && issueItem.partName && 
+                       poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
+                      (poItem.partNumber && issueItem.partNumber && 
+                       poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
+                    );
+                  });
+                  
+                  if (poItem) {
+                    const currentIssued = itemIssuedQty.get(poItem.id) || 0;
+                    let issueQty = Number(issueItem.issuedQty) || 0;
+                    const dispatches = issueItem.dispatches;
+                    if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
+                      const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
+                        return sum + (Number(dispatch.quantity) || 0);
+                      }, 0);
+                      if (dispatchQty > issueQty) {
+                        issueQty = dispatchQty;
+                      }
+                    }
+                    itemIssuedQty.set(poItem.id, currentIssued + issueQty);
+                  }
+                });
+              });
+              
+              // Calculate remaining quantities and validate against stock
+              const itemsWithRemaining = po.items
+                .map(item => {
+                  const requestedQty = item.requestedQty || item.quantity || 0;
+                  const issuedQty = itemIssuedQty.get(item.id) || 0;
+                  const remainingQty = Math.max(0, requestedQty - issuedQty);
+                  
+                  return {
+                    partId: item.partId,
+                    partName: item.partName,
+                    partNumber: item.partNumber,
+                    quantity: remainingQty,
+                    unitPrice: item.unitPrice,
+                  };
+                })
+                .filter(item => item.quantity > 0);
+              
+              if (itemsWithRemaining.length > 0) {
+                // Validate and map to stock items
+                const validatedItems = itemsWithRemaining.map((item: any) => {
+                  const match = findMatchingPartInStock(
+                    { partNumber: item.partNumber, partName: item.partName },
+                    stock
+                  );
+                  
+                  if (match.matched && match.matchedPart) {
+                    const stockItem = match.matchedPart;
+                    return {
+                      partId: stockItem.id,
+                      partName: stockItem.partName,
+                      partNumber: stockItem.partNumber,
+                      hsnCode: stockItem.hsnCode || '',
+                      fromStock: stockItem.id,
+                      quantity: item.quantity, // Remaining quantity
+                      unitPrice: item.unitPrice || stockItem.unitPrice || 0,
+                      availableQty: stockItem.stockQuantity || 0,
+                    };
+                  }
+                  return null;
+                }).filter((item: any) => item !== null && item.fromStock && item.quantity > 0);
+                
+                setInitialItems(validatedItems);
+              }
+            }
+          } catch (e) {
+            console.error("Failed to calculate remaining quantities:", e);
+            // Continue without autofill
+          }
+        } else if (itemsParam) {
           try {
             const items = JSON.parse(decodeURIComponent(itemsParam));
-            // Map items to match PartsIssueForm format
-            const mappedItems = items.map((item: any) => {
-              // Find matching stock item
-              const stockItem = stock.find(s => s.id === item.partId || s.partNumber === item.partNumber);
-              return {
-                partId: item.partId || stockItem?.id || '',
-                partName: item.partName || stockItem?.partName || '',
-                hsnCode: stockItem?.hsnCode || '',
-                fromStock: stockItem?.id || item.partId || '',
-                quantity: item.quantity || 0,
-                unitPrice: item.unitPrice || stockItem?.unitPrice || 0,
-                availableQty: stockItem?.stockQuantity || 0,
-              };
-            }).filter((item: any) => item.fromStock && item.quantity > 0);
+            
+            // Validate each item exists in central inventory with BOTH partNumber AND partName match
+            const validatedItems = items.map((item: any) => {
+              // Find matching stock item using utility function
+              const match = findMatchingPartInStock(
+                { partNumber: item.partNumber, partName: item.partName },
+                stock
+              );
+              
+              // If part found with both matches, return autofilled data
+              if (match.matched && match.matchedPart) {
+                const stockItem = match.matchedPart;
+                return {
+                  partId: stockItem.id,
+                  partName: stockItem.partName,
+                  partNumber: stockItem.partNumber,
+                  hsnCode: stockItem.hsnCode || '',
+                  fromStock: stockItem.id,
+                  quantity: item.quantity || 0, // This should already be remaining quantity from PO page
+                  unitPrice: item.unitPrice || stockItem.unitPrice || 0,
+                  availableQty: stockItem.stockQuantity || 0,
+                };
+              }
+              
+              // Part not found - return null to filter out
+              console.warn(
+                `Part not found in Central Inventory: ${item.partName || 'Unknown'}${item.partNumber ? ` (${item.partNumber})` : ''}. ` +
+                `Both part number and part name must match exactly.`
+              );
+              return null;
+            });
+            
+            // Filter out null values (parts that don't match)
+            const mappedItems = validatedItems.filter((item: any) => 
+              item !== null && item.fromStock && item.quantity > 0
+            );
+            
+            if (mappedItems.length === 0 && items.length > 0) {
+              // All parts were invalid - show message
+              showError(
+                "None of the requested parts were found in Central Inventory. " +
+                "Both part number and part name must match exactly. Please select parts manually."
+              );
+            } else if (mappedItems.length < items.length) {
+              // Some parts were invalid
+              const invalidCount = items.length - mappedItems.length;
+              showError(
+                `${invalidCount} part(s) were not found in Central Inventory. ` +
+                "Please select the missing parts manually."
+              );
+            }
+            
             setInitialItems(mappedItems);
           } catch (e) {
             console.error("Failed to parse items from query params:", e);
+            showError("Failed to parse parts data. Please select parts manually.");
           }
         }
 

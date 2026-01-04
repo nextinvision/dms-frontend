@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { adminApprovalService } from "@/features/inventory/services/adminApproval.service";
 import { useRole } from "@/shared/hooks";
 import { useToast } from "@/contexts/ToastContext";
@@ -19,43 +19,67 @@ export default function PartsIssueApprovalsPage() {
   const [notes, setNotes] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (isAdmin) {
-      fetchPendingRequests();
-      // Refresh every 5 seconds to check for new requests
-      const interval = setInterval(() => {
-        fetchPendingRequests();
-      }, 5000);
+  // Shared data fetching logic
+  const fetchPendingRequestsData = useCallback(async () => {
+    const requests = await adminApprovalService.getPendingApprovals();
+    console.log("Admin page - Fetched pending requests:", requests.length, requests);
+    setPendingRequests(requests);
+  }, []);
 
-      // Also refresh when page becomes visible
-      const handleVisibilityChange = () => {
-        if (document.visibilityState === "visible") {
-          fetchPendingRequests();
-        }
-      };
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-
-      return () => {
-        clearInterval(interval);
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-      };
-    }
-  }, [isAdmin]);
-
-  const fetchPendingRequests = async () => {
+  // Main fetch with loading state
+  const fetchPendingRequests = useCallback(async () => {
     try {
       setIsLoading(true);
-      const requests = await adminApprovalService.getPendingApprovals();
-      console.log("Admin page - Fetched pending requests:", requests.length, requests);
-      setPendingRequests(requests);
+      await fetchPendingRequestsData();
     } catch (error) {
       console.error("Failed to fetch pending requests:", error);
       showError("Failed to fetch pending requests. Please refresh the page.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [fetchPendingRequestsData, showError]);
+
+  // Silent fetch for polling (doesn't show loading state)
+  const fetchPendingRequestsSilently = useCallback(async () => {
+    try {
+      setIsRefreshing(true);
+      await fetchPendingRequestsData();
+    } catch (error) {
+      // Silently fail during polling - don't show error to user
+      console.error("Failed to refresh requests (silent):", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchPendingRequestsData]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchPendingRequests();
+      
+      // Auto-refresh polling: Check for updates every 5 seconds
+      const pollInterval = setInterval(() => {
+        // Only poll if page is visible and not currently loading/processing
+        if (document.visibilityState === "visible" && !isLoading && !isProcessing) {
+          fetchPendingRequestsSilently();
+        }
+      }, 5000);
+
+      // Also refresh when page becomes visible
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible" && !isLoading && !isProcessing) {
+          fetchPendingRequestsSilently();
+        }
+      };
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+
+      return () => {
+        clearInterval(pollInterval);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      };
+    }
+  }, [isAdmin, isLoading, isProcessing, fetchPendingRequests, fetchPendingRequestsSilently]);
 
   const handleApprove = async (id: string) => {
     if (!isAdmin) {
@@ -65,17 +89,32 @@ export default function PartsIssueApprovalsPage() {
 
     try {
       setIsProcessing(true);
-      await adminApprovalService.approvePartsIssue(
+      
+      // Optimistically remove from list immediately
+      setPendingRequests(prev => prev.filter(req => req.id !== id));
+      setSelectedRequest(null);
+      setNotes("");
+      
+      const approvedIssue = await adminApprovalService.approvePartsIssue(
         id,
         userInfo?.name || "Admin",
         notes || undefined
       );
-      setSelectedRequest(null);
-      setNotes("");
-      await fetchPendingRequests();
+      
+      console.log('Approval result:', {
+        id,
+        status: approvedIssue.status,
+        adminApproved: approvedIssue.adminApproved
+      });
+      
+      // Silently refresh to ensure data is in sync
+      await fetchPendingRequestsSilently();
+      
       showSuccess("Parts issue request approved successfully! Central inventory manager can now issue the parts.");
     } catch (error) {
       console.error("Failed to approve:", error);
+      // Re-fetch on error to restore the list
+      await fetchPendingRequests();
       showError(error instanceof Error ? error.message : "Failed to approve request");
     } finally {
       setIsProcessing(false);
@@ -95,17 +134,26 @@ export default function PartsIssueApprovalsPage() {
 
     try {
       setIsProcessing(true);
+      
+      // Optimistically remove from list immediately
+      setPendingRequests(prev => prev.filter(req => req.id !== id));
+      setSelectedRequest(null);
+      setRejectionReason("");
+      
       await adminApprovalService.rejectPartsIssue(
         id,
         userInfo?.name || "Admin",
         rejectionReason
       );
-      setSelectedRequest(null);
-      setRejectionReason("");
-      await fetchPendingRequests();
+      
+      // Silently refresh to ensure data is in sync
+      await fetchPendingRequestsSilently();
+      
       showSuccess("Parts issue request rejected.");
     } catch (error) {
       console.error("Failed to reject:", error);
+      // Re-fetch on error to restore the list
+      await fetchPendingRequests();
       showError(error instanceof Error ? error.message : "Failed to reject request");
     } finally {
       setIsProcessing(false);
@@ -114,7 +162,11 @@ export default function PartsIssueApprovalsPage() {
 
   const renderRequestCard = (request: PartsIssue) => {
     const isSelected = selectedRequest === request.id;
-    const isPending = request.status === "pending_admin_approval" && !request.adminApproved && !request.adminRejected;
+    // Show approve button for PENDING_APPROVAL or CIM_APPROVED issues that haven't been admin approved/rejected
+    const isPending = (request.status === "pending_admin_approval" || request.status === "cim_approved") 
+      && !request.adminApproved 
+      && !request.adminRejected
+      && request.status !== "admin_approved";
 
     return (
       <Card
@@ -333,6 +385,25 @@ export default function PartsIssueApprovalsPage() {
               </Button>
             </div>
           )}
+
+          {/* Show message if already approved */}
+          {request.adminApproved && request.status === "admin_approved" && (
+            <div className="border-t pt-4 mt-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="text-green-600 mt-0.5" size={20} />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-green-800 mb-1">
+                      Already Approved by Admin
+                    </p>
+                    <p className="text-xs text-green-700">
+                      This request has been approved. Central inventory manager can now dispatch the parts.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </CardBody>
       </Card>
     );
@@ -369,13 +440,20 @@ export default function PartsIssueApprovalsPage() {
             <h1 className="text-3xl font-bold text-indigo-600">Parts Issue Approvals</h1>
             <p className="text-gray-500 mt-1">
               Review and approve parts issue requests from central inventory manager
+              {isRefreshing && (
+                <span className="ml-2 text-xs text-blue-600 flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Auto-refreshing...
+                </span>
+              )}
             </p>
           </div>
           <Button
             onClick={fetchPendingRequests}
-            disabled={isLoading}
+            disabled={isLoading || isProcessing}
             variant="outline"
             className="flex items-center gap-2"
+            title="Refresh requests"
           >
             <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
             Refresh
