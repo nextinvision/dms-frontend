@@ -18,6 +18,11 @@ import {
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
+import { 
+  calculatePOItemIssuedQuantities, 
+  calculateRemainingQuantity,
+  hasClosedSubPo 
+} from "@/shared/utils/po-fulfillment.utils";
 import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
 
 type FilterStatus = "all" | "pending" | "approved" | "rejected" | "not_fully_fulfilled" | "fulfilled";
@@ -91,123 +96,30 @@ export default function PurchaseOrdersPage() {
             });
           }
           
-          // Debug: Log related issues for troubleshooting
-          if (relatedIssues.length > 0) {
-            console.log(`PO ${po.poNumber} (${po.id}) has ${relatedIssues.length} related parts issues:`, 
-              relatedIssues.map(issue => ({
-                id: issue.id,
-                issueNumber: issue.issueNumber,
-                purchaseOrderId: issue.purchaseOrderId,
-                status: issue.status,
-                itemsCount: issue.items.length,
-              }))
-            );
-          } else if (po.status === 'approved') {
-            // Log if approved PO has no related issues (might indicate missing purchaseOrderId)
-            console.warn(`PO ${po.poNumber} (${po.id}) is approved but has no related parts issues. ` +
-              `This might indicate parts issues are not linked to this PO.`);
-          }
+          // Note: Debug logging removed for production - uncomment if needed for troubleshooting
           
           // Calculate issued quantities per PO item
-          const itemIssuedQty = new Map<string, number>();
+          const itemIssuedQty = calculatePOItemIssuedQuantities(po.items, relatedIssues);
           const itemHasClosedSubPo = new Map<string, boolean>();
           
+          // Check for closed sub-POs
           relatedIssues.forEach(issue => {
             issue.items.forEach(issueItem => {
-              // Enhanced matching: try multiple strategies to match PO items with parts issue items
-              const poItem = po.items.find(poItem => {
-                // Strategy 1: Match by centralInventoryPartId (most reliable)
-                if (poItem.centralInventoryPartId && issueItem.partId && 
-                    poItem.centralInventoryPartId === issueItem.partId) {
-                  return true;
-                }
-                // Strategy 2: Match by partId
-                if (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) {
-                  return true;
-                }
-                // Strategy 3: Match by fromStock (parts issue item's fromStock should match PO item's partId)
-                if (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) {
-                  return true;
-                }
-                if (poItem.centralInventoryPartId && issueItem.fromStock && 
-                    poItem.centralInventoryPartId === issueItem.fromStock) {
-                  return true;
-                }
-                // Strategy 4: Match by partName (case-insensitive, trimmed)
-                if (poItem.partName && issueItem.partName) {
-                  const poName = poItem.partName.toLowerCase().trim();
-                  const issueName = issueItem.partName.toLowerCase().trim();
-                  if (poName === issueName && poName !== '') {
-                    return true;
-                  }
-                }
-                // Strategy 5: Match by partNumber (case-insensitive, trimmed)
-                if (poItem.partNumber && issueItem.partNumber) {
-                  const poNumber = poItem.partNumber.toLowerCase().trim();
-                  const issueNumber = issueItem.partNumber.toLowerCase().trim();
-                  if (poNumber === issueNumber && poNumber !== '') {
-                    return true;
-                  }
-                }
-                // Strategy 6: Match by HSN code as fallback
-                if (poItem.hsnCode && issueItem.hsnCode && 
-                    poItem.hsnCode.toLowerCase().trim() === issueItem.hsnCode.toLowerCase().trim()) {
-                  return true;
-                }
-                return false;
-              });
-              
-              if (poItem) {
-                // Aggregate issued quantities - use issuedQty from parts issue item
-                // Also check dispatch records if available (more reliable)
-                let issueQty = Number(issueItem.issuedQty) || 0;
-                
-                // If dispatch records are available, sum them up (more accurate)
-                if (issueItem.dispatches && Array.isArray(issueItem.dispatches) && issueItem.dispatches.length > 0) {
-                  const dispatchQty = issueItem.dispatches.reduce((sum: number, dispatch: any) => {
-                    return sum + (Number(dispatch.quantity) || 0);
-                  }, 0);
-                  // Use dispatch quantity if it's higher (more accurate)
-                  if (dispatchQty > issueQty) {
-                    issueQty = dispatchQty;
-                  }
-                }
-                
-                const currentIssued = itemIssuedQty.get(poItem.id) || 0;
-                itemIssuedQty.set(poItem.id, currentIssued + issueQty);
-                
-                // Check if sub-PO number has [C] postfix (indicates fully fulfilled)
-                // Check both in issueItem and in dispatch records
-                const hasClosedSubPo = 
-                  (issueItem.subPoNumber && (issueItem.subPoNumber.endsWith('C') || issueItem.subPoNumber.includes('_C'))) ||
-                  (issueItem.dispatches && Array.isArray(issueItem.dispatches) && 
-                   issueItem.dispatches.some((d: any) => 
-                     d.subPoNumber && (d.subPoNumber.endsWith('C') || d.subPoNumber.includes('_C'))
-                   ));
-                
-                if (hasClosedSubPo) {
+              if (hasClosedSubPo(issueItem)) {
+                // Find matching PO item to mark it as having closed sub-PO
+                const poItem = po.items.find(item => {
+                  return (
+                    (item.centralInventoryPartId && issueItem.partId && item.centralInventoryPartId === issueItem.partId) ||
+                    (item.partId && issueItem.partId && item.partId === issueItem.partId) ||
+                    (item.partName && issueItem.partName && 
+                     item.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
+                    (item.partNumber && issueItem.partNumber && 
+                     item.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
+                  );
+                });
+                if (poItem) {
                   itemHasClosedSubPo.set(poItem.id, true);
                 }
-              } else {
-                // Debug: Log unmatched items
-                console.warn(`Could not match parts issue item to PO item:`, {
-                  poId: po.id,
-                  poNumber: po.poNumber,
-                  issueItem: {
-                    partId: issueItem.partId,
-                    fromStock: issueItem.fromStock,
-                    partName: issueItem.partName,
-                    partNumber: issueItem.partNumber,
-                    issuedQty: issueItem.issuedQty,
-                  },
-                  poItems: po.items.map(item => ({
-                    id: item.id,
-                    partId: item.partId,
-                    centralInventoryPartId: item.centralInventoryPartId,
-                    partName: item.partName,
-                    partNumber: item.partNumber,
-                  })),
-                });
               }
             });
           });
@@ -220,23 +132,22 @@ export default function PurchaseOrdersPage() {
           
           po.items.forEach(item => {
             const requestedQty = Number(item.requestedQty || item.quantity || 0);
-            const issuedQty = Number(itemIssuedQty.get(item.id) || item.issuedQty || 0);
-            const remainingQty = Math.max(0, requestedQty - issuedQty);
+            const issuedQty = Number(itemIssuedQty.get(item.id) || 0);
+            const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
             const hasClosedSubPo = itemHasClosedSubPo.get(item.id) || false;
             
             // Check if item is fully fulfilled
             // Criteria: 
             // 1. issuedQty >= requestedQty (all requested quantity has been issued)
-            // 2. Allow very small tolerance for rounding errors (0.01) - but NOT for missing quantities
-            // 3. Closed sub-PO (ending with 'C') indicates fully fulfilled ONLY if issuedQty >= requestedQty
-            //    We don't trust closed sub-PO alone if quantities don't match - this prevents false positives
+            // 2. Allow very small tolerance for rounding errors (0.01)
+            // 3. If there's a closed sub-PO (ending with 'C'), it indicates fully fulfilled
+            //    But we still verify quantities match to prevent false positives
             const isFullyFulfilled = requestedQty > 0 && (
               // Primary check: issued quantity must be >= requested quantity (with tiny rounding tolerance)
-              (issuedQty >= requestedQty - 0.01) &&
-              // Secondary check: if there's a closed sub-PO, verify it's not a false positive
-              // Only trust closed sub-PO if issuedQty is very close to requestedQty (within 0.01)
-              (!hasClosedSubPo || Math.abs(issuedQty - requestedQty) <= 0.01)
+              issuedQty >= requestedQty - 0.01
             );
+            
+            // Note: Closed sub-PO mismatch warning removed - quantities are verified regardless
             
             if (remainingQty > 0) {
               remainingItems.push({
@@ -262,90 +173,43 @@ export default function PurchaseOrdersPage() {
           // Determine fulfillment status
           // A PO is fully fulfilled ONLY if:
           // 1. All items have issuedQty >= requestedQty (with minimal rounding tolerance of 0.01)
-          // 2. We do NOT trust closed sub-PO alone - quantities must match
-          // This prevents false positives where a PO is marked as fulfilled when quantities don't match
+          // 2. All items have no remaining quantity
+          // 3. We verify quantities match exactly (within tolerance)
           let fulfillmentStatus: "not_fulfilled" | "partially_fulfilled" | "fully_fulfilled";
+          
           if (po.items.length === 0) {
             fulfillmentStatus = "not_fulfilled";
-          } else if (fullyFulfilledCount === po.items.length && fullyFulfilledCount > 0) {
-            // Verify all items are truly fully fulfilled by checking quantities
+          } else {
+            // Check each item individually
             const allItemsFullyIssued = po.items.every(item => {
               const requestedQty = Number(item.requestedQty || item.quantity || 0);
               const issuedQty = Number(itemIssuedQty.get(item.id) || 0);
-              return requestedQty > 0 && issuedQty >= requestedQty - 0.01; // Allow tiny rounding tolerance only
+              // Item is fully fulfilled if requestedQty > 0 and issuedQty >= requestedQty (within tolerance)
+              return requestedQty > 0 && issuedQty >= requestedQty - 0.01;
             });
             
-            if (allItemsFullyIssued) {
+            // Check if there are any remaining items
+            const hasRemainingItems = remainingItems.length > 0;
+            
+            if (allItemsFullyIssued && !hasRemainingItems) {
+              // All items are fully issued and no remaining items - fully fulfilled
               fulfillmentStatus = "fully_fulfilled";
-            } else {
-              // Some items don't have enough issued quantity - mark as partially fulfilled
+            } else if (fullyFulfilledCount > 0 || partiallyFulfilledCount > 0 || hasRemainingItems) {
+              // Some items are fulfilled or there are remaining items - partially fulfilled
               fulfillmentStatus = "partially_fulfilled";
+            } else {
+              // No items have been issued - not fulfilled
+              fulfillmentStatus = "not_fulfilled";
             }
-          } else if (fullyFulfilledCount > 0 || partiallyFulfilledCount > 0) {
+          }
+          
+          // Final verification: Double-check that fully fulfilled POs have no remaining items
+          if (fulfillmentStatus === "fully_fulfilled" && remainingItems.length > 0) {
+            // If there are remaining items, it can't be fully fulfilled
             fulfillmentStatus = "partially_fulfilled";
-          } else {
-            fulfillmentStatus = "not_fulfilled";
           }
           
-          // Additional verification: If backend says fulfilled, verify quantities match
-          // Don't blindly trust backend - verify actual issued quantities
-          if (po.status === "fulfilled" && fulfillmentStatus !== "fully_fulfilled") {
-            // Re-check: only trust backend if all items truly have issuedQty >= requestedQty
-            const allItemsTrulyFulfilled = po.items.every(item => {
-              const requestedQty = Number(item.requestedQty || item.quantity || 0);
-              const issuedQty = Number(itemIssuedQty.get(item.id) || item.issuedQty || 0);
-              return requestedQty > 0 && issuedQty >= requestedQty - 0.01; // Strict check with minimal tolerance
-            });
-            if (allItemsTrulyFulfilled) {
-              fulfillmentStatus = "fully_fulfilled";
-            } else {
-              // Backend says fulfilled but quantities don't match - mark as partially fulfilled
-              fulfillmentStatus = "partially_fulfilled";
-            }
-          }
-          
-          // Debug logging for troubleshooting - log all POs for analysis
-          console.log(`PO ${po.poNumber} (${po.id}) fulfillment analysis:`, {
-            status: fulfillmentStatus,
-            poStatus: po.status,
-            totalItems: po.items.length,
-            fullyFulfilled: fullyFulfilledCount,
-            partiallyFulfilled: partiallyFulfilledCount,
-            itemsWithClosedSubPo,
-            relatedIssuesCount: relatedIssues.length,
-            itemDetails: po.items.map(item => {
-              const requestedQty = Number(item.requestedQty || item.quantity || 0);
-              const issuedQty = Number(itemIssuedQty.get(item.id) || item.issuedQty || 0);
-              const hasClosedSubPo = itemHasClosedSubPo.get(item.id) || false;
-              return {
-                id: item.id,
-                partName: item.partName,
-                partNumber: item.partNumber,
-                partId: item.partId,
-                centralInventoryPartId: item.centralInventoryPartId,
-                requestedQty,
-                issuedQty,
-                remainingQty: Math.max(0, requestedQty - issuedQty),
-                hasClosedSubPo,
-                isFulfilled: requestedQty > 0 && (issuedQty >= requestedQty || (hasClosedSubPo && issuedQty > 0)),
-              };
-            }),
-            relatedIssues: relatedIssues.map(issue => ({
-              id: issue.id,
-              issueNumber: issue.issueNumber,
-              purchaseOrderId: issue.purchaseOrderId,
-              status: issue.status,
-              items: issue.items.map(item => ({
-                partId: item.partId,
-                fromStock: item.fromStock,
-                partName: item.partName,
-                partNumber: item.partNumber,
-                requestedQty: item.requestedQty,
-                issuedQty: item.issuedQty,
-                subPoNumber: item.subPoNumber,
-              })),
-            })),
-          });
+          // Note: Debug logging removed for production - uncomment if needed for troubleshooting
           
           return {
             ...po,
@@ -373,18 +237,26 @@ export default function PurchaseOrdersPage() {
     if (statusFilter !== "all") {
       if (statusFilter === "not_fully_fulfilled") {
         // Show POs that are approved and have some parts issued but not all
-        filtered = filtered.filter((po) => 
-          po.status === "approved" && 
-          (po.fulfillmentStatus === "partially_fulfilled" || po.fulfillmentStatus === "not_fulfilled")
-        );
+        // EXCLUDE fully fulfilled POs - they should only appear in "Fulfilled" tab
+        filtered = filtered.filter((po) => {
+          const isApproved = po.status === "approved";
+          const isNotFullyFulfilled = po.fulfillmentStatus !== "fully_fulfilled";
+          const hasRemainingItems = po.remainingItems && po.remainingItems.length > 0;
+          
+          // Must be approved, not fully fulfilled, and have remaining items
+          return isApproved && isNotFullyFulfilled && hasRemainingItems;
+        });
       } else if (statusFilter === "fulfilled") {
-        // Show POs that are fully fulfilled (all parts issued, sub-PO has [C])
-        // Also include POs with status "fulfilled" for backward compatibility
-        filtered = filtered.filter((po) => 
-          po.fulfillmentStatus === "fully_fulfilled" || 
-          po.status === "fulfilled" ||
-          po.status === "partially_fulfilled" && po.fulfillmentStatus === "fully_fulfilled"
-        );
+        // Show POs that are fully fulfilled (all parts issued)
+        // Only include POs that are truly fully fulfilled
+        filtered = filtered.filter((po) => {
+          // Must be fully fulfilled based on our calculation
+          const isFullyFulfilled = po.fulfillmentStatus === "fully_fulfilled";
+          // Should have no remaining items
+          const hasNoRemainingItems = !po.remainingItems || po.remainingItems.length === 0;
+          
+          return isFullyFulfilled && hasNoRemainingItems;
+        });
       } else {
       filtered = filtered.filter((po) => po.status === statusFilter);
       }

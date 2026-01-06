@@ -28,7 +28,7 @@ export default function PartsIssueRequestsPage() {
   // Shared data fetching logic
   const fetchRequestsData = useCallback(async () => {
     const allIssues = await adminApprovalService.getAllIssues();
-    
+
     // Pending approval: PENDING_APPROVAL or CIM_APPROVED (waiting for admin)
     const pending = allIssues.filter(
       (issue) =>
@@ -36,18 +36,18 @@ export default function PartsIssueRequestsPage() {
         !issue.adminApproved &&
         !issue.adminRejected
     );
-    
+
     // Approved requests: ADMIN_APPROVED (ready to dispatch) or DISPATCHED (already issued)
     // Also check adminApproved flag to catch any issues
     const approved = allIssues.filter(
-      (issue) => 
-        issue.status === "admin_approved" || 
-        issue.status === "issued" || 
+      (issue) =>
+        issue.status === "admin_approved" ||
+        issue.status === "issued" ||
         issue.status === "dispatched" ||
         issue.status === "completed" ||
         (issue.adminApproved && issue.status !== "admin_rejected")
     );
-    
+
     // Rejected requests
     const rejected = allIssues.filter(
       (issue) => issue.status === "admin_rejected" || issue.status === "rejected"
@@ -132,11 +132,11 @@ export default function PartsIssueRequestsPage() {
   const handleIssueParts = async (id: string) => {
     try {
       setIsProcessing(true);
-      
+
       // Get the issue details first
       const allIssues = await adminApprovalService.getAllIssues();
       const issue = allIssues.find(i => i.id === id);
-      
+
       if (!issue) {
         showError("Parts issue not found");
         return;
@@ -181,12 +181,12 @@ export default function PartsIssueRequestsPage() {
         items: dispatchItems
         // transportDetails is optional - backend will handle it
       });
-      
+
       const dispatchedIssue = response.data || response;
-      
+
       // Refresh the list
       await fetchRequests();
-      
+
       // Show success message with sub-PO numbers if available
       const subPoNumbers = dispatchedIssue.items?.map((item: any) => item.subPoNumber).filter(Boolean).join(', ') || '';
       if (subPoNumbers) {
@@ -194,7 +194,7 @@ export default function PartsIssueRequestsPage() {
       } else {
         showSuccess("Parts dispatched successfully! Sub-PO numbers have been generated.");
       }
-      
+
       // Optionally show invoice modal
       // setIssuedPartsIssue(dispatchedIssue);
       // setShowInvoiceModal(true);
@@ -237,7 +237,7 @@ export default function PartsIssueRequestsPage() {
       setPaymentMethod("");
       setPaymentReference("");
       setIssuedPartsIssue(null);
-      
+
       // Navigate to invoice detail page
       setTimeout(() => {
         window.location.href = `/central-inventory/invoices/${invoice.id}`;
@@ -262,13 +262,12 @@ export default function PartsIssueRequestsPage() {
     return (
       <Card
         key={request.id}
-        className={`border-l-4 ${
-          isApproved
+        className={`border-l-4 ${isApproved
             ? "border-l-green-500"
             : isRejected
-            ? "border-l-red-500"
-            : "border-l-yellow-500"
-        }`}
+              ? "border-l-red-500"
+              : "border-l-yellow-500"
+          }`}
       >
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -309,13 +308,12 @@ export default function PartsIssueRequestsPage() {
           <div className="mb-4 flex gap-3">
             <button
               disabled
-              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${
-                isApproved
+              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${isApproved
                   ? "bg-green-500 text-white"
                   : isRejected
-                  ? "bg-red-500 text-white"
-                  : "bg-yellow-500 text-white"
-              }`}
+                    ? "bg-red-500 text-white"
+                    : "bg-yellow-500 text-white"
+                }`}
             >
               {isApproved ? (
                 <CheckCircle size={16} />
@@ -329,7 +327,7 @@ export default function PartsIssueRequestsPage() {
           </div>
 
           {/* Approval Details */}
-              {isApproved && request.adminApprovedBy && (
+          {isApproved && request.adminApprovedBy && (
             <div className="mb-3 p-2 bg-green-50 rounded text-xs text-green-700">
               Approved by {request.adminApprovedBy} on{" "}
               {request.adminApprovedAt
@@ -396,7 +394,7 @@ export default function PartsIssueRequestsPage() {
                     <p className="text-sm text-gray-600">₹{(item.totalPrice || 0).toLocaleString()}</p>
                     {item.issuedQty > 0 && (
                       <p className="text-xs text-green-600 mt-1">
-                        Issued: {item.issuedQty} / {item.approvedQty || item.quantity}
+                        Issued: {item.issuedQty} / {item.requestedQty || item.approvedQty || item.quantity}
                       </p>
                     )}
                   </div>
