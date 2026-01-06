@@ -1,7 +1,8 @@
 "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { useState, useEffect } from "react";
-import { inventoryService } from "@/features/inventory/services/inventory.service";
+import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
+import type { Part } from "@/features/inventory/types/inventory.types";
 import {
   Package,
   Search,
@@ -34,6 +35,7 @@ export default function SCInventory() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPart, setSelectedPart] = useState<InventoryItem | null>(null);
   const [showRequestModal, setShowRequestModal] = useState<boolean>(false);
+  const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
   const [requestItems, setRequestItems] = useState<RequestItem[]>([]);
   const [currentRequest, setCurrentRequest] = useState<{
     partId: string | number;
@@ -45,17 +47,103 @@ export default function SCInventory() {
     reason: string;
   } | null>(null);
 
-  // Load inventory from localStorage
-  // Load inventory from API
+  // Load inventory from parts master (inventory manager's parts master)
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     const loadInventory = async () => {
       try {
-        const data = await inventoryService.getAll();
-        setInventory(data);
+        setIsLoading(true);
+        // Fetch parts from parts master (inventory manager's database)
+        const parts: Part[] = await partsMasterService.getAll();
+        
+        // Map Part to InventoryItem format - only include fields that exist in database
+        const inventoryItems: InventoryItem[] = parts.map((part) => {
+          let status: StockStatus = "In Stock";
+          if ((part.stockQuantity ?? 0) <= 0) status = "Out of Stock";
+          else if (part.minStockLevel && (part.stockQuantity ?? 0) <= part.minStockLevel) status = "Low Stock";
+
+          // Only include fields that actually have values (not undefined/null/empty)
+          const item: Partial<InventoryItem> = {
+            id: part.id,
+            partName: part.partName, // Required field
+            currentQty: part.stockQuantity ?? 0, // Required field
+            stockQuantity: part.stockQuantity ?? 0,
+            status: status, // Required field
+          };
+
+          // Only add HSN code if it actually exists (oemPartNumber is the HSN code field)
+          if (part.oemPartNumber && part.oemPartNumber.trim() !== "") {
+            item.oemPartNumber = part.oemPartNumber;
+            item.hsnCode = part.oemPartNumber;
+          }
+
+          if (part.partNumber) {
+            item.partNumber = part.partNumber;
+            item.partCode = part.partNumber;
+          } else if (part.partId) {
+            item.partNumber = part.partId;
+            item.partCode = part.partId;
+          }
+
+          if (part.originType) item.originType = part.originType;
+          if (part.category) item.category = part.category;
+          if (part.description) item.description = part.description;
+          if (part.minStockLevel !== undefined && part.minStockLevel !== null) {
+            item.minStock = part.minStockLevel;
+            item.minStockLevel = part.minStockLevel;
+          }
+          if (part.maxStockLevel !== undefined && part.maxStockLevel !== null) {
+            item.maxStockLevel = part.maxStockLevel;
+          }
+          if (part.unit) item.unit = part.unit;
+          if (part.location) item.location = part.location;
+          if (part.brandName) {
+            item.brandName = part.brandName;
+            item.supplier = part.brandName;
+          }
+          if (part.variant) item.variant = part.variant;
+          if (part.partType) item.partType = part.partType;
+          if (part.color) item.color = part.color;
+          if (part.costPrice !== undefined && part.costPrice !== null) {
+            item.costPrice = typeof part.costPrice === 'number' 
+              ? `₹${part.costPrice.toLocaleString('en-IN')}` 
+              : part.costPrice.toString();
+          }
+          if (part.pricePreGst !== undefined && part.pricePreGst !== null) item.pricePreGst = part.pricePreGst;
+          if (part.gstRateInput !== undefined && part.gstRateInput !== null) item.gstRateInput = part.gstRateInput;
+          if (part.gstInput !== undefined && part.gstInput !== null) item.gstInput = part.gstInput;
+          if (part.unitPrice !== undefined && part.unitPrice !== null) {
+            item.unitPrice = typeof part.unitPrice === 'number' 
+              ? `₹${part.unitPrice.toLocaleString('en-IN')}` 
+              : part.unitPrice.toString();
+          } else if (part.price !== undefined && part.price !== null) {
+            item.unitPrice = typeof part.price === 'number' 
+              ? `₹${part.price.toLocaleString('en-IN')}` 
+              : part.price.toString();
+          }
+          if (part.gstRate !== undefined && part.gstRate !== null) item.gstRate = part.gstRate;
+          if (part.gstRateOutput !== undefined && part.gstRateOutput !== null) item.gstRateOutput = part.gstRateOutput;
+          if (part.totalPrice !== undefined && part.totalPrice !== null) item.totalPrice = part.totalPrice;
+          if (part.totalGst !== undefined && part.totalGst !== null) item.totalGst = part.totalGst;
+          if (part.labourName) item.labourName = part.labourName;
+          if (part.labourCode) item.labourCode = part.labourCode;
+          if (part.labourWorkTime) item.labourWorkTime = part.labourWorkTime;
+          if (part.labourRate !== undefined && part.labourRate !== null) item.labourRate = part.labourRate;
+          if (part.labourGstRate !== undefined && part.labourGstRate !== null) item.labourGstRate = part.labourGstRate;
+          if (part.labourPrice !== undefined && part.labourPrice !== null) item.labourPrice = part.labourPrice;
+          if (part.highValuePart !== undefined) item.highValuePart = part.highValuePart;
+
+          return item as InventoryItem;
+        });
+        
+        setInventory(inventoryItems);
       } catch (error) {
-        console.error("Failed to load inventory:", error);
+        console.error("Failed to load inventory from parts master:", error);
+        setInventory([]);
+      } finally {
+        setIsLoading(false);
       }
     };
     loadInventory();
@@ -76,6 +164,19 @@ export default function SCInventory() {
     }
     return matchesSearch;
   });
+
+  // Determine which columns have data - only check for actual database values
+  const hasData = {
+    partName: true, // Always show - required field
+    partCode: filteredInventory.some(item => item.partCode && item.partCode.trim() !== ""),
+    category: filteredInventory.some(item => item.category && item.category.trim() !== ""),
+    stock: true, // Always show - required field
+    minStock: filteredInventory.some(item => item.minStock !== undefined && item.minStock !== null),
+    unitPrice: filteredInventory.some(item => item.unitPrice && item.unitPrice !== "₹0" && item.unitPrice !== "₹0.00"),
+    location: filteredInventory.some(item => item.location && item.location !== "N/A" && item.location.trim() !== ""),
+    status: true, // Always show - required field
+    supplier: filteredInventory.some(item => item.supplier && item.supplier !== "Unknown" && item.supplier.trim() !== ""),
+  };
 
   const lowStockCount = inventory.filter(
     (item) => item.currentQty <= item.minStock && item.currentQty > 0
@@ -337,6 +438,12 @@ export default function SCInventory() {
 
         {/* Inventory Table */}
         <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+          {isLoading ? (
+            <div className="p-12 text-center">
+              <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="text-gray-600">Loading parts from inventory master...</p>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -344,27 +451,34 @@ export default function SCInventory() {
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Part Name
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    HSN Code
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Part Code
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Category
-                  </th>
+                  {hasData.partCode && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Part Code
+                    </th>
+                  )}
+                  {hasData.category && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Category
+                    </th>
+                  )}
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Stock
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Min Level
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Unit Price
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Location
-                  </th>
+                  {hasData.minStock && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Min Level
+                    </th>
+                  )}
+                  {hasData.unitPrice && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Unit Price
+                    </th>
+                  )}
+                  {hasData.location && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Location
+                    </th>
+                  )}
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Status
                   </th>
@@ -385,19 +499,26 @@ export default function SCInventory() {
                             <div className="text-sm font-medium text-gray-900">
                               {item.partName}
                             </div>
-                            <div className="text-xs text-gray-500">{item.supplier}</div>
+                            {hasData.supplier && item.supplier && item.supplier !== "Unknown" && (
+                              <div className="text-xs text-gray-500">{item.supplier}</div>
+                            )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900 font-mono">{item.hsnCode}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-700">{item.partCode || "-"}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-700">{item.category}</span>
-                      </td>
+                      {hasData.partCode && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-700">
+                            {item.partCode && item.partCode.trim() !== "" ? item.partCode : "-"}
+                          </span>
+                        </td>
+                      )}
+                      {hasData.category && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-700">
+                            {item.category && item.category.trim() !== "" ? item.category : "-"}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
@@ -414,17 +535,31 @@ export default function SCInventory() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-700">{item.minStock}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-medium text-gray-900">
-                          {item.unitPrice}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-700">{item.location}</span>
-                      </td>
+                      {hasData.minStock && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-700">
+                            {item.minStock !== undefined && item.minStock !== null ? item.minStock : "-"}
+                          </span>
+                        </td>
+                      )}
+                      {hasData.unitPrice && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-medium text-gray-900">
+                            {item.unitPrice && item.unitPrice !== "₹0" && item.unitPrice !== "₹0.00" 
+                              ? item.unitPrice 
+                              : "-"}
+                          </span>
+                        </td>
+                      )}
+                      {hasData.location && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm text-gray-700">
+                            {item.location && item.location !== "N/A" && item.location.trim() !== "" 
+                              ? item.location 
+                              : "-"}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
@@ -437,7 +572,10 @@ export default function SCInventory() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex gap-2">
                           <button
-                            onClick={() => setSelectedPart(item)}
+                            onClick={() => {
+                              setSelectedPart(item);
+                              setShowDetailModal(true);
+                            }}
                             className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                           >
                             View
@@ -461,6 +599,7 @@ export default function SCInventory() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
 
         {filteredInventory.length === 0 && (
@@ -662,6 +801,265 @@ export default function SCInventory() {
                 >
                   Submit Request ({requestItems.length > 0 ? requestItems.length : selectedPart ? 1 : 0} item{requestItems.length !== 1 && !selectedPart ? "s" : ""})
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Part Detail Modal */}
+      {showDetailModal && selectedPart && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-xl md:rounded-2xl shadow-2xl w-full max-w-4xl mx-2 max-h-[90vh] overflow-y-auto p-4 md:p-6 z-[101]">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Part Details</h2>
+              <button
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setSelectedPart(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition p-2 rounded-lg hover:bg-gray-100"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Basic Information */}
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Package className="text-blue-600" size={20} />
+                  Basic Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Part Name</p>
+                    <p className="font-semibold text-gray-800">{selectedPart.partName}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">HSN Code</p>
+                    <p className="font-semibold text-gray-800 font-mono">{selectedPart.hsnCode}</p>
+                  </div>
+                  {selectedPart.partCode && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Part Code</p>
+                      <p className="font-semibold text-gray-800">{selectedPart.partCode}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Category</p>
+                    <p className="font-semibold text-gray-800">{selectedPart.category}</p>
+                  </div>
+                  {selectedPart.oemPartNumber && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">OEM Part Number</p>
+                      <p className="font-semibold text-gray-800 font-mono">{selectedPart.oemPartNumber}</p>
+                    </div>
+                  )}
+                  {selectedPart.originType && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Origin Type</p>
+                      <p className="font-semibold text-gray-800">{selectedPart.originType}</p>
+                    </div>
+                  )}
+                  {selectedPart.description && (
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-gray-600 mb-1">Description</p>
+                      <p className="text-gray-800">{selectedPart.description}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Stock Information */}
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Stock Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Current Quantity</p>
+                    <p className={`text-2xl font-bold ${selectedPart.currentQty > selectedPart.minStock ? 'text-green-600' : selectedPart.currentQty === 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+                      {selectedPart.currentQty} {selectedPart.unit || 'units'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Minimum Stock Level</p>
+                    <p className="text-2xl font-bold text-gray-800">{selectedPart.minStock} {selectedPart.unit || 'units'}</p>
+                  </div>
+                  {selectedPart.maxStockLevel && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Maximum Stock Level</p>
+                      <p className="text-2xl font-bold text-gray-800">{selectedPart.maxStockLevel} {selectedPart.unit || 'units'}</p>
+                    </div>
+                  )}
+                  <div className="md:col-span-3">
+                    <p className="text-sm text-gray-600 mb-2">Stock Status</p>
+                    <span
+                      className={`px-4 py-2 rounded-full text-sm font-medium border ${getStatusColor(
+                        selectedPart.status
+                      )}`}
+                    >
+                      {selectedPart.status}
+                    </span>
+                  </div>
+                  {selectedPart.location && (
+                    <div className="md:col-span-3">
+                      <p className="text-sm text-gray-600 mb-1">Location</p>
+                      <p className="font-semibold text-gray-800">{selectedPart.location}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Pricing Information */}
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Pricing Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Unit Price</p>
+                    <p className="text-xl font-bold text-gray-800">
+                      {typeof selectedPart.unitPrice === 'string' ? selectedPart.unitPrice : `₹${selectedPart.unitPrice}`}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Cost Price</p>
+                    <p className="text-xl font-bold text-gray-800">
+                      {typeof selectedPart.costPrice === 'string' ? selectedPart.costPrice : `₹${selectedPart.costPrice}`}
+                    </p>
+                  </div>
+                  {selectedPart.pricePreGst && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Price Pre GST</p>
+                      <p className="text-lg font-semibold text-gray-800">₹{selectedPart.pricePreGst}</p>
+                    </div>
+                  )}
+                  {selectedPart.gstRate && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">GST Rate</p>
+                      <p className="text-lg font-semibold text-gray-800">{selectedPart.gstRate}%</p>
+                    </div>
+                  )}
+                  {selectedPart.totalPrice && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Total Price (incl. GST)</p>
+                      <p className="text-lg font-semibold text-gray-800">₹{selectedPart.totalPrice}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Part Details */}
+              {(selectedPart.brandName || selectedPart.variant || selectedPart.partType || selectedPart.color) && (
+                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Part Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {selectedPart.brandName && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Brand Name</p>
+                        <p className="font-semibold text-gray-800">{selectedPart.brandName}</p>
+                      </div>
+                    )}
+                    {selectedPart.variant && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Variant</p>
+                        <p className="font-semibold text-gray-800">{selectedPart.variant}</p>
+                      </div>
+                    )}
+                    {selectedPart.partType && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Part Type</p>
+                        <p className="font-semibold text-gray-800">{selectedPart.partType}</p>
+                      </div>
+                    )}
+                    {selectedPart.color && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Color</p>
+                        <p className="font-semibold text-gray-800">{selectedPart.color}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Labour Information */}
+              {(selectedPart.labourName || selectedPart.labourCode || selectedPart.labourWorkTime) && (
+                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Labour Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {selectedPart.labourName && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Labour Name</p>
+                        <p className="font-semibold text-gray-800">{selectedPart.labourName}</p>
+                      </div>
+                    )}
+                    {selectedPart.labourCode && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Labour Code</p>
+                        <p className="font-semibold text-gray-800 font-mono">{selectedPart.labourCode}</p>
+                      </div>
+                    )}
+                    {selectedPart.labourWorkTime && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Work Time</p>
+                        <p className="font-semibold text-gray-800">{selectedPart.labourWorkTime}</p>
+                      </div>
+                    )}
+                    {selectedPart.labourRate && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Labour Rate</p>
+                        <p className="font-semibold text-gray-800">₹{selectedPart.labourRate}</p>
+                      </div>
+                    )}
+                    {selectedPart.labourPrice && (
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Labour Price</p>
+                        <p className="font-semibold text-gray-800">₹{selectedPart.labourPrice}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Information */}
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Additional Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {selectedPart.supplier && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Supplier</p>
+                      <p className="font-semibold text-gray-800">{selectedPart.supplier}</p>
+                    </div>
+                  )}
+                  {selectedPart.highValuePart !== undefined && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">High Value Part</p>
+                      <p className="font-semibold text-gray-800">{selectedPart.highValuePart ? 'Yes' : 'No'}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowDetailModal(false);
+                    setSelectedPart(null);
+                  }}
+                  className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
+                >
+                  Close
+                </button>
+                {selectedPart.currentQty <= selectedPart.minStock && (
+                  <button
+                    onClick={() => {
+                      setShowDetailModal(false);
+                      setShowRequestModal(true);
+                    }}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+                  >
+                    Request from Central
+                  </button>
+                )}
               </div>
             </div>
           </div>

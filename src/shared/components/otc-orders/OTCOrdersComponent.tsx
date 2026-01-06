@@ -21,6 +21,8 @@ import { customerService } from "@/features/customers/services/customer.service"
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { apiClient } from "@/core/api/client";
 import { useAuthStore } from "@/store/authStore";
+import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
+import type { Part } from "@/features/inventory/types/inventory.types";
 
 export default function OTCOrdersComponent() {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -42,24 +44,60 @@ export default function OTCOrdersComponent() {
   const [isSearchingCustomer, setIsSearchingCustomer] = useState<boolean>(false);
   const [customerSearchResults, setCustomerSearchResults] = useState<any[]>([]);
   const [customerFound, setCustomerFound] = useState<boolean>(false);
+  const [availableParts, setAvailableParts] = useState<OTCPart[]>([]);
+  const [isLoadingParts, setIsLoadingParts] = useState<boolean>(true);
   const { showSuccess, showError, toasts, removeToast } = useToastStore();
   const { userRole } = useAuthStore();
   const isInventoryManager = userRole === 'inventory_manager';
 
-  // Mock parts inventory for OTC
-  const availableParts: OTCPart[] = [
-    { id: 1, name: "Engine Oil 5W-30", hsnCode: "EO-001", price: 450, stock: 45, category: "Lubricants" },
-    { id: 2, name: "Brake Pads - Front", hsnCode: "BP-002", price: 1200, stock: 8, category: "Brakes" },
-    { id: 3, name: "Air Filter", hsnCode: "AF-003", price: 350, stock: 0, category: "Filters" },
-    { id: 4, name: "AC Gas R134a", hsnCode: "AC-004", price: 800, stock: 12, category: "AC Parts" },
-    { id: 5, name: "Spark Plugs Set", hsnCode: "SP-005", price: 600, stock: 25, category: "Engine" },
-    { id: 6, name: "Windshield Wiper", hsnCode: "WW-006", price: 250, stock: 30, category: "Accessories" },
-  ];
+  // Fetch parts from parts master
+  useEffect(() => {
+    const fetchParts = async () => {
+      try {
+        setIsLoadingParts(true);
+        const parts: Part[] = await partsMasterService.getAll();
+        
+        // Map Part to OTCPart
+        const otcParts: OTCPart[] = parts.map((part, index) => {
+          // Generate a unique numeric ID from the string ID
+          // Use hash of the string ID to ensure uniqueness
+          let numericId = index + 1;
+          if (part.id) {
+            // Create a hash from the string ID
+            const hash = part.id.split('').reduce((acc, char) => {
+              return ((acc << 5) - acc) + char.charCodeAt(0) | 0;
+            }, 0);
+            numericId = Math.abs(hash) || index + 1;
+          }
+          
+          return {
+            id: numericId,
+            name: part.partName,
+            hsnCode: part.oemPartNumber || part.partNumber || part.partId || `PART-${numericId}`,
+            price: part.unitPrice || part.price || 0,
+            stock: part.stockQuantity || 0,
+            category: part.category || "Uncategorized",
+          };
+        });
+        
+        setAvailableParts(otcParts);
+      } catch (error) {
+        console.error("Failed to fetch parts:", error);
+        showError("Failed to load parts. Please try again.");
+        setAvailableParts([]);
+      } finally {
+        setIsLoadingParts(false);
+      }
+    };
+
+    fetchParts();
+  }, [showError]);
 
   const filteredParts = availableParts.filter(
     (part) =>
       part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      part.hsnCode.toLowerCase().includes(searchQuery.toLowerCase())
+      part.hsnCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      part.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const addToCart = (part: OTCPart): void => {
@@ -547,50 +585,66 @@ export default function OTCOrdersComponent() {
 
             {/* Parts List */}
             <div className="bg-white rounded-2xl shadow-md p-6">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">Available Parts</h2>
-              <div className="space-y-3 max-h-[600px] overflow-y-auto">
-                {filteredParts.map((part) => (
-                  <div
-                    key={part.id}
-                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <Package className="text-gray-400" size={20} />
-                          <div>
-                            <p className="font-semibold text-gray-800">{part.name}</p>
-                            <p className="text-xs text-gray-500">
-                              HSN Code: {part.hsnCode} • {part.category}
-                            </p>
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                Available Parts {isLoadingParts && <span className="text-sm text-gray-500">(Loading...)</span>}
+              </h2>
+              {isLoadingParts ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="ml-3 text-gray-600">Loading parts...</span>
+                </div>
+              ) : filteredParts.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Package className="mx-auto mb-2" size={48} />
+                  <p className="text-sm">
+                    {searchQuery ? "No parts found matching your search." : "No parts available in inventory."}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                  {filteredParts.map((part) => (
+                    <div
+                      key={part.id}
+                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <Package className="text-gray-400" size={20} />
+                            <div>
+                              <p className="font-semibold text-gray-800">{part.name}</p>
+                              <p className="text-xs text-gray-500">
+                                HSN Code: {part.hsnCode} • {part.category}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="font-semibold text-gray-800">₹{part.price}</span>
+                            <span
+                              className={`${
+                                part.stock > 0 ? "text-green-600" : "text-red-600"
+                              }`}
+                            >
+                              Stock: {part.stock}
+                            </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="font-semibold text-gray-800">₹{part.price}</span>
-                          <span
-                            className={`${
-                              part.stock > 0 ? "text-green-600" : "text-red-600"
-                            }`}
-                          >
-                            Stock: {part.stock}
-                          </span>
-                        </div>
+                        <button
+                          onClick={() => addToCart(part)}
+                          disabled={part.stock === 0}
+                          className={`px-4 py-2 rounded-lg font-medium transition ${
+                            part.stock > 0
+                              ? "bg-blue-600 text-white hover:bg-blue-700"
+                              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                          }`}
+                        >
+                          Add to Cart
+                        </button>
                       </div>
-                      <button
-                        onClick={() => addToCart(part)}
-                        disabled={part.stock === 0}
-                        className={`px-4 py-2 rounded-lg font-medium transition ${
-                          part.stock > 0
-                            ? "bg-blue-600 text-white hover:bg-blue-700"
-                            : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                        }`}
-                      >
-                        Add to Cart
-                      </button>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
