@@ -17,6 +17,7 @@ import { JobCard } from "@/shared/types/job-card.types";
 import { Quotation } from "@/shared/types/quotation.types";
 import { CustomerWithVehicles, Vehicle } from "@/shared/types/vehicle.types";
 import { quotationsService } from "@/features/quotations/services/quotations.service";
+import { generateTempEntityId, updateFileEntityAssociation, RelatedEntityType } from "@/services/cloudinary/fileMetadata.service";
 
 // New Hooks, Utils and Sections
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
@@ -59,6 +60,9 @@ export default function JobCardFormModal({
   const { userRole, userInfo } = useRole();
   const isServiceAdvisor = userRole === "service_advisor";
   const isServiceManager = userRole === "sc_manager";
+
+  // Generate a temporary ID for file uploads during creation
+  const [tempId] = useState(() => generateTempEntityId());
 
   const {
     form,
@@ -196,10 +200,7 @@ export default function JobCardFormModal({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!form.customerName || !form.description) {
-      onError?.("Please fill in all required fields.");
-      return;
-    }
+
 
     setIsSubmitting(true);
     try {
@@ -214,19 +215,31 @@ export default function JobCardFormModal({
         jobCardForSave
       );
 
+      let savedJobCard;
 
       if (mode === "edit") {
-        await jobCardService.update(jobCardId!, jobCardToSave);
-        onUpdated?.(jobCardToSave);
+        savedJobCard = await jobCardService.update(jobCardId!, jobCardToSave);
+        onUpdated?.(savedJobCard);
       } else {
-        await jobCardService.create(jobCardToSave);
-        onCreated(jobCardToSave);
+        savedJobCard = await jobCardService.create(jobCardToSave);
+
+        // Link any uploaded files (using tempId) to the real Job Card ID
+        if (tempId) {
+          try {
+            await updateFileEntityAssociation(tempId, savedJobCard.id, RelatedEntityType.JOB_CARD);
+            console.log("✅ Linked temporary files to Job Card:", savedJobCard.id);
+          } catch (fileError) {
+            console.error("Failed to link files to job card:", fileError);
+          }
+        }
+
+        onCreated(savedJobCard);
       }
 
       // Create Parts Request if parts selected
       if (form.selectedParts && form.selectedParts.length > 0) {
         const requestedBy = `${serviceCenterContext.serviceCenterName || "Service Center"} - Advisor`;
-        await createPartsRequestFromJobCard(jobCardToSave, requestedBy);
+        await createPartsRequestFromJobCard(savedJobCard || jobCardToSave, requestedBy);
       }
 
       onClose();
@@ -369,9 +382,9 @@ export default function JobCardFormModal({
           };
         });
 
-        const subtotal = itemsWithCalculatedRates.reduce((sum, item) => sum + (item.rate * item.quantity), 0);
+        const subtotal = itemsWithCalculatedRates.reduce((sum: number, item) => sum + (item.rate * item.quantity), 0);
         const preGstAmount = subtotal; // Assuming 0 discount initially when creating from job card
-        const taxAmount = itemsWithCalculatedRates.reduce((sum, item) => sum + (item.amount - (item.rate * item.quantity)), 0);
+        const taxAmount = itemsWithCalculatedRates.reduce((sum: number, item) => sum + (item.amount - (item.rate * item.quantity)), 0);
         const totalAmount = subtotal + taxAmount;
 
         return {
@@ -536,8 +549,8 @@ export default function JobCardFormModal({
             form={form}
             updateField={updateFormField}
             onError={onError}
-            jobCardId={jobCardId}
-            userId={undefined}
+            jobCardId={jobCardId || tempId}
+            userId={userInfo?.id}
           />
 
           {/* CheckInSection moved to Check-in Slip only - not shown in Job Card */}
@@ -649,4 +662,3 @@ export default function JobCardFormModal({
     </div>
   );
 }
-

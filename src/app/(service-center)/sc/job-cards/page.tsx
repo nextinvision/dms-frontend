@@ -77,6 +77,7 @@ export default function JobCards() {
     visibleJobCards,
     filteredJobs,
     draftCount,
+    pendingApprovalCount,
     kanbanColumns,
     getJobsByStatus,
     isLoading,
@@ -118,6 +119,7 @@ export default function JobCards() {
     handleSubmitToManager,
     handleCreateInvoice,
     handleSendInvoiceToCustomer,
+    handleManagerReview,
     updateStatus // Ensure this is exported from hook
   } = useJobCardActions(jobCards, setJobCards, userInfo);
 
@@ -160,9 +162,9 @@ export default function JobCards() {
     in_progress: "In Progress",
     completed: "Completed",
     draft: "Drafts",
+    pending_approval: "Pending Approval",
   };
-
-  const filterOptions: JobCardFilterType[] = ["all", "created", "assigned", "in_progress", "completed", "draft"];
+  const filterOptions: JobCardFilterType[] = ["all", "created", "assigned", "in_progress", "completed", "draft", "pending_approval"];
 
   const handleJobCardError = (message: string) => {
     console.error(message);
@@ -427,7 +429,19 @@ export default function JobCards() {
           >
             Drafts ({draftCount})
           </button>
+
+          <button
+            type="button"
+            onClick={() => setFilter("pending_approval")}
+            className={`rounded-2xl border px-3 py-2 text-xs font-semibold transition ${filter === "pending_approval"
+              ? "border-purple-400 bg-purple-400 text-white"
+              : "border-gray-200 bg-white text-gray-600 hover:border-purple-400"
+              }`}
+          >
+            Pending Approval ({pendingApprovalCount})
+          </button>
         </div>
+
 
         {/* Filters */}
         <JobCardFilters
@@ -452,6 +466,7 @@ export default function JobCards() {
           setPartsApproved={setPartsApproved}
           handleSubmitToManager={handleSubmitToManager}
           handleManagerQuoteAction={handleManagerQuoteAction}
+          handleManagerReview={handleManagerReview}
           handleCreateInvoice={handleCreateInvoice}
           handleSendInvoiceToCustomer={handleSendInvoiceToCustomer}
           visibleJobCards={visibleJobCards}
@@ -611,6 +626,6 @@ export default function JobCards() {
         loading={actionLoading}
         getNextStatus={getNextStatus}
       />
-    </div>
+    </div >
   );
 }

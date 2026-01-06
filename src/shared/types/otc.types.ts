@@ -32,5 +32,6 @@ export interface InvoiceData {
   discountAmount: number;
   tax: number;
   total: number;
+  invoiceType?: 'OTC_ORDER' | 'JOB_CARD';
 }
 

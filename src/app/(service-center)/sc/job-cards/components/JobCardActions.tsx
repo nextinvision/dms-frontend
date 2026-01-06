@@ -11,6 +11,7 @@ interface JobCardActionsProps {
     setPartsApproved: (val: boolean) => void;
     handleSubmitToManager: () => void;
     handleManagerQuoteAction: () => void;
+    handleManagerReview: (jobId: string, status: "APPROVED" | "REJECTED", notes?: string) => void;
     handleCreateInvoice: () => void;
     handleSendInvoiceToCustomer: () => void;
     visibleJobCards: JobCard[];
@@ -26,6 +27,7 @@ const JobCardActions: React.FC<JobCardActionsProps> = ({
     setPartsApproved,
     handleSubmitToManager,
     handleManagerQuoteAction,
+    handleManagerReview,
     handleCreateInvoice,
     handleSendInvoiceToCustomer,
     visibleJobCards,
@@ -58,101 +60,57 @@ const JobCardActions: React.FC<JobCardActionsProps> = ({
                 </div>
             )}
 
-            {/* Service Manager: Manager-Driven Quotation & Monitoring Panel */}
-            {isServiceManager && (
-                <>
-                    <div className="mb-4 bg-gradient-to-r from-indigo-50 to-white rounded-xl p-4 shadow-sm border border-indigo-100">
-                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                            <div>
-                                <p className="text-sm font-semibold text-indigo-800">Manager-Driven Quotation</p>
-                                <p className="text-xs text-indigo-600 mt-1">
-                                    Confirm technician + inventory approvals before creating the manager quote or passing it back to the advisor.
-                                </p>
-                            </div>
-                            <div className="flex flex-wrap gap-3 text-xs text-indigo-700">
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={technicianApproved}
-                                        onChange={(e) => setTechnicianApproved(e.target.checked)}
-                                        className="w-4 h-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    Technician cleared
-                                </label>
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={partsApproved}
-                                        onChange={(e) => setPartsApproved(e.target.checked)}
-                                        className="w-4 h-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    Parts approved
-                                </label>
-                            </div>
+            {/* Service Manager: Job Card Approval Panel */}
+            {isServiceManager && selectedJob && selectedJob.passedToManager && (!selectedJob.managerReviewStatus || selectedJob.managerReviewStatus === 'PENDING') && (
+                <div className="mb-4 bg-gradient-to-r from-purple-50 to-white rounded-xl p-4 shadow-sm border border-purple-100">
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div className="flex-1">
+                            <p className="text-sm font-semibold text-purple-800">Job Card Warranty Approval Required</p>
+                            <p className="text-xs text-purple-600 mt-1 mb-2">
+                                This job card contains warranty tags and requires your approval before proceeding.
+                            </p>
+
+                            {/* List Warranty Items */}
+                            {selectedJob.part2 && selectedJob.part2.some(item => item.partWarrantyTag) && (
+                                <div className="mt-2 bg-white/50 p-2 rounded border border-purple-100">
+                                    <p className="text-xs font-semibold text-purple-800 mb-1">Warranty Items:</p>
+                                    <ul className="list-disc list-inside text-xs text-purple-700 space-y-1">
+                                        {selectedJob.part2
+                                            .filter(item => item.partWarrantyTag)
+                                            .map((item, index) => (
+                                                <li key={index}>
+                                                    <span className="font-medium">{item.partName}</span>
+                                                    {item.partCode && <span className="text-purple-500"> ({item.partCode})</span>}
+                                                    <span className="text-gray-500"> - Qty: {item.qty}</span>
+                                                </li>
+                                            ))
+                                        }
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex gap-2 mt-2 lg:mt-0">
                             <button
                                 type="button"
-                                onClick={handleManagerQuoteAction}
-                                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${technicianApproved && partsApproved && !(selectedJob?.quotationId || selectedJob?.quotation)
-                                    ? "bg-indigo-600 text-white shadow-md hover:bg-indigo-700"
-                                    : "bg-indigo-200 text-indigo-600 cursor-not-allowed"
-                                    }`}
-                                disabled={!(technicianApproved && partsApproved) || !!(selectedJob?.quotationId || selectedJob?.quotation)}
+                                onClick={() => handleManagerReview(selectedJob.id, "REJECTED", "Rejected by Manager")}
+                                className="px-4 py-2 rounded-lg font-semibold text-sm bg-red-100 text-red-700 hover:bg-red-200 h-fit"
                             >
-                                {selectedJob?.quotationId || selectedJob?.quotation ? "Manager Quote Created" : "Create Manager Quote"}
+                                Reject
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleManagerReview(selectedJob.id, "APPROVED")}
+                                className="px-4 py-2 rounded-lg font-semibold text-sm bg-purple-600 text-white hover:bg-purple-700 shadow-md h-fit"
+                            >
+                                Approve Job Card
                             </button>
                         </div>
                     </div>
-
-                    {/* Service Manager: Create Invoice Panel */}
-                    {selectedJob && selectedJob.status === "COMPLETED" && !selectedJob.invoiceNumber && (
-                        <div className="mb-4 bg-gradient-to-r from-green-50 to-white rounded-xl p-4 shadow-sm border border-green-100">
-                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                                <div>
-                                    <p className="text-sm font-semibold text-green-800">Create Final Invoice</p>
-                                    <p className="text-xs text-green-600 mt-1">
-                                        Job card is completed. Create invoice and send to service advisor for customer delivery.
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={handleCreateInvoice}
-                                    className="px-4 py-2 rounded-lg font-semibold text-sm transition bg-green-600 text-white shadow-md hover:bg-green-700"
-                                >
-                                    Create Invoice
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Service Manager: Monitor Assigned Job Cards */}
-                    <div className="mb-4 bg-gradient-to-r from-purple-50 to-white rounded-xl p-4 shadow-sm border border-purple-100">
-                        <div>
-                            <p className="text-sm font-semibold text-purple-800 mb-2">Monitor Assigned Job Cards</p>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                                <div className="bg-white p-3 rounded-lg border border-purple-200">
-                                    <p className="text-purple-600 font-medium">Assigned</p>
-                                    <p className="text-2xl font-bold text-purple-800">
-                                        {visibleJobCards.filter((j) => j.status === "ASSIGNED").length}
-                                    </p>
-                                </div>
-                                <div className="bg-white p-3 rounded-lg border border-purple-200">
-                                    <p className="text-purple-600 font-medium">In Progress</p>
-                                    <p className="text-2xl font-bold text-purple-800">
-                                        {visibleJobCards.filter((j) => j.status === "IN_PROGRESS").length}
-                                    </p>
-                                </div>
-                                <div className="bg-white p-3 rounded-lg border border-purple-200">
-                                    <p className="text-purple-600 font-medium">Parts Pending</p>
-                                    <p className="text-2xl font-bold text-purple-800">
-                                        {visibleJobCards.filter((j) => j.status === "PARTS_PENDING").length}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </>
+                </div>
             )}
 
+            {/* Service Manager: Manager-Driven Quotation & Monitoring Panel */}
+      
             {/* Service Advisor: Send Invoice to Customer */}
             {isServiceAdvisor && selectedJob && selectedJob.invoiceNumber && !selectedJob.invoiceSentToCustomer && (
                 <div className="mb-4 bg-gradient-to-r from-yellow-50 to-white rounded-xl p-4 shadow-sm border border-yellow-100">

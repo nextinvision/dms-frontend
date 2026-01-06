@@ -94,7 +94,11 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
 
                                                     <div className="flex items-center gap-2 text-xs text-gray-600 mb-3 pb-3 border-b border-gray-100">
                                                         <Car size={14} className="text-gray-400 flex-shrink-0" />
-                                                        <span className="truncate font-medium">{job.vehicle}</span>
+                                                        <span className="truncate font-medium">
+                                                            {typeof job.vehicle === 'object' && job.vehicle !== null
+                                                                ? `${(job.vehicle as any).vehicleModel || ''} ${(job.vehicle as any).registration ? `(${(job.vehicle as any).registration})` : ''}`
+                                                                : job.vehicle}
+                                                        </span>
                                                     </div>
 
                                                     <div className="mb-3">
@@ -134,7 +138,11 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs">
                                                             <div className="flex items-center gap-1.5 text-gray-600">
                                                                 <User size={12} className="text-gray-400" />
-                                                                <span className="font-medium truncate">{job.assignedEngineer}</span>
+                                                                <span className="font-medium truncate">
+                                                                    {typeof job.assignedEngineer === 'object' && job.assignedEngineer !== null
+                                                                        ? (job.assignedEngineer as any).name || 'Unassigned'
+                                                                        : job.assignedEngineer}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     )}

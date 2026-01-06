@@ -5,10 +5,10 @@ import { FileText, Building, Calendar, DollarSign, Search, Download } from "luci
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { invoiceService } from "@/features/inventory/services/invoice.service";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
+import { downloadCentralInvoicePDF } from "@/shared/utils/central-invoice-pdf.utils";
 import type { Invoice } from "@/shared/types/invoice.types";
-import type { ServiceCenterInfo } from "@/shared/types/central-inventory.types";
+import type { ServiceCenterInfo, PartsIssue } from "@/shared/types/central-inventory.types";
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -22,10 +22,50 @@ export default function InvoicesPage() {
     const fetchData = async () => {
       try {
         setIsLoading(true);
-        const allInvoices = invoiceService.getAllInvoices();
+        // Fetch parts issues instead of invoices (central_inventory_manager has access to parts-issues)
+        const partsIssues = await centralInventoryRepository.getAllPartsIssues();
         const scs = await centralInventoryRepository.getAllServiceCenters();
         setServiceCenters(scs);
-        setInvoices(allInvoices);
+        
+        // Map PartsIssue to Invoice format
+        const mappedInvoices: Invoice[] = partsIssues
+          .filter((issue) => 
+            issue.status === 'issued' || 
+            issue.status === 'received' || 
+            issue.status === 'admin_approved' ||
+            issue.status === 'dispatched' ||
+            issue.status === 'DISPATCHED' ||
+            issue.status === 'completed' ||
+            issue.status === 'COMPLETED'
+          )
+          .map((issue: PartsIssue) => ({
+            id: issue.id,
+            invoiceNumber: `INV-${issue.issueNumber}`,
+            serviceCenterId: issue.serviceCenterId,
+            serviceCenterName: issue.serviceCenterName,
+            partsIssueId: issue.id,
+            partsIssueNumber: issue.issueNumber,
+            purchaseOrderId: issue.purchaseOrderId,
+            issuedBy: issue.issuedBy,
+            issuedAt: issue.issuedAt,
+            status: mapPartsIssueStatusToInvoiceStatus(issue.status),
+            items: (issue.items || []).map((item: any) => ({
+              id: item.id || '',
+              partId: item.partId || item.fromStock || '',
+              partName: item.partName || 'Unknown Part',
+              partNumber: item.partNumber || '',
+              hsnCode: item.hsnCode || '',
+              quantity: item.quantity || item.requestedQty || item.issuedQty || 0,
+              unitPrice: item.unitPrice || 0,
+              totalPrice: item.totalPrice || (item.unitPrice || 0) * (item.quantity || item.requestedQty || item.issuedQty || 0),
+            })),
+            subtotal: issue.totalAmount,
+            totalAmount: issue.totalAmount,
+            createdAt: issue.issuedAt,
+            createdBy: issue.issuedBy,
+          }));
+        
+        setInvoices(mappedInvoices);
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -35,6 +75,25 @@ export default function InvoicesPage() {
 
     fetchData();
   }, []);
+
+  // Map PartsIssue status to Invoice status
+  const mapPartsIssueStatusToInvoiceStatus = (status: PartsIssue['status']): Invoice['status'] => {
+    const statusMap: Record<string, Invoice['status']> = {
+      'pending': 'draft',
+      'pending_admin_approval': 'draft',
+      'cim_approved': 'draft',
+      'admin_approved': 'sent',
+      'admin_rejected': 'cancelled',
+      'dispatched': 'sent',
+      'DISPATCHED': 'sent',
+      'issued': 'sent',
+      'received': 'paid',
+      'completed': 'paid',
+      'COMPLETED': 'paid',
+      'cancelled': 'cancelled',
+    };
+    return statusMap[status] || 'draft';
+  };
 
   const getStatusBadge = (status: Invoice["status"]) => {
     const badges = {
@@ -188,17 +247,31 @@ export default function InvoicesPage() {
                                 </p>
                                 <Badge className={statusBadge.color}>{statusBadge.label}</Badge>
                               </div>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(`/central-inventory/invoices/${invoice.id}`);
-                                }}
-                                variant="outline"
-                                className="flex items-center gap-2"
-                              >
-                                <Download size={16} />
-                                View
-                              </Button>
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    downloadCentralInvoicePDF(invoice);
+                                  }}
+                                  variant="outline"
+                                  className="flex items-center gap-2"
+                                  title="Download PDF"
+                                >
+                                  <Download size={16} />
+                                  Download
+                                </Button>
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(`/central-inventory/invoices/${invoice.id}`);
+                                  }}
+                                  variant="outline"
+                                  className="flex items-center gap-2"
+                                >
+                                  <FileText size={16} />
+                                  View
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         );

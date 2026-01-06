@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { adminApprovalService } from "@/features/inventory/services/adminApproval.service";
 import { invoiceService } from "@/features/inventory/services/invoice.service";
 import { useToast } from "@/contexts/ToastContext";
+import { apiClient } from "@/core/api/client";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -22,44 +23,97 @@ export default function PartsIssueRequestsPage() {
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [paymentReference, setPaymentReference] = useState<string>("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchRequests();
+  // Shared data fetching logic
+  const fetchRequestsData = useCallback(async () => {
+    const allIssues = await adminApprovalService.getAllIssues();
+    
+    // Pending approval: PENDING_APPROVAL or CIM_APPROVED (waiting for admin)
+    const pending = allIssues.filter(
+      (issue) =>
+        (issue.status === "pending_admin_approval" || issue.status === "cim_approved") &&
+        !issue.adminApproved &&
+        !issue.adminRejected
+    );
+    
+    // Approved requests: ADMIN_APPROVED (ready to dispatch) or DISPATCHED (already issued)
+    // Also check adminApproved flag to catch any issues
+    const approved = allIssues.filter(
+      (issue) => 
+        issue.status === "admin_approved" || 
+        issue.status === "issued" || 
+        issue.status === "dispatched" ||
+        issue.status === "completed" ||
+        (issue.adminApproved && issue.status !== "admin_rejected")
+    );
+    
+    // Rejected requests
+    const rejected = allIssues.filter(
+      (issue) => issue.status === "admin_rejected" || issue.status === "rejected"
+    );
+
+    setPendingRequests(pending);
+    setApprovedRequests(approved);
+    setRejectedRequests(rejected);
   }, []);
 
-  const fetchRequests = async () => {
+  // Main fetch function with loading state
+  const fetchRequests = useCallback(async () => {
     try {
       setIsLoading(true);
-      const allIssues = await adminApprovalService.getAllIssues();
-      
-      const pending = allIssues.filter(
-        (issue) =>
-          issue.status === "pending_admin_approval" &&
-          issue.sentToAdmin &&
-          !issue.adminApproved &&
-          !issue.adminRejected
-      );
-      
-      // Approved requests (both approved and issued)
-      const approved = allIssues.filter(
-        (issue) => 
-          issue.adminApproved && 
-          (issue.status === "admin_approved" || issue.status === "issued")
-      );
-      
-      const rejected = allIssues.filter(
-        (issue) => issue.adminRejected && issue.status === "admin_rejected"
-      );
-
-      setPendingRequests(pending);
-      setApprovedRequests(approved);
-      setRejectedRequests(rejected);
+      await fetchRequestsData();
     } catch (error) {
       console.error("Failed to fetch requests:", error);
+      showError("Failed to fetch parts issue requests. Please try again.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [fetchRequestsData, showError]);
+
+  // Silent fetch for polling (doesn't show loading state)
+  const fetchRequestsSilently = useCallback(async () => {
+    try {
+      setIsRefreshing(true);
+      await fetchRequestsData();
+    } catch (error) {
+      // Silently fail during polling - don't show error to user
+      console.error("Failed to refresh requests (silent):", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchRequestsData]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
+
+  // Auto-refresh polling: Check for updates every 5 seconds
+  useEffect(() => {
+    // Only poll if page is visible and not currently loading
+    const pollInterval = setInterval(() => {
+      // Check if page is visible (using Page Visibility API)
+      if (document.visibilityState === 'visible' && !isLoading && !isProcessing) {
+        fetchRequestsSilently();
+      }
+    }, 5000); // Poll every 5 seconds
+
+    // Cleanup interval on unmount
+    return () => clearInterval(pollInterval);
+  }, [isLoading, isProcessing, fetchRequestsSilently]);
+
+  // Also refresh when page becomes visible (user switches back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !isLoading && !isProcessing) {
+        fetchRequestsSilently();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isLoading, isProcessing, fetchRequestsSilently]);
 
   const handleResend = async (id: string) => {
     try {
@@ -78,21 +132,72 @@ export default function PartsIssueRequestsPage() {
   const handleIssueParts = async (id: string) => {
     try {
       setIsProcessing(true);
-      const userInfo = JSON.parse(
-        localStorage.getItem("userInfo") || '{"name": "Central Inventory Manager"}'
-      );
       
-      const issuedIssue = await adminApprovalService.issueApprovedParts(
-        id,
-        userInfo.name || "Central Inventory Manager"
-      );
+      // Get the issue details first
+      const allIssues = await adminApprovalService.getAllIssues();
+      const issue = allIssues.find(i => i.id === id);
       
-      // Set the issued parts issue for invoice creation
-      setIssuedPartsIssue(issuedIssue);
-      setShowInvoiceModal(true);
+      if (!issue) {
+        showError("Parts issue not found");
+        return;
+      }
+
+      if (issue.status !== "admin_approved") {
+        showError("Parts issue must be approved by admin before dispatching");
+        return;
+      }
+
+      // Prepare dispatch data - dispatch all approved items
+      // Only dispatch items that have approved quantity > 0
+      const dispatchItems = issue.items
+        .filter(item => {
+          const qty = item.approvedQty || item.quantity || 0;
+          return qty > 0 && item.id; // Ensure item has ID and quantity > 0
+        })
+        .map(item => {
+          const qty = Number(item.approvedQty || item.quantity || 0);
+          if (!item.id) {
+            throw new Error(`Item missing ID: ${JSON.stringify(item)}`);
+          }
+          if (isNaN(qty) || qty <= 0) {
+            throw new Error(`Invalid quantity for item ${item.id}: ${qty}`);
+          }
+          return {
+            itemId: String(item.id), // Ensure it's a string UUID
+            quantity: qty // Ensure it's a number
+          };
+        });
+
+      if (dispatchItems.length === 0) {
+        showError("No items to dispatch. All items must have approved quantity > 0.");
+        return;
+      }
+
+      console.log('Dispatching items:', JSON.stringify(dispatchItems, null, 2));
+
+      // Call the dispatch API endpoint using apiClient
+      // Note: transportDetails is optional, but we can include it
+      const response = await apiClient.patch<any>(`/parts-issues/${id}/dispatch`, {
+        items: dispatchItems
+        // transportDetails is optional - backend will handle it
+      });
       
+      const dispatchedIssue = response.data || response;
+      
+      // Refresh the list
       await fetchRequests();
-      showSuccess("Parts issued successfully! Please create invoice with payment details.");
+      
+      // Show success message with sub-PO numbers if available
+      const subPoNumbers = dispatchedIssue.items?.map((item: any) => item.subPoNumber).filter(Boolean).join(', ') || '';
+      if (subPoNumbers) {
+        showSuccess(`Parts dispatched successfully! Sub-PO numbers: ${subPoNumbers}`);
+      } else {
+        showSuccess("Parts dispatched successfully! Sub-PO numbers have been generated.");
+      }
+      
+      // Optionally show invoice modal
+      // setIssuedPartsIssue(dispatchedIssue);
+      // setShowInvoiceModal(true);
     } catch (error) {
       console.error("Failed to issue parts:", error);
       showError(error instanceof Error ? error.message : "Failed to issue parts");
@@ -146,11 +251,13 @@ export default function PartsIssueRequestsPage() {
   };
 
   const renderRequestCard = (request: PartsIssue, showResend: boolean = false, showIssueButton: boolean = false) => {
-    const isPending = request.status === "pending_admin_approval" && !request.adminApproved && !request.adminRejected;
-    const isApproved = request.adminApproved;
-    const isRejected = request.adminRejected;
-    const isIssued = request.status === "issued";
-    const canIssue = isApproved && !isIssued && request.status === "admin_approved";
+    // Determine status based on backend status values
+    const isPending = request.status === "pending_admin_approval" || request.status === "cim_approved";
+    const isApproved = request.status === "admin_approved" || request.adminApproved;
+    const isRejected = request.status === "admin_rejected" || request.status === "rejected" || request.adminRejected;
+    const isIssued = request.status === "issued" || request.status === "dispatched" || request.status === "completed";
+    // Can issue if admin approved but not yet dispatched
+    const canIssue = isApproved && !isIssued && (request.status === "admin_approved");
 
     return (
       <Card
@@ -269,12 +376,29 @@ export default function PartsIssueRequestsPage() {
                   <div>
                     <p className="font-medium text-gray-900">{item.partName}</p>
                     <p className="text-sm text-gray-600">
-                      HSN Code: {item.hsnCode} | Part Number: {item.partNumber}
+                      HSN Code: {item.hsnCode || 'N/A'} | Part Number: {item.partNumber || 'N/A'}
                     </p>
+                    {item.subPoNumber && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        Sub-PO: {item.subPoNumber}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-gray-900">Qty: {item.quantity}</p>
-                    <p className="text-sm text-gray-600">₹{item.totalPrice.toLocaleString()}</p>
+                    <p className="font-semibold text-gray-900">
+                      Qty: {item.approvedQty || item.quantity}
+                      {item.requestedQty && item.requestedQty !== (item.approvedQty || item.quantity) && (
+                        <span className="text-xs text-gray-500 block">
+                          (Requested: {item.requestedQty})
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-sm text-gray-600">₹{(item.totalPrice || 0).toLocaleString()}</p>
+                    {item.issuedQty > 0 && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Issued: {item.issuedQty} / {item.approvedQty || item.quantity}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -393,11 +517,29 @@ export default function PartsIssueRequestsPage() {
   return (
     <div className="bg-[#f9f9fb] min-h-screen">
       <div className="pt-24 px-8 pb-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-indigo-600">Parts Issue Requests</h1>
-          <p className="text-gray-500 mt-1">
-            View and manage your parts issue requests sent to admin
-          </p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-indigo-600">Parts Issue Requests</h1>
+            <p className="text-gray-500 mt-1">
+              View and manage your parts issue requests sent to admin
+              {isRefreshing && (
+                <span className="ml-2 text-xs text-blue-600 flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Auto-refreshing...
+                </span>
+              )}
+            </p>
+          </div>
+          <Button
+            onClick={() => fetchRequests()}
+            disabled={isLoading || isProcessing}
+            variant="outline"
+            className="flex items-center gap-2"
+            title="Refresh requests"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
 
         {/* Pending Requests Section */}

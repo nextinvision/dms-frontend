@@ -13,7 +13,7 @@ class StaffService {
      */
     private mapUserToEngineer(user: User): Engineer {
         return {
-            id: parseInt(user.id) || 0, // Engineer expects number
+            id: user.id, // Use original ID (likely UUID)
             name: user.name,
             status: 'Available', // Default status
             currentJobs: 0, // These would need to come from job card queries

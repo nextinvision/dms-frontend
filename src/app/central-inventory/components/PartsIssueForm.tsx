@@ -13,6 +13,7 @@ import type {
 interface IssueItem {
   partId: string;
   partName: string;
+  partNumber?: string;
   hsnCode: string;
   fromStock: string;
   quantity: number;
@@ -66,20 +67,48 @@ export function PartsIssueForm({
       return;
     }
 
-    if (quantity > selectedPart.currentQty) {
-      alert("Quantity cannot exceed available stock");
+    // Calculate actual available stock (accounting for allocated quantities)
+    const actualAvailableQty = selectedPart.available || (selectedPart.stockQuantity - (selectedPart.allocated || 0));
+    
+    if (quantity > actualAvailableQty) {
+      alert(`Quantity cannot exceed available stock. Available: ${actualAvailableQty} units.`);
       return;
     }
 
     const existingIndex = issueItems.findIndex((item) => item.fromStock === selectedPart.id);
     if (existingIndex >= 0) {
-      const newQty = issueItems[existingIndex].quantity + quantity;
-      if (newQty > selectedPart.currentQty) {
-        alert("Total quantity cannot exceed available stock");
+      // Item already exists, add to existing quantity
+      const currentQty = issueItems[existingIndex].quantity;
+      const newQty = currentQty + quantity;
+      
+      // Get fresh available stock for validation (in case stock changed)
+      // Use flexible matching to find the stock item
+      const existingItem = issueItems[existingIndex];
+      let stockItem = availableStock.find(s => s.id === selectedPart.id);
+      if (!stockItem) {
+        stockItem = availableStock.find(s => 
+          s.partId === selectedPart.id || 
+          s.id === selectedPart.partId ||
+          (selectedPart.partNumber && (s.partNumber === selectedPart.partNumber || (s as any).partCode === selectedPart.partNumber)) ||
+          (existingItem.partNumber && (s.partNumber === existingItem.partNumber || (s as any).partCode === existingItem.partNumber))
+        );
+      }
+      
+      const freshAvailableQty = stockItem 
+        ? (stockItem.available || (stockItem.stockQuantity - (stockItem.allocated || 0)))
+        : actualAvailableQty;
+      
+      if (newQty > freshAvailableQty) {
+        alert(`Total quantity cannot exceed available stock. Available: ${freshAvailableQty} units. Current in list: ${currentQty} units.`);
         return;
       }
+      
       const updated = [...issueItems];
-      updated[existingIndex].quantity = newQty;
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        quantity: newQty,
+        availableQty: freshAvailableQty, // Update to latest available stock
+      };
       setIssueItems(updated);
     } else {
       setIssueItems([
@@ -87,11 +116,12 @@ export function PartsIssueForm({
         {
           partId: selectedPart.partId,
           partName: selectedPart.partName,
+          partNumber: selectedPart.partNumber || (selectedPart as any).partCode || undefined,
           hsnCode: selectedPart.hsnCode,
           fromStock: selectedPart.id,
           quantity,
           unitPrice: selectedPart.unitPrice,
-          availableQty: selectedPart.currentQty,
+          availableQty: actualAvailableQty, // Use actual available stock, not currentQty
         },
       ]);
     }
@@ -104,18 +134,104 @@ export function PartsIssueForm({
     setIssueItems(issueItems.filter((_, i) => i !== index));
   };
 
+  /**
+   * Find stock item by multiple criteria: ID, partNumber, or partName
+   * This makes part matching flexible and reliable even if IDs change
+   */
+  const findStockItem = (item: IssueItem): CentralStock | null => {
+    // 1. Try by ID (fromStock)
+    let stockItem = availableStock.find(s => s.id === item.fromStock);
+    if (stockItem) return stockItem;
+
+    // 2. Try by partId
+    stockItem = availableStock.find(s => s.partId === item.fromStock || s.id === item.partId);
+    if (stockItem) return stockItem;
+
+    // 3. Try by partNumber (case-insensitive, exact match)
+    if (item.partNumber) {
+      stockItem = availableStock.find(s => 
+        s.partNumber?.toLowerCase() === item.partNumber.toLowerCase() ||
+        (s as any).partCode?.toLowerCase() === item.partNumber.toLowerCase()
+      );
+      if (stockItem) return stockItem;
+    }
+
+    // 4. Try by partName (case-insensitive, exact match first, then partial)
+    if (item.partName) {
+      stockItem = availableStock.find(s => 
+        s.partName?.toLowerCase() === item.partName.toLowerCase()
+      );
+      if (stockItem) return stockItem;
+      
+      // Fallback to partial match
+      stockItem = availableStock.find(s => 
+        s.partName?.toLowerCase().includes(item.partName.toLowerCase()) ||
+        item.partName.toLowerCase().includes(s.partName?.toLowerCase() || '')
+      );
+      if (stockItem) return stockItem;
+    }
+
+    return null;
+  };
+
   const handleUpdateQuantity = (index: number, newQty: number) => {
     if (newQty <= 0) {
       handleRemoveItem(index);
       return;
     }
+    
     const item = issueItems[index];
-    if (newQty > item.availableQty) {
-      alert("Quantity cannot exceed available stock");
+    const currentQty = item.quantity;
+    
+    // Find stock item using flexible matching (by ID, partNumber, or partName)
+    const stockItem = findStockItem(item);
+    
+    // Calculate actual available stock
+    // Use fresh stock if found, otherwise fall back to stored availableQty
+    let actualAvailableQty: number;
+    if (stockItem) {
+      actualAvailableQty = stockItem.available || (stockItem.stockQuantity - (stockItem.allocated || 0));
+      
+      // Update item with latest part info if found (sync partNumber if missing)
+      if (stockItem.partNumber && !item.partNumber) {
+        const updated = [...issueItems];
+        updated[index] = {
+          ...updated[index],
+          partNumber: stockItem.partNumber,
+        };
+        setIssueItems(updated);
+      }
+    } else {
+      // Fallback to stored availableQty if stock item not found in current list
+      // This can happen if the part was filtered out or list was refreshed
+      actualAvailableQty = item.availableQty || 0;
+      
+      // Only show warning if trying to increase beyond stored availableQty
+      if (newQty > currentQty && newQty > actualAvailableQty) {
+        console.warn(`Part "${item.partName}"${item.partNumber ? ` (${item.partNumber})` : ''} not found in current stock list. Using stored available quantity: ${actualAvailableQty}`);
+      }
+    }
+    
+    // Only validate if user is INCREASING the quantity
+    // If decreasing, allow it without validation (user might be correcting an error)
+    if (newQty > currentQty && newQty > actualAvailableQty) {
+      alert(`Quantity cannot exceed available stock. Available: ${actualAvailableQty} units.`);
       return;
     }
+    
+    // If user is trying to set quantity higher than available, cap it at available
+    // But only if they're increasing (not decreasing)
+    const finalQty = newQty > actualAvailableQty && newQty > currentQty 
+      ? actualAvailableQty 
+      : newQty;
+    
+    // Update the item with new quantity and refresh availableQty
     const updated = [...issueItems];
-    updated[index].quantity = newQty;
+    updated[index] = {
+      ...updated[index],
+      quantity: finalQty,
+      availableQty: actualAvailableQty, // Update to latest available stock (or keep stored value)
+    };
     setIssueItems(updated);
   };
 
@@ -131,14 +247,38 @@ export function PartsIssueForm({
       return;
     }
 
+    // Get fresh stock data to ensure we have latest partNumber and partName
+    const freshStock = availableStock.length > 0 ? availableStock : await (async () => {
+      try {
+        const { centralInventoryRepository } = await import('@/core/repositories/central-inventory.repository');
+        return await centralInventoryRepository.getAllStock();
+      } catch (e) {
+        console.warn('Could not fetch fresh stock:', e);
+        return availableStock;
+      }
+    })();
+
     const formData: PartsIssueFormData = {
       serviceCenterId: serviceCenter.id,
       purchaseOrderId: purchaseOrderId || undefined,
-      items: issueItems.map((item) => ({
-        partId: item.partId,
-        quantity: item.quantity,
-        fromStock: item.fromStock,
-      })),
+      items: issueItems.map((item) => {
+        // Find the stock item to get partNumber and partName for flexible matching
+        const stockItem = freshStock.find(s => 
+          s.id === item.fromStock || 
+          s.partId === item.fromStock ||
+          (item.partNumber && (s.partNumber === item.partNumber || (s as any).partCode === item.partNumber)) ||
+          (item.partName && s.partName === item.partName)
+        );
+        
+        return {
+          partId: item.partId,
+          quantity: item.quantity,
+          fromStock: item.fromStock,
+          // Include partNumber and partName for backend flexible matching
+          partNumber: item.partNumber || stockItem?.partNumber || undefined,
+          partName: item.partName || stockItem?.partName || undefined,
+        };
+      }),
       notes: notes || undefined,
       transportDetails:
         transportDetails.transporter || transportDetails.trackingNumber
@@ -287,7 +427,10 @@ export function PartsIssueForm({
                   <Package className="w-5 h-5 text-gray-400" />
                   <div className="flex-1">
                     <p className="font-medium">{item.partName}</p>
-                    <p className="text-sm text-gray-500">{item.hsnCode}</p>
+                    <div className="text-sm text-gray-500">
+                      {item.partNumber && <span>Part #: {item.partNumber} | </span>}
+                      HSN: {item.hsnCode}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button

@@ -28,6 +28,8 @@ export interface UploadFileWithMetadataOptions {
     entityId: string;
     entityType: RelatedEntityType;
     uploadedBy?: string;
+    customerId?: string;
+    vehicleId?: string;
     cloudinaryOptions?: Omit<CloudinaryUploadOptions, 'folder'>;
 }
 

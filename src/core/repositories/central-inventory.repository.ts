@@ -1,6 +1,7 @@
 import { BaseRepository } from './base.repository';
 import { apiClient } from '@/core/api/client';
-import type { PartsIssue, PartsIssueFormData } from '@/shared/types/central-inventory.types';
+import type { PartsIssue, PartsIssueFormData, ServiceCenterInfo, CentralInventoryStats } from '@/shared/types/central-inventory.types';
+import type { ServiceCenter } from '@/shared/types/service-center.types';
 
 export interface CentralInventoryItem {
     id: string;
@@ -43,9 +44,36 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
 
     /**
      * Get all stock items
+     * Maps CentralInventoryItem to CentralStock format for compatibility
      */
-    async getAllStock(): Promise<CentralInventoryItem[]> {
-        return this.getAll();
+    async getAllStock(): Promise<any[]> {
+        const items = await this.getAll();
+        // Map to CentralStock format expected by the frontend
+        return items.map(item => ({
+            id: item.id,
+            partId: item.id, // Use same ID as partId for compatibility
+            partName: item.partName,
+            partNumber: item.partNumber,
+            hsnCode: item.hsnCode || '',
+            category: item.category,
+            currentQty: item.stockQuantity, // Map stockQuantity to currentQty
+            stockQuantity: item.stockQuantity, // Keep original for API calls
+            allocated: item.allocated || 0,
+            available: item.available || (item.stockQuantity - (item.allocated || 0)),
+            minStock: item.reorderPoint || 0,
+            maxStock: item.reorderQuantity || 0,
+            unitPrice: item.unitPrice || 0,
+            costPrice: item.unitPrice || 0, // Use unitPrice as costPrice if not available
+            supplier: '',
+            location: '',
+            warehouse: '',
+            status: (item.available || (item.stockQuantity - (item.allocated || 0))) <= (item.reorderPoint || 0) 
+                ? 'Low Stock' 
+                : (item.stockQuantity <= 0 ? 'Out of Stock' : 'In Stock'),
+            lastUpdated: item.updatedAt || item.createdAt || new Date().toISOString(),
+            lastUpdatedBy: '',
+            ...item, // Include all other fields
+        }));
     }
 
     /**
@@ -75,42 +103,251 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
     }
 
     /**
+     * Get parts issue by ID
+     */
+    async getPartsIssueById(id: string): Promise<PartsIssue | null> {
+        try {
+            const response = await apiClient.get<any>(`/parts-issues/${id}`);
+            return this.mapBackendIssueToFrontend(response.data);
+        } catch (error) {
+            console.error(`Failed to fetch parts issue ${id}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Get dashboard statistics
+     */
+    async getStats(): Promise<CentralInventoryStats> {
+        try {
+            // Fetch all data in parallel
+            const [stockItems, purchaseOrders, partsIssues, serviceCenters] = await Promise.all([
+                this.getAllStock(),
+                this.getAllPurchaseOrders(),
+                this.getAllPartsIssues(),
+                this.getAllServiceCenters(),
+            ]);
+
+            // Calculate stats from stock items
+            const totalParts = stockItems.length;
+            const totalStockValue = stockItems.reduce((sum, item) => {
+                const qty = Number(item.stockQuantity || item.currentQty || 0);
+                const price = Number(item.unitPrice || 0);
+                return sum + (qty * price);
+            }, 0);
+            
+            const lowStockParts = stockItems.filter((item) => {
+                const qty = Number(item.stockQuantity || item.currentQty || 0);
+                const reorderPoint = Number(item.reorderPoint || item.minStockLevel || 0);
+                return qty > 0 && qty <= reorderPoint;
+            }).length;
+            
+            const outOfStockParts = stockItems.filter((item) => {
+                const qty = Number(item.stockQuantity || item.currentQty || 0);
+                return qty === 0;
+            }).length;
+
+            // Calculate stats from purchase orders
+            const pendingPurchaseOrders = purchaseOrders.filter((po) => 
+                po.status === 'pending' || po.status === 'PENDING'
+            ).length;
+            
+            const approvedPurchaseOrders = purchaseOrders.filter((po) => 
+                po.status === 'approved' || po.status === 'APPROVED'
+            ).length;
+
+            // Calculate stats from parts issues
+            const pendingIssues = partsIssues.filter((issue) => {
+                const status = issue.status?.toLowerCase() || '';
+                return status === 'pending' || 
+                       status === 'pending_admin_approval' || 
+                       status === 'cim_approved' ||
+                       status === 'pending_approval';
+            }).length;
+
+            // Service centers count
+            const totalServiceCenters = serviceCenters.length;
+
+            // Recent activity (last 7 days)
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            
+            const recentActivity = [
+                ...purchaseOrders.filter((po) => {
+                    const date = new Date(po.requestedAt || po.createdAt || 0);
+                    return date >= sevenDaysAgo;
+                }),
+                ...partsIssues.filter((issue) => {
+                    const date = new Date(issue.issuedAt || issue.createdAt || 0);
+                    return date >= sevenDaysAgo;
+                }),
+            ].length;
+
+            return {
+                totalParts,
+                totalStockValue,
+                lowStockParts,
+                outOfStockParts,
+                pendingPurchaseOrders,
+                approvedPurchaseOrders,
+                pendingIssues,
+                totalServiceCenters,
+                recentActivity,
+            };
+        } catch (error) {
+            console.error('Failed to fetch dashboard stats:', error);
+            // Return default stats on error
+            return {
+                totalParts: 0,
+                totalStockValue: 0,
+                lowStockParts: 0,
+                outOfStockParts: 0,
+                pendingPurchaseOrders: 0,
+                approvedPurchaseOrders: 0,
+                pendingIssues: 0,
+                totalServiceCenters: 0,
+                recentActivity: 0,
+            };
+        }
+    }
+
+    /**
      * Create parts issue
      */
     async createPartsIssue(data: PartsIssueFormData, issuedBy: string): Promise<{ issue: PartsIssue }> {
-        // Map frontend form data to backend DTO
+        // Validate that all items have valid fromStock IDs
+        const invalidItems = data.items.filter(item => !item.fromStock || item.fromStock.trim() === '');
+        if (invalidItems.length > 0) {
+            throw new Error(`Invalid part IDs found. Please refresh the page and try again.`);
+        }
+
+        // Get all stock to ensure we have partNumber and partName
+        const allStock = await this.getAllStock();
+        
+        // Map frontend form data to backend DTO with partNumber and partName for flexible matching
         const backendData = {
             toServiceCenterId: data.serviceCenterId,
-            items: data.items.map(item => ({
-                centralInventoryPartId: item.fromStock,
-                requestedQty: item.quantity
-            }))
+            items: data.items.map(item => {
+                // Find the stock item to get partNumber and partName
+                // Try multiple matching strategies
+                let stockItem = allStock.find(s => s.id === item.fromStock);
+                if (!stockItem) {
+                    stockItem = allStock.find(s => s.partId === item.fromStock);
+                }
+                if (!stockItem && item.partNumber) {
+                    stockItem = allStock.find(s => 
+                        s.partNumber === item.partNumber || 
+                        (s as any).partCode === item.partNumber
+                    );
+                }
+                if (!stockItem && item.partName) {
+                    stockItem = allStock.find(s => s.partName === item.partName);
+                }
+                
+                // Use partNumber and partName from form data, or from stock item, or undefined
+                const partNumber = item.partNumber || stockItem?.partNumber || undefined;
+                const partName = item.partName || stockItem?.partName || undefined;
+                
+                console.log(`Mapping item for backend:`, {
+                    fromStock: item.fromStock,
+                    partNumber: partNumber,
+                    partName: partName,
+                    foundInStock: !!stockItem
+                });
+                
+                return {
+                    centralInventoryPartId: item.fromStock,
+                    requestedQty: item.quantity,
+                    partNumber: partNumber,
+                    partName: partName
+                };
+            })
         };
 
-        const response = await apiClient.post<any>('/parts-issues', backendData);
-        return { issue: this.mapBackendIssueToFrontend(response.data) };
+        try {
+            const response = await apiClient.post<any>('/parts-issues', backendData);
+            return { issue: this.mapBackendIssueToFrontend(response.data) };
+        } catch (error: any) {
+            // Provide user-friendly error messages
+            if (error?.message?.includes('not found in central inventory')) {
+                throw new Error('One or more parts were not found. Please refresh the page and try again.');
+            }
+            throw error;
+        }
     }
 
     private mapBackendIssueToFrontend(backendIssue: any): PartsIssue {
         const statusMap: Record<string, any> = {
             'PENDING_APPROVAL': 'pending_admin_approval',
-            'APPROVED': 'admin_approved',
+            'CIM_APPROVED': 'cim_approved', // Central Inventory Manager approved
+            'ADMIN_APPROVED': 'admin_approved', // Admin approved - ready to dispatch
             'DISPATCHED': 'issued',
             'COMPLETED': 'received',
             'REJECTED': 'admin_rejected'
         };
 
+        // Determine admin approval status based on backend status
+        const isAdminApproved = backendIssue.status === 'ADMIN_APPROVED' || backendIssue.status === 'DISPATCHED' || backendIssue.status === 'COMPLETED';
+        const isAdminRejected = backendIssue.status === 'REJECTED';
+        const isPending = backendIssue.status === 'PENDING_APPROVAL' || backendIssue.status === 'CIM_APPROVED';
+
+        // Map items with proper structure
+        const items = backendIssue.items?.map((item: any) => {
+            // Ensure requestedQty is always taken from the backend item, never fallback to quantity
+            // The backend should always have requestedQty set correctly
+            const requestedQty = Number(item.requestedQty) || 0;
+            const approvedQty = Number(item.approvedQty) || 0;
+            const issuedQty = Number(item.issuedQty) || 0;
+            
+            // Log if requestedQty seems incorrect (for debugging)
+            if (requestedQty === 0 && item.quantity && item.quantity > 0) {
+                console.warn(
+                    `Parts issue item ${item.id}: requestedQty is 0 but quantity is ${item.quantity}. ` +
+                    `This might indicate a data issue.`
+                );
+            }
+            
+            return {
+                id: item.id,
+                partId: item.centralInventoryPartId || item.partId,
+                partName: item.centralInventoryPart?.partName || item.partName || "Unknown Part",
+                partNumber: item.centralInventoryPart?.partNumber || item.partNumber || "",
+                hsnCode: item.centralInventoryPart?.hsnCode || "",
+                fromStock: item.centralInventoryPartId || item.fromStock,
+                quantity: approvedQty || requestedQty || 0, // Use approvedQty if available, otherwise requestedQty
+                requestedQty: requestedQty, // Always use the actual requestedQty from backend, no fallback
+                approvedQty: approvedQty,
+                issuedQty: issuedQty,
+                unitPrice: item.centralInventoryPart?.unitPrice || 0,
+                totalPrice: (item.centralInventoryPart?.unitPrice || 0) * (approvedQty || requestedQty || 0),
+                subPoNumber: item.subPoNumber, // Include sub-PO number
+                dispatches: item.dispatches || [], // Include dispatch history
+            };
+        }) || [];
+
+        // Calculate total amount
+        const totalAmount = items.reduce((sum: number, item: any) => sum + (item.totalPrice || 0), 0);
+
         return {
             ...backendIssue,
-            status: statusMap[backendIssue.status] || backendIssue.status.toLowerCase(),
-            // Ensure items are mapped correctly if structure differs
-            // Backend items are PartsIssueItem[]
-            // Frontend PartsIssue['items'] has specific fields
-            items: backendIssue.items?.map((item: any) => ({
-                ...item,
-                partId: item.centralInventoryPartId || item.partId,
-                fromStock: item.centralInventoryPartId || item.fromStock
-            })) || []
+            status: statusMap[backendIssue.status] || backendIssue.status?.toLowerCase(),
+            items: items,
+            totalAmount: totalAmount || 0,
+            // Include purchaseOrderId if present
+            purchaseOrderId: backendIssue.purchaseOrderId || undefined,
+            // Set admin approval flags based on status
+            adminApproved: isAdminApproved,
+            adminRejected: isAdminRejected,
+            adminApprovedBy: isAdminApproved ? (backendIssue.requestedBy?.name || backendIssue.requestedBy || 'Admin') : undefined,
+            adminApprovedAt: isAdminApproved ? (backendIssue.updatedAt || backendIssue.createdAt) : undefined,
+            adminRejectedBy: isAdminRejected ? (backendIssue.requestedBy?.name || backendIssue.requestedBy || 'Admin') : undefined,
+            adminRejectedAt: isAdminRejected ? (backendIssue.updatedAt || backendIssue.createdAt) : undefined,
+            // Service center info
+            serviceCenterName: backendIssue.toServiceCenter?.name || backendIssue.serviceCenterName,
+            serviceCenterId: backendIssue.toServiceCenterId || backendIssue.serviceCenterId,
+            // Request info
+            issuedBy: backendIssue.requestedBy?.name || backendIssue.requestedBy || 'Unknown',
+            issuedAt: backendIssue.createdAt,
         };
     }
 
@@ -253,6 +490,132 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
                 };
             }) || [],
             priority: 'normal' as const
+        };
+    }
+
+    /**
+     * Get all service centers
+     * Maps ServiceCenter to ServiceCenterInfo format
+     */
+    async getAllServiceCenters(): Promise<ServiceCenterInfo[]> {
+        const response = await apiClient.get<ServiceCenter[]>('/service-centers');
+        const serviceCenters = Array.isArray(response.data) ? response.data : [];
+        
+        return serviceCenters.map((sc: ServiceCenter): ServiceCenterInfo => ({
+            id: sc.id,
+            name: sc.name,
+            location: sc.city || sc.address || undefined,
+            contactPerson: undefined, // Not available in ServiceCenter type
+            contactEmail: sc.email || undefined,
+            contactPhone: sc.phone || undefined,
+            active: sc.status === 'Active' || sc.status === 'active'
+        }));
+    }
+
+    /**
+     * Adjust stock quantity
+     * Supports add, remove, and adjust operations
+     * Returns stock in CentralStock format for compatibility
+     */
+    async adjustStock(
+        stockId: string,
+        adjustment: {
+            adjustmentType: 'add' | 'remove' | 'adjust';
+            quantity: number;
+            reason: string;
+            notes?: string;
+            referenceNumber?: string;
+        },
+        adjustedBy: string
+    ): Promise<{ stock: any; adjustment: any }> {
+        // Get current stock to calculate new quantity
+        const currentStock = await this.getById(stockId);
+        if (!currentStock) {
+            throw new Error('Stock not found');
+        }
+
+        let newQuantity: number;
+        const currentQty = currentStock.stockQuantity || currentStock.currentQty || 0;
+        const allocated = currentStock.allocated || 0;
+
+        switch (adjustment.adjustmentType) {
+            case 'add':
+                // Use the add endpoint
+                const addResponse = await apiClient.patch<CentralInventoryItem>(
+                    `${this.endpoint}/${stockId}/stock/add`,
+                    { quantity: adjustment.quantity }
+                );
+                const addedStock = addResponse.data;
+                return {
+                    stock: {
+                        ...addedStock,
+                        currentQty: addedStock.stockQuantity,
+                        partId: addedStock.id,
+                    },
+                    adjustment: {
+                        id: `adj-${Date.now()}`,
+                        stockId,
+                        adjustmentType: adjustment.adjustmentType,
+                        quantity: adjustment.quantity,
+                        previousQty: currentQty,
+                        newQty: currentQty + adjustment.quantity,
+                        reason: adjustment.reason,
+                        notes: adjustment.notes,
+                        referenceNumber: adjustment.referenceNumber,
+                        adjustedBy,
+                        adjustedAt: new Date().toISOString(),
+                    }
+                };
+
+            case 'remove':
+                newQuantity = Math.max(0, currentQty - adjustment.quantity);
+                // Validate we're not removing more than available
+                const available = currentQty - allocated;
+                if (adjustment.quantity > available) {
+                    throw new Error(`Cannot remove ${adjustment.quantity} units. Only ${available} units available (${currentQty} total - ${allocated} allocated).`);
+                }
+                break;
+
+            case 'adjust':
+                newQuantity = adjustment.quantity;
+                // Validate new quantity is not less than allocated
+                if (newQuantity < allocated) {
+                    throw new Error(`Cannot set stock to ${newQuantity}. There are ${allocated} units already allocated.`);
+                }
+                break;
+
+            default:
+                throw new Error(`Unknown adjustment type: ${adjustment.adjustmentType}`);
+        }
+
+        // For remove and adjust, use the update endpoint
+        const updateResponse = await apiClient.patch<CentralInventoryItem>(
+            `${this.endpoint}/${stockId}/stock`,
+            { stockQuantity: newQuantity }
+        );
+
+        const updatedStock = updateResponse.data;
+        return {
+            stock: {
+                ...updatedStock,
+                currentQty: updatedStock.stockQuantity,
+                partId: updatedStock.id,
+            },
+            adjustment: {
+                id: `adj-${Date.now()}`,
+                stockId,
+                adjustmentType: adjustment.adjustmentType,
+                quantity: adjustment.adjustmentType === 'remove' 
+                    ? adjustment.quantity 
+                    : newQuantity - currentQty,
+                previousQty: currentQty,
+                newQty: newQuantity,
+                reason: adjustment.reason,
+                notes: adjustment.notes,
+                referenceNumber: adjustment.referenceNumber,
+                adjustedBy,
+                adjustedAt: new Date().toISOString(),
+            }
         };
     }
 }

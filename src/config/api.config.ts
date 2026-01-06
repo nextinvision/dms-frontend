@@ -72,8 +72,9 @@ export const API_ENDPOINTS = {
 
 
   // Leads (NOT IMPLEMENTED IN BACKEND)
-  LEADS: "/service-center/leads",
-  LEAD: (id: string) => `/service-center/leads/${id}`,
+  // Leads
+  LEADS: "/leads",
+  LEAD: (id: string) => `/leads/${id}`,
 
 
 } as const;

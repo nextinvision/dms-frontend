@@ -7,6 +7,7 @@ export interface QuotationItem {
   rate: number;
   gstPercent: number;
   amount: number;
+  partWarrantyTag?: boolean;
 }
 
 export interface Insurer {

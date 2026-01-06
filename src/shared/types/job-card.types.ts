@@ -135,6 +135,7 @@ export interface JobCard {
   assignedEngineer: string | null;
   estimatedCost: string;
   estimatedTime: string;
+  expectedCompletionDate?: string; // Expected date when the job should be completed
   startTime?: string;
   createdAt: string;
   completedAt?: string;
@@ -232,5 +233,5 @@ export interface KanbanColumn {
 // ViewType is exported from common.types.ts
 // Job cards support list, kanban, and table views
 export type JobCardViewType = "kanban" | "list" | "table";
-export type JobCardFilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft";
+export type JobCardFilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft" | "pending_approval";
 
