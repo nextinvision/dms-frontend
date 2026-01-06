@@ -100,6 +100,7 @@ export function PartsOrderEntryForm({
               value={currentItem.requiredQty || ""}
               onChange={(e) => handleItemChange("requiredQty", parseInt(e.target.value) || 0)}
               min="1"
+              className={currentItem.requiredQty && currentItem.requiredQty > 0 ? "border-2 border-blue-500 border-solid" : "border border-gray-300"}
             />
           </div>
 
