@@ -458,6 +458,10 @@ export default function JobCardForm({
                         onError={(message) => alert(message)}
                         jobCardId={activeId}
                         userId={userInfo?.id}
+                        onPassToManager={mode === "edit" && isServiceAdvisor ? handlePassToManager : undefined}
+                        isPassedToManager={hydratedCard?.passedToManager}
+                        isSubmitting={isSubmitting}
+                        hasQuotation={!!hydratedCard?.quotationId || !!hydratedCard?.quotation}
                     />
 
                     <CheckInSection
@@ -499,29 +503,7 @@ export default function JobCardForm({
                                 )}
                             </button>
 
-                            {mode === "edit" && isServiceAdvisor && (
-                                <button
-                                    type="button"
-                                    onClick={handlePassToManager}
-                                    disabled={isSubmitting || hydratedCard?.passedToManager}
-                                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${hydratedCard?.passedToManager
-                                        ? "bg-gray-100 text-gray-400 border border-gray-200"
-                                        : "bg-purple-600 text-white hover:bg-purple-700"
-                                        }`}
-                                >
-                                    {isSubmitting ? (
-                                        <>
-                                            <Loader2 className="animate-spin" size={20} />
-                                            Processing...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ArrowLeft size={20} className="transform rotate-180" />
-                                            {hydratedCard?.passedToManager ? "Sent to Manager" : "Pass to Manager"}
-                                        </>
-                                    )}
-                                </button>
-                            )}
+
                         </div>
 
                         <div className="flex gap-3">

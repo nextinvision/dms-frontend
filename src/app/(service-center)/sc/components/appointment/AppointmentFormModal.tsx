@@ -16,6 +16,12 @@ export interface AppointmentFormModalProps {
   initialFormData?: Partial<AppointmentFormType>;
   onClose: () => void;
   onSubmit: (form: AppointmentFormType) => void;
+  onSubmitWithFiles?: (form: AppointmentFormType, pendingUploads: {
+    field: string;
+    cloudinaryResults: any[];
+    files: File[];
+    category: any;
+  }[]) => void;
   canAccessCustomerType: boolean;
   canAccessVehicleInfo: boolean;
   existingAppointments?: any[];
@@ -31,6 +37,7 @@ export function AppointmentFormModal({
   initialFormData,
   onClose,
   onSubmit,
+  onSubmitWithFiles,
   canAccessCustomerType,
   canAccessVehicleInfo,
   existingAppointments = [],
@@ -44,9 +51,9 @@ export function AppointmentFormModal({
   const isEditMode = !!initialFormData?.customerName;
 
   return (
-    <Modal 
-      title={isEditMode ? "Edit Appointment" : "Schedule Appointment"} 
-      onClose={onClose} 
+    <Modal
+      title={isEditMode ? "Edit Appointment" : "Schedule Appointment"}
+      onClose={onClose}
       maxWidth="max-w-3xl"
     >
       <div className="p-6 space-y-6">
@@ -57,6 +64,7 @@ export function AppointmentFormModal({
         <AppointmentForm
           initialData={initialFormData}
           onSubmit={onSubmit}
+          onSubmitWithFiles={onSubmitWithFiles}
           onCancel={onClose}
           mode={isEditMode ? "edit" : "create"}
           customerInfo={customer || undefined}

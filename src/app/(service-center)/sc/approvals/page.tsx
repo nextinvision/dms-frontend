@@ -521,7 +521,7 @@ export default function Approvals() {
                             <span className="font-semibold">Customer:</span> {jobCard.customerName}
                           </p>
                           <p className="text-gray-700">
-                            <span className="font-semibold">Vehicle:</span> {jobCard.vehicle} {jobCard.registration && `(${jobCard.registration})`}
+                            <span className="font-semibold">Vehicle:</span> {typeof jobCard.vehicle === 'object' ? `${(jobCard.vehicle as any).vehicleMake} ${(jobCard.vehicle as any).vehicleModel}` : jobCard.vehicle} {jobCard.registration && `(${jobCard.registration})`}
                           </p>
                           <p className="text-gray-700">
                             <span className="font-semibold">Service Type:</span> {jobCard.serviceType}

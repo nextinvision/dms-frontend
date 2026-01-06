@@ -2,7 +2,8 @@ import * as React from 'react';
 import {
     Eye, Edit, UserPlus, RefreshCw, FileText, Clock,
     Calendar, Car, User, Phone, MapPin, DollarSign, Wrench,
-    TrendingUp, ChevronDown, ChevronUp, ArrowRight
+    TrendingUp, ChevronDown, ChevronUp, ArrowRight,
+    CheckCircle, XCircle
 } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { UserInfo } from '@/shared/types/auth.types';
@@ -28,6 +29,8 @@ interface JobCardTableProps {
     getNextStatus?: (status: JobCardStatus) => JobCardStatus[];
     hasQuotation?: (jobId: string) => boolean;
     onPassToManager?: (jobId: string) => void;
+    onApprove?: (jobId: string) => void;
+    onReject?: (jobId: string) => void;
 }
 
 const JobCardTable = React.memo<JobCardTableProps>(({
@@ -49,6 +52,8 @@ const JobCardTable = React.memo<JobCardTableProps>(({
     getNextStatus,
     hasQuotation,
     onPassToManager,
+    onApprove,
+    onReject,
 }) => {
     const [sortColumn, setSortColumn] = React.useState<string>('createdAt');
     const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
@@ -194,7 +199,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                 <React.Fragment key={job.id}>
                                     <tr
                                         className="hover:bg-gray-50 transition cursor-pointer"
-                                        onClick={() => !isServiceManager && !isServiceAdvisor && onJobClick(job)}
+                                        onClick={() => onJobClick(job)}
                                     >
                                         {/* Expand/Collapse */}
                                         <td className="px-4 py-3 whitespace-nowrap">
@@ -361,6 +366,34 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         <ArrowRight size={16} />
                                                     </button>
                                                 )}
+                                                {isServiceManager && job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && (
+                                                    <>
+                                                        {onApprove && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onApprove(job.id);
+                                                                }}
+                                                                className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition"
+                                                                title="Approve"
+                                                            >
+                                                                <CheckCircle size={16} />
+                                                            </button>
+                                                        )}
+                                                        {onReject && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onReject(job.id);
+                                                                }}
+                                                                className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition"
+                                                                title="Reject"
+                                                            >
+                                                                <XCircle size={16} />
+                                                            </button>
+                                                        )}
+                                                    </>
+                                                )}
                                                 {isServiceManager && onEdit && (
                                                     <button
                                                         onClick={(e) => {
@@ -373,7 +406,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         <Edit size={16} />
                                                     </button>
                                                 )}
-                                                {isServiceManager && job.status === "CREATED" && onAssignEngineer && (
+                                                {isServiceManager && job.status === "JOB_CARD_ACTIVE" && onAssignEngineer && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();

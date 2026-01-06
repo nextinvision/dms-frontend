@@ -58,7 +58,7 @@ const JobCardList = React.memo<JobCardListProps>(({
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-3 md:space-y-4">
+        <div className="p-4 md:p-6 space-y-3 md:space-y-4 overflow-x-auto">
             {currentJobs.map((job) => {
                 const jobCardId = job.id || job.jobCardNumber;
                 const request = partsRequestsData[jobCardId] || partsRequestsData[job.id] || partsRequestsData[job.jobCardNumber || ""];
@@ -67,8 +67,8 @@ const JobCardList = React.memo<JobCardListProps>(({
                 return (
                     <div
                         key={job.id}
-                        className="bg-white rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 hover:shadow-lg transition flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-                        onClick={() => !isServiceManager && !isServiceAdvisor && onJobClick(job)}
+                        className="bg-white rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 hover:shadow-lg transition flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 cursor-pointer min-w-[800px]"
+                        onClick={() => onJobClick(job)}
                     >
                         <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3">

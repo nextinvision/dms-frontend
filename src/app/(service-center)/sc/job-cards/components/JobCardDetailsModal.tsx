@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { X, Package, User } from 'lucide-react';
+import { X, Package, User, CheckCircle, XCircle } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
@@ -12,6 +12,8 @@ interface JobCardDetailsModalProps {
     getNextStatus: (status: JobCardStatus) => JobCardStatus[];
     onAssignEngineer: (jobId: string) => void;
     onUpdateStatus: (jobId: string, initialStatus: JobCardStatus) => void;
+    onApprove?: (jobId: string) => void;
+    onReject?: (jobId: string) => void;
 }
 
 const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
@@ -23,6 +25,8 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
     getNextStatus,
     onAssignEngineer,
     onUpdateStatus,
+    onApprove,
+    onReject,
 }) => {
     if (!open || !job) return null;
 
@@ -158,6 +162,24 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base"
                             >
                                 Assign Engineer
+                            </button>
+                        )}
+                        {job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && onApprove && (
+                            <button
+                                onClick={() => onApprove(job.id)}
+                                className="flex-1 bg-green-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:bg-green-700 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <CheckCircle size={18} />
+                                Approve
+                            </button>
+                        )}
+                        {job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && onReject && (
+                            <button
+                                onClick={() => onReject(job.id)}
+                                className="flex-1 bg-red-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:bg-red-700 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <XCircle size={18} />
+                                Reject
                             </button>
                         )}
                         {getNextStatus(job.status).length > 0 && (

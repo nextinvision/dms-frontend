@@ -562,6 +562,13 @@ export default function JobCards() {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
             }}
             onPassToManager={(jobId) => handleSubmitToManager(jobId)}
+            onApprove={(jobId) => handleManagerReview(jobId, "APPROVED", "Approved from Table")}
+            onReject={(jobId) => {
+              const reason = prompt("Please provide a reason for rejection:");
+              if (reason) {
+                handleManagerReview(jobId, "REJECTED", reason);
+              }
+            }}
           />
         )}
 
@@ -587,6 +594,17 @@ export default function JobCards() {
           setShowDetails(false);
           setAssigningJobId(jobId);
           setShowAssignEngineerModal(true);
+        }}
+        onApprove={(jobId) => {
+          setShowDetails(false);
+          handleManagerReview(jobId, "APPROVED", "Approved from Details");
+        }}
+        onReject={(jobId) => {
+          setShowDetails(false);
+          const reason = prompt("Please provide a reason for rejection:");
+          if (reason) {
+            handleManagerReview(jobId, "REJECTED", reason);
+          }
         }}
         onUpdateStatus={(jobId, initialStatus) => {
           setShowDetails(false);

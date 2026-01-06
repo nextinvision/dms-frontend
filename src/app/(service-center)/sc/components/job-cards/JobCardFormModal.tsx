@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useRouter } from "next/navigation";
-import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight, Package } from "lucide-react";
+import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight, Package, XCircle } from "lucide-react";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -445,6 +445,30 @@ export default function JobCardFormModal({
     }
   };
 
+  const handleManagerDecision = async (status: "APPROVED" | "REJECTED", notes?: string) => {
+    if (!jobCardId) return;
+
+    if (status === "APPROVED" && !confirm("Approve this job card?")) return;
+
+    let finalNotes = notes;
+    if (status === "REJECTED" && !notes) {
+      finalNotes = prompt("Please provide a reason for rejection:") || undefined;
+      if (!finalNotes) return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await jobCardService.managerReview(jobCardId, { status, notes: finalNotes || "" });
+      alert(status === "APPROVED" ? "Job Card Approved!" : "Job Card Rejected!");
+      onClose();
+    } catch (error) {
+      console.error(error);
+      onError?.("Failed to update status");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!open) return null;
 
   // Content wrapper - different styling for modal vs full page
@@ -553,6 +577,10 @@ export default function JobCardFormModal({
             onError={onError}
             jobCardId={jobCardId || tempId}
             userId={userInfo?.id}
+            onPassToManager={mode === "edit" && isServiceAdvisor ? handlePassToManager : undefined}
+            isPassedToManager={hydratedCard?.passedToManager}
+            isSubmitting={isSubmitting}
+            hasQuotation={!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
           />
 
           <RequestedPartsSection
@@ -685,29 +713,28 @@ export default function JobCardFormModal({
             </button>
           )}
 
-          {mode === "edit" && isServiceAdvisor && (
-            <button
-              type="button"
-              onClick={handlePassToManager}
-              disabled={isSubmitting || hydratedCard?.passedToManager}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed ${hydratedCard?.passedToManager
-                ? "bg-gray-100 text-gray-400 border border-gray-200"
-                : "bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:opacity-90"
-                }`}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="animate-spin" size={20} />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <ArrowRight size={20} />
-                  {hydratedCard?.passedToManager ? "Sent to Manager" : "Pass to Manager"}
-                </>
-              )}
-            </button>
+
+          {isServiceManager && hydratedCard?.passedToManager && (hydratedCard?.status === "CREATED" || hydratedCard?.status === "AWAITING_QUOTATION_APPROVAL") && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleManagerDecision("APPROVED", "Approved via Form")}
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-200 transition-all disabled:opacity-50"
+              >
+                <CheckCircle size={20} /> Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => handleManagerDecision("REJECTED")}
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 transition-all disabled:opacity-50"
+              >
+                <XCircle size={20} /> Reject
+              </button>
+            </>
           )}
+
         </div>
 
         <div className="flex gap-4">

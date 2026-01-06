@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Upload, Eye } from 'lucide-react';
+import { Plus, Edit2, Trash2, Upload, Eye, ArrowRight, Loader2 } from 'lucide-react';
 import { CreateJobCardForm, JobCardPart2Item } from "@/features/job-cards/types/job-card.types";
 import { extractPartCode, extractPartName, extractLabourCode, generateSrNoForPart2Items } from "@/features/job-cards/utils/jobCardUtils";
 import WarrantyDocumentationModal from "../modals/WarrantyDocumentationModal";
@@ -30,6 +30,10 @@ interface Part2ItemsSectionProps {
     onError?: (message: string) => void;
     jobCardId?: string;
     userId?: string;
+    onPassToManager?: () => void;
+    isPassedToManager?: boolean;
+    isSubmitting?: boolean;
+    hasQuotation?: boolean;
 }
 
 export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
@@ -38,6 +42,10 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
     onError,
     jobCardId: propJobCardId,
     userId,
+    onPassToManager,
+    isPassedToManager,
+    isSubmitting,
+    hasQuotation,
 }) => {
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [newItem, setNewItem] = useState<Partial<JobCardPart2Item>>({
@@ -221,6 +229,17 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
     ]);
 
     const handleSelectPart = (part: any) => {
+        // Map backend partType to frontend itemType
+        const lowerPartType = part.partType?.toLowerCase() || "";
+
+        // Check for various indicators of a work item/service based ONLY on partType
+        const isWorkItem =
+            lowerPartType === "work item" ||
+            lowerPartType === "work_item" ||
+            lowerPartType === "service" ||
+            lowerPartType === "labour";
+
+        const itemType = isWorkItem ? "work_item" : "part";
         setNewItem(prev => ({
             ...prev,
             partName: part.partName,
@@ -229,6 +248,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
             gstPercent: part.gstRate || 18,
             amount: part.totalPrice || (part.unitPrice ? part.unitPrice * (1 + (part.gstRate || 18) / 100) : part.price || 0),
             labourCode: part.labourCode || prev.labourCode || "",
+            itemType,
         }));
         setShowResults(false);
     };
@@ -452,26 +472,23 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                         />
                     </div>
 
+
+
+
+
+
+
                     {/* Part Type */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                             Part Type <span className="text-red-500">*</span>
                         </label>
-                        <select
-                            value={newItem.itemType || "part"}
-                            onChange={(e) => {
-                                const itemType = e.target.value as "part" | "work_item";
-                                setNewItem({
-                                    ...newItem,
-                                    itemType,
-                                    labourCode: itemType === "part" ? "Auto Select With Part" : "",
-                                });
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        >
-                            <option value="part">Part</option>
-                            <option value="work_item">Work Item</option>
-                        </select>
+                        <input
+                            type="text"
+                            value={newItem.itemType === "work_item" ? "Work Item" : "Part"}
+                            readOnly
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700"
+                        />
                     </div>
 
                     {/* Amount */}
@@ -713,6 +730,32 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                     />
                 )
             }
+            {/* Pass to Manager Action - Only if warranty parts exist */}
+            {onPassToManager && form.part2Items.some(item => item.partWarrantyTag) && (
+                <div className="mt-4 flex justify-end border-t border-gray-200 pt-4">
+                    <button
+                        type="button"
+                        onClick={onPassToManager}
+                        disabled={isSubmitting || hasQuotation}
+                        className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all shadow-md shadow-purple-100 disabled:opacity-50 disabled:cursor-not-allowed ${(isSubmitting || hasQuotation)
+                            ? "bg-gray-100 text-gray-400 border border-gray-200"
+                            : "bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:opacity-90"
+                            }`}
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <Loader2 className="animate-spin" size={16} />
+                                Processing...
+                            </>
+                        ) : (
+                            <>
+                                <ArrowRight size={16} />
+                                {isPassedToManager ? "Resend to Manager" : "Pass to Manager"}
+                            </>
+                        )}
+                    </button>
+                </div>
+            )}
         </div >
     );
 };

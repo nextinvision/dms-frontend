@@ -113,6 +113,10 @@ export default function SCDashboard() {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
+      // Clear cache to ensure fresh data
+      const { apiClient } = await import('@/core/api');
+      apiClient.clearCache();
+
       const today = new Date();
       const todayStr = today.toISOString().split("T")[0];
 
@@ -190,12 +194,14 @@ export default function SCDashboard() {
       ).length;
 
       // Calculate Appointment stats
-      const todayAppointments = appointments.filter((apt: any) =>
-        apt.date === todayStr
-      ).length;
+      const todayAppointments = appointments.filter((apt: any) => {
+        if (!apt.appointmentDate) return false;
+        const aptDate = new Date(apt.appointmentDate).toISOString().split("T")[0];
+        return aptDate === todayStr;
+      }).length;
 
       const pendingAppointments = appointments.filter((apt: any) =>
-        apt.status === "Pending" || apt.status === "Confirmed"
+        apt.status === "PENDING" || apt.status === "CONFIRMED" || apt.status === "SCHEDULED"
       ).length;
 
       // Calculate Revenue stats
@@ -705,9 +711,20 @@ export default function SCDashboard() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <div className="pt-20 px-4 sm:px-6 lg:px-8 pb-10">
-        <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Service Center Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500">Assigned center: {serviceCenter}</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Service Center Dashboard</h1>
+            <p className="mt-1 text-sm text-gray-500">Assigned center: {serviceCenter}</p>
+          </div>
+          <button
+            onClick={fetchDashboardData}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh dashboard data"
+          >
+            <ArrowRightLeft size={18} className={isLoading ? "animate-spin" : ""} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
         </div>
 
         {/* Revenue Summary Section */}

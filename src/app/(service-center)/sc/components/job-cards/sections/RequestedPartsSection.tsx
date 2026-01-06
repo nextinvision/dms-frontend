@@ -3,6 +3,7 @@ import { Plus, Trash2, Package } from 'lucide-react';
 import { CreateJobCardForm, JobCardPart2Item } from "@/features/job-cards/types/job-card.types";
 import { apiClient } from "@/core/api/client";
 import type { Part } from "@/features/inventory/types/inventory.types";
+import { useRole } from "@/shared/hooks";
 
 interface RequestedPartsSectionProps {
     form: CreateJobCardForm;
@@ -15,6 +16,10 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
     updateField,
     onError,
 }) => {
+    // Role-based access control - only service technicians can request parts
+    const { userRole } = useRole();
+    const isTechnician = userRole === "service_engineer";
+
     const [newItem, setNewItem] = useState<Partial<JobCardPart2Item>>({
         partName: "",
         partCode: "",
@@ -109,6 +114,17 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
         updateField('requestedParts', updatedItems);
     };
 
+
+
+    // Access Control Logic:
+    // 1. Service Technician: Can see section, Add parts, View list (Full Access)
+    // 2. Others: Can only SEE the list if parts exist (Read Only), cannot Add/Request
+    const hasRequestedParts = form.requestedParts && form.requestedParts.length > 0;
+
+    if (!isTechnician && !hasRequestedParts) {
+        return null;
+    }
+
     return (
         <div className="bg-gray-50 rounded-xl p-6 border border-gray-200 mt-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
@@ -116,87 +132,89 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
                 Requested Parts
             </h3>
 
-            <div className="bg-white rounded-lg p-4 mb-4 border border-gray-300">
-                <h4 className="text-sm font-semibold text-gray-700 mb-3">
-                    Add Part Request
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Part Name with Search */}
-                    <div className="relative">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Part Name <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            value={newItem.partName || ""}
-                            onChange={(e) => {
-                                setNewItem({ ...newItem, partName: e.target.value });
-                                setShowResults(true);
-                            }}
-                            onFocus={() => setShowResults(true)}
-                            onBlur={() => setTimeout(() => setShowResults(false), 200)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            placeholder="Search part..."
-                            autoComplete="off"
-                        />
-                        {showResults && searchResults.length > 0 && (
-                            <div className="absolute z-10 w-full bg-white mt-1 border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                                <ul>
-                                    {searchResults.map((part: Part) => (
-                                        <li
-                                            key={part.id}
-                                            className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-gray-100 last:border-0"
-                                            onMouseDown={() => handleSelectPart(part)}
-                                        >
-                                            <div className="font-medium text-gray-800">{part.partName}</div>
-                                            <div className="text-xs text-gray-500">Code: {part.partNumber || part.partId}</div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
+            {isTechnician && (
+                <div className="bg-white rounded-lg p-4 mb-4 border border-gray-300">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                        Add Part Request
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {/* Part Name with Search */}
+                        <div className="relative">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Part Name <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={newItem.partName || ""}
+                                onChange={(e) => {
+                                    setNewItem({ ...newItem, partName: e.target.value });
+                                    setShowResults(true);
+                                }}
+                                onFocus={() => setShowResults(true)}
+                                onBlur={() => setTimeout(() => setShowResults(false), 200)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                placeholder="Search part..."
+                                autoComplete="off"
+                            />
+                            {showResults && searchResults.length > 0 && (
+                                <div className="absolute z-10 w-full bg-white mt-1 border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                    <ul>
+                                        {searchResults.map((part: Part) => (
+                                            <li
+                                                key={part.id}
+                                                className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-gray-100 last:border-0"
+                                                onMouseDown={() => handleSelectPart(part)}
+                                            >
+                                                <div className="font-medium text-gray-800">{part.partName}</div>
+                                                <div className="text-xs text-gray-500">Code: {part.partNumber || part.partId}</div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
 
-                    {/* Part Code */}
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Part Code <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            value={newItem.partCode || ""}
-                            onChange={(e) => setNewItem({ ...newItem, partCode: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50"
-                            readOnly
-                        />
-                    </div>
+                        {/* Part Code */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Part Code <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={newItem.partCode || ""}
+                                onChange={(e) => setNewItem({ ...newItem, partCode: e.target.value })}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50"
+                                readOnly
+                            />
+                        </div>
 
-                    {/* QTY */}
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                            QTY <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="number"
-                            min="1"
-                            value={newItem.qty || 1}
-                            onChange={(e) => setNewItem({ ...newItem, qty: parseInt(e.target.value) || 1 })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
-                    </div>
+                        {/* QTY */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                                QTY <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={newItem.qty || 1}
+                                onChange={(e) => setNewItem({ ...newItem, qty: parseInt(e.target.value) || 1 })}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            />
+                        </div>
 
-                    {/* Add Button */}
-                    <div className="flex items-end">
-                        <button
-                            type="button"
-                            onClick={handleAddItem}
-                            className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2"
-                        >
-                            <Plus size={16} /> Add Request
-                        </button>
+                        {/* Add Button */}
+                        <div className="flex items-end">
+                            <button
+                                type="button"
+                                onClick={handleAddItem}
+                                className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+                            >
+                                <Plus size={16} /> Add Request
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             <div className="bg-white rounded-lg border border-gray-300 overflow-hidden">
                 <div className="overflow-x-auto">
@@ -208,13 +226,13 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Part Code</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">QTY</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
-                                <th className="px-3 py-2 text-left font-semibold text-gray-700">Action</th>
+                                {isTechnician && <th className="px-3 py-2 text-left font-semibold text-gray-700">Action</th>}
                             </tr>
                         </thead>
                         <tbody>
                             {(!form.requestedParts || form.requestedParts.length === 0) ? (
                                 <tr>
-                                    <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
+                                    <td colSpan={isTechnician ? 6 : 5} className="px-3 py-8 text-center text-gray-500">
                                         No parts requested yet.
                                     </td>
                                 </tr>
@@ -231,16 +249,18 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
                                                 Sending Parts
                                             </span>
                                         </td>
-                                        <td className="px-3 py-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleDelete(index)}
-                                                className="p-1 text-red-600 hover:bg-red-50 rounded transition"
-                                                title="Remove"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </td>
+                                        {isTechnician && (
+                                            <td className="px-3 py-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDelete(index)}
+                                                    className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                                                    title="Remove"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}

@@ -23,8 +23,8 @@ import type { CreateAppointmentDto, UpdateAppointmentDto } from "@/features/appo
 import { useCustomerSearch } from "@/app/(service-center)/sc/components/customers";
 import { type CheckInSlipData, generateCheckInSlipNumber } from "@/components/check-in-slip/CheckInSlip";
 import { migrateAllJobCards } from "@/features/job-cards/utils/migrateJobCards.util";
-// Removed separate saveFileMetadata call imports as service handles it
-import { FileCategory, RelatedEntityType } from "@/services/files/types";
+// Import file metadata services
+import { FileCategory, RelatedEntityType, saveMultipleFileMetadata } from "@/services/cloudinary/fileMetadata.service";
 
 export const useAppointmentLogic = () => {
     // Router
@@ -508,6 +508,143 @@ export const useAppointmentLogic = () => {
         }
     }, [selectedAppointment, selectedAppointmentCustomer, selectedAppointmentVehicle, serviceCenterContext, userInfo, showToast, handleCloseAppointmentForm, loadAppointments]);
 
+    // New handler for appointments with pending file uploads
+    const handleSubmitAppointmentFormWithFiles = useCallback(async (
+        form: AppointmentFormType,
+        pendingUploads: {
+            field: string;
+            cloudinaryResults: any[];
+            files: File[];
+            category: FileCategory;
+        }[]
+    ) => {
+        try {
+            // Step 1: Create/Update the appointment first (same logic as handleSubmitAppointmentForm)
+            const scResponse = await apiClient.get(API_ENDPOINTS.SERVICE_CENTERS);
+            const serviceCenters = scResponse.data || [];
+
+            let targetSC = serviceCenters.find((sc: any) => sc.name === form.serviceCenterName);
+            if (!targetSC) {
+                targetSC = serviceCenters.find((sc: any) => sc.code === "SC001");
+            }
+            if (!targetSC && serviceCenters.length > 0) targetSC = serviceCenters[0];
+
+            const serviceCenterId = targetSC?.id;
+
+            if (!serviceCenterId) {
+                showToast("Invalid Service Center configuration. Cannot save.", "error");
+                return;
+            }
+
+            if (!selectedAppointmentCustomer?.id || !selectedAppointmentVehicle?.id) {
+                showToast("Customer and Vehicle information is missing.", "error");
+                return;
+            }
+
+            // Resolve Pickup Address
+            let pickupAddress = form.pickupAddress;
+            let pickupCity = (form as any).pickupCity;
+            let pickupState = (form as any).pickupState;
+            let pickupPincode = (form as any).pickupPincode;
+
+            if (form.pickupDropRequired && !pickupAddress && selectedAppointmentCustomer) {
+                pickupAddress = selectedAppointmentCustomer.address;
+                pickupPincode = selectedAppointmentCustomer.pincode;
+                if (selectedAppointmentCustomer.cityState) {
+                    const parts = selectedAppointmentCustomer.cityState.split(',').map(s => s.trim());
+                    if (parts.length >= 1) pickupCity = parts[0];
+                    if (parts.length >= 2) pickupState = parts[1];
+                }
+            }
+
+            const basePayload = {
+                customerId: selectedAppointmentCustomer.id.toString(),
+                vehicleId: selectedAppointmentVehicle.id.toString(),
+                serviceCenterId: serviceCenterId.toString(),
+                serviceType: form.serviceType,
+                appointmentDate: new Date(form.date).toISOString(),
+                appointmentTime: form.time,
+                customerComplaint: form.customerComplaint,
+                location: form.location || "STATION",
+                estimatedCost: form.estimatedCost ? parseFloat(form.estimatedCost) : undefined,
+                uploadedBy: userInfo?.id,
+                estimatedDeliveryDate: form.estimatedDeliveryDate,
+                assignedServiceAdvisor: form.assignedServiceAdvisor,
+                assignedTechnician: form.assignedTechnician,
+                pickupDropRequired: form.pickupDropRequired,
+                pickupAddress: pickupAddress,
+                pickupState: pickupState,
+                pickupCity: pickupCity,
+                pickupPincode: pickupPincode,
+                dropAddress: form.dropAddress,
+                dropState: (form as any).dropState,
+                dropCity: (form as any).dropCity,
+                dropPincode: (form as any).dropPincode,
+                preferredCommunicationMode: form.preferredCommunicationMode,
+                previousServiceHistory: form.previousServiceHistory,
+                estimatedServiceTime: form.estimatedServiceTime,
+                odometerReading: form.odometerReading,
+                duration: form.duration?.toString(),
+            };
+
+            let createdAppointment: any;
+
+            if (selectedAppointment) {
+                const updatePayload: UpdateAppointmentDto = {
+                    ...basePayload,
+                    status: selectedAppointment.status
+                };
+                createdAppointment = await appointmentsService.update(selectedAppointment.id.toString(), updatePayload);
+            } else {
+                const createPayload: CreateAppointmentDto = {
+                    ...basePayload
+                };
+                createdAppointment = await appointmentsService.create(createPayload);
+            }
+
+            // Step 2: Now save all pending uploads to database with real appointment ID
+            if (pendingUploads.length > 0 && createdAppointment?.id) {
+                console.log(`📤 Saving ${pendingUploads.length} pending file upload(s) to database...`);
+
+                for (const upload of pendingUploads) {
+                    try {
+                        await saveMultipleFileMetadata(
+                            upload.cloudinaryResults,
+                            upload.files,
+                            {
+                                category: upload.category,
+                                relatedEntityId: createdAppointment.id.toString(),
+                                relatedEntityType: RelatedEntityType.APPOINTMENT,
+                                uploadedBy: userInfo?.id,
+                            }
+                        );
+                        console.log(`✅ Saved ${upload.cloudinaryResults.length} file(s) for ${upload.field}`);
+                    } catch (fileError) {
+                        console.error(`Failed to save files for ${upload.field}:`, fileError);
+                        // Don't fail the entire operation, just log the error
+                    }
+                }
+            }
+
+            showToast(
+                selectedAppointment
+                    ? 'Appointment updated successfully!'
+                    : 'Appointment scheduled successfully!',
+                'success'
+            );
+
+            // Invalidate cache and refresh
+            apiClient.clearCache();
+            loadAppointments();
+            handleCloseAppointmentForm();
+
+        } catch (error: any) {
+            console.error("Error saving appointment:", error);
+            const msg = error?.response?.data?.message || error.message || "Failed to save appointment. Please try again.";
+            showToast(msg, "error");
+        }
+    }, [selectedAppointment, selectedAppointmentCustomer, selectedAppointmentVehicle, userInfo, showToast, handleCloseAppointmentForm, loadAppointments]);
+
     const handleCustomerArrivedFromForm = useCallback(async (form: AppointmentFormType) => {
         if (!selectedAppointment) return;
 
@@ -812,6 +949,7 @@ export const useAppointmentLogic = () => {
         handleCloseAppointmentForm,
         handleCustomerSelectForAppointment,
         handleSubmitAppointmentForm,
+        handleSubmitAppointmentFormWithFiles, // New handler for file uploads
         handleCustomerArrivedFromForm,
         handleOpenJobCard,
         handleGenerateCheckInSlip, // Added

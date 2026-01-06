@@ -57,6 +57,7 @@ function AppointmentsContent() {
     handleCloseAppointmentForm,
     handleCustomerSelectForAppointment,
     handleSubmitAppointmentForm,
+    handleSubmitAppointmentFormWithFiles,
     handleCustomerArrivedFromForm,
     handleOpenJobCard,
     handleGenerateCheckInSlip,
@@ -292,6 +293,7 @@ function AppointmentsContent() {
           initialFormData={appointmentFormData}
           onClose={handleCloseAppointmentForm}
           onSubmit={handleSubmitAppointmentForm}
+          onSubmitWithFiles={handleSubmitAppointmentFormWithFiles}
           canAccessCustomerType={true} // Simplify logic for now
           canAccessVehicleInfo={true}
           existingAppointments={appointments.filter(apt => apt.id !== selectedAppointment?.id)}

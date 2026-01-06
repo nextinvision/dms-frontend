@@ -336,14 +336,24 @@ export const jobCardAdapter = {
 
             // Basic details
             customerId: jobCard.customerId || "",
-            customerName: jobCard.customerName || "",
-            fullName: jobCard.part1?.fullName || jobCard.part1Data?.fullName || jobCard.customerName || "",
-            mobilePrimary: jobCard.part1?.mobilePrimary || jobCard.part1Data?.mobilePrimary || "",
+            customerName: jobCard.customerName || jobCard.customer?.name || "",
+            fullName: jobCard.part1?.fullName || jobCard.part1Data?.fullName || jobCard.customerName || jobCard.customer?.name || "",
+            mobilePrimary: jobCard.part1?.mobilePrimary || jobCard.part1Data?.mobilePrimary || jobCard.customer?.phone || "",
             whatsappNumber: jobCard.part1?.whatsappNumber || jobCard.part1Data?.whatsappNumber || jobCard.customerWhatsappNumber || jobCard.customer?.whatsappNumber || "",
             alternateNumber: jobCard.part1?.alternateNumber || jobCard.part1Data?.alternateNumber || jobCard.customerAlternateMobile || jobCard.customer?.alternateNumber || "",
             email: jobCard.part1?.email || jobCard.part1Data?.email || jobCard.customerEmail || jobCard.customer?.email || "",
-            customerType: jobCard.part1?.customerType || jobCard.part1Data?.customerType || jobCard.customerType || "",
-            customerAddress: jobCard.part1?.customerAddress || jobCard.part1Data?.customerAddress || "",
+            customerType: jobCard.part1?.customerType || jobCard.part1Data?.customerType || jobCard.customerType || jobCard.customer?.customerType || "",
+
+            // Address logic: Combine if partial, or use full address
+            customerAddress: jobCard.part1?.customerAddress || jobCard.part1Data?.customerAddress || jobCard.customer?.address || (() => {
+                const parts = [
+                    jobCard.customer?.address,
+                    jobCard.customer?.cityState,
+                    jobCard.customer?.pincode
+                ].filter(Boolean);
+                return parts.length > 0 ? parts.join(', ') : "";
+            })(),
+
             vehicleId: jobCard.vehicleId || "",
             vehicleRegistration: jobCard.part1?.registrationNumber || jobCard.part1Data?.registrationNumber || jobCard.vehicle?.registration || jobCard.registration || "",
             vehicleMake: jobCard.part1?.vehicleMake || jobCard.part1Data?.vehicleMake || jobCard.vehicle?.vehicleMake || jobCard.vehicleMake || "",
@@ -358,12 +368,9 @@ export const jobCardAdapter = {
             dateOfPurchase: formatDate(jobCard.part1?.dateOfPurchase || jobCard.part1Data?.dateOfPurchase || jobCard.vehicle?.purchaseDate || jobCard.dateOfPurchase),
             vehicleColor: jobCard.part1?.vehicleColor || jobCard.part1Data?.vehicleColor || jobCard.vehicle?.vehicleColor || jobCard.vehicleColor,
 
-
-
-
             // Service details
-            description: jobCard.description || "",
-            customerFeedback: jobCard.part1?.customerFeedback || jobCard.part1Data?.customerFeedback || "",
+            description: jobCard.description || jobCard.appointment?.customerComplaint || "",
+            customerFeedback: jobCard.part1?.customerFeedback || jobCard.part1Data?.customerFeedback || jobCard.appointment?.customerComplaint || "",
             technicianObservation: jobCard.part1?.technicianObservation || jobCard.part1Data?.technicianObservation || "",
             insuranceStartDate: formatDate(jobCard.part1?.insuranceStartDate || jobCard.part1Data?.insuranceStartDate || jobCard.vehicle?.insuranceStartDate || ""),
             insuranceEndDate: formatDate(jobCard.part1?.insuranceEndDate || jobCard.part1Data?.insuranceEndDate || jobCard.vehicle?.insuranceEndDate || ""),
@@ -373,8 +380,6 @@ export const jobCardAdapter = {
             vcuSerialNumber: jobCard.part1?.vcuSerialNumber || jobCard.part1Data?.vcuSerialNumber || "",
             otherPartSerialNumber: jobCard.part1?.otherPartSerialNumber || jobCard.part1Data?.otherPartSerialNumber || "",
 
-
-
             // Part 2
             part2Items: jobCard.part2 || [],
             requestedParts: jobCard.requestedParts || (jobCard.partsRequests?.length ? jobCard.partsRequests.flatMap((pr: any) => pr.items || []).map((item: any, i: number) => ({
@@ -382,7 +387,7 @@ export const jobCardAdapter = {
                 partName: item.part?.name || item.partName || "Unknown Part",
                 partCode: item.part?.partNumber || item.partId,
                 qty: item.quantity || 1,
-                amount: 0, // Amount might not be in the request item
+                amount: 0,
                 itemType: "part",
                 partWarrantyTag: item.isWarranty || false,
                 serialNumber: item.serialNumber
@@ -400,7 +405,6 @@ export const jobCardAdapter = {
             numberOfObservations: jobCard.part2A?.numberOfObservations || jobCard.part2AData?.numberOfObservations || "",
             symptom: jobCard.part2A?.symptom || jobCard.part2AData?.symptom || "",
             defectPart: jobCard.part2A?.defectPart || jobCard.part2AData?.defectPart || "",
-
 
             // Others
             estimatedDeliveryDate: formatDate(jobCard.part1?.estimatedDeliveryDate || jobCard.part1Data?.estimatedDeliveryDate || jobCard.appointment?.estimatedDeliveryDate || ""),
