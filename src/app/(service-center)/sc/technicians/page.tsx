@@ -1,47 +1,143 @@
 "use client";
-import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { useState } from "react";
-import { Users, UserPlus, TrendingUp, Clock, CheckCircle, X, Plus, XCircle } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Users, UserPlus, X, Plus, XCircle, Loader2 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRole } from "@/shared/hooks";
+import { userRepository } from "@/core/repositories/user.repository";
+import { useToast } from "@/core/contexts/ToastContext";
+import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
+import { normalizeServiceCenterId } from "@/shared/utils/service-center.utils";
 
 interface Technician {
-  id: number;
+  id: string;
   name: string;
+  email: string;
+  phone: string;
   status: string;
   currentJobs: number;
   completedToday: number;
   utilization: number;
   skills: string[];
+  activeJobDetails: {
+    id: string;
+    number: string;
+    vehicle: string;
+    status: string;
+  }[];
 }
 
 export default function Technicians() {
+  const { userRole } = useRole();
+  const { showSuccess, showError } = useToast();
+  const queryClient = useQueryClient();
+  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
+
+  // State for Add Modal
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [technicianForm, setTechnicianForm] = useState({
     name: "",
+    email: "",
+    phone: "",
+    password: "",
     status: "Available",
     skills: [] as string[],
   });
   const [currentSkill, setCurrentSkill] = useState<string>("");
 
-  const [technicians, setTechnicians] = useState<Technician[]>([
-    {
-      id: 1,
-      name: "Engineer 1",
-      status: "Busy",
-      currentJobs: 2,
-      completedToday: 3,
-      utilization: 85,
-      skills: ["Engine", "AC", "General"],
+  // Fetch Technicians
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['technicians', serviceCenterContext.serviceCenterId],
+    queryFn: () => userRepository.getAll({
+      role: 'service_engineer',
+      serviceCenterId: serviceCenterContext.serviceCenterId,
+      includeJobCards: 'true'
+    }),
+  });
+
+  // Calculate stats and format data
+  const technicians: Technician[] = useMemo(() => {
+    if (!Array.isArray(users)) return [];
+
+    const today = new Date().toISOString().split('T')[0];
+
+    return users.map((user: any) => {
+      const activeJobsList = user.jobCards?.filter((jc: any) =>
+        ['JOB_CARD_ACTIVE', 'IN_PROGRESS', 'ASSIGNED'].includes(jc.status)
+      ) || [];
+
+      const activeJobDetails = activeJobsList.map((jc: any) => ({
+        id: jc.id,
+        number: jc.jobCardNumber,
+        vehicle: jc.vehicle ? `${jc.vehicle.registration} (${jc.vehicle.vehicleMake} ${jc.vehicle.vehicleModel})` : 'Unknown Vehicle',
+        status: jc.status.replace(/_/g, ' ')
+      }));
+
+      const activeJobs = activeJobsList.length;
+
+      const completedToday = user.jobCards?.filter((jc: any) =>
+        (jc.status === 'COMPLETED' || jc.status === 'INVOICED') &&
+        (jc.updatedAt?.startsWith(today) || jc.createdAt?.startsWith(today)) // Fallback if updatedAt not updated properly
+      ).length || 0;
+
+      // Simple mock utilization calculation based on active jobs
+      // Assuming max capacity of 3 concurrent jobs = 100%
+      const utilization = Math.min(Math.round((activeJobs / 3) * 100), 100);
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || "N/A",
+        status: activeJobs > 0 ? "Busy" : "Available",
+        currentJobs: activeJobs,
+        completedToday,
+        utilization,
+        skills: [], // Skills are not yet supported by backend
+        activeJobDetails
+      };
+    });
+  }, [users]);
+
+  // Create Technician Mutation
+  const createMutation = useMutation({
+    mutationFn: (data: any) => userRepository.create({
+      ...data,
+      role: 'service_engineer',
+      serviceCenterId: normalizeServiceCenterId(serviceCenterContext.serviceCenterId)
+    }),
+    onSuccess: () => {
+      showSuccess("Technician added successfully");
+      queryClient.invalidateQueries({ queryKey: ['technicians'] });
+      setShowAddModal(false);
+      setTechnicianForm({
+        name: "",
+        email: "",
+        phone: "",
+        password: "",
+        status: "Available",
+        skills: [],
+      });
+      setCurrentSkill("");
     },
-    {
-      id: 2,
-      name: "Engineer 2",
-      status: "Available",
-      currentJobs: 1,
-      completedToday: 2,
-      utilization: 65,
-      skills: ["Brakes", "Suspension"],
-    },
-  ]);
+    onError: (error: any) => {
+      showError(error.response?.data?.message || "Failed to create technician");
+    }
+  });
+
+  const handleSubmit = () => {
+    if (!technicianForm.name || !technicianForm.email || !technicianForm.password) {
+      showError("Please fill in all required fields (Name, Email, Password)");
+      return;
+    }
+
+    createMutation.mutate({
+      name: technicianForm.name,
+      email: technicianForm.email,
+      password: technicianForm.password,
+      phone: technicianForm.phone,
+      // Note: Skills and Status (manual) are not sent as backend controls status via jobs
+    });
+  };
 
   return (
     <div className="bg-[#f9f9fb] min-h-screen">
@@ -52,15 +148,7 @@ export default function Technicians() {
             <p className="text-gray-500">Manage service engineers and their assignments</p>
           </div>
           <button
-            onClick={() => {
-              setShowAddModal(true);
-              setTechnicianForm({
-                name: "",
-                status: "Available",
-                skills: [],
-              });
-              setCurrentSkill("");
-            }}
+            onClick={() => setShowAddModal(true)}
             className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition shadow-md inline-flex items-center gap-2"
           >
             <UserPlus size={20} />
@@ -68,35 +156,92 @@ export default function Technicians() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {technicians.map((tech) => (
-            <div key={tech.id} className="bg-white rounded-2xl shadow-md p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xl">
-                  {tech.name.split(" ")[1] || "E"}
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <Loader2 className="animate-spin text-blue-600 w-12 h-12" />
+          </div>
+        ) : technicians.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-2xl shadow-sm">
+            <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-xl font-medium text-gray-900 mb-2">No Technicians Found</h3>
+            <p className="text-gray-500 mb-6">Add your first service engineer to get started</p>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="text-blue-600 font-medium hover:text-blue-700 underline"
+            >
+              Add a technician now
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {technicians.map((tech) => (
+              <div key={tech.id} className="bg-white rounded-2xl shadow-md p-6 border border-gray-100">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-700 font-bold text-xl ring-4 ring-white shadow-sm">
+                    {tech.name.split(" ")[0][0] || "E"}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-lg">{tech.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium mt-1 inline-flex items-center ${tech.status === 'Busy' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'
+                        }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${tech.status === 'Busy' ? 'bg-orange-500' : 'bg-green-500'
+                          }`}></span>
+                        {tech.status}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-gray-800">{tech.name}</p>
-                  <p className="text-sm text-gray-600">{tech.status}</p>
+
+                {/* Active Job Section */}
+                {tech.activeJobDetails.length > 0 && (
+                  <div className="mb-4 bg-gray-50 rounded-lg p-3 border border-gray-100">
+                    <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Working On</p>
+                    {tech.activeJobDetails.slice(0, 2).map((job, idx) => (
+                      <div key={job.id} className={`${idx > 0 ? 'mt-2 pt-2 border-t border-gray-200' : ''}`}>
+                        <div className="flex justify-between items-start">
+                          <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{job.number}</span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-800 mt-1 truncate" title={job.vehicle}>
+                          {job.vehicle}
+                        </p>
+                      </div>
+                    ))}
+                    {tech.activeJobDetails.length > 2 && (
+                      <p className="text-xs text-gray-500 mt-2 text-center">+ {tech.activeJobDetails.length - 2} more</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-3 pt-2">
+                  <div className="flex justify-between text-sm items-center">
+                    <span className="text-gray-500">Queue</span>
+                    <span className="font-semibold text-gray-900 bg-gray-100 px-2 py-0.5 rounded-md">{tech.currentJobs} Jobs</span>
+                  </div>
+                  <div className="flex justify-between text-sm items-center">
+                    <span className="text-gray-500">Done Today</span>
+                    <span className="font-semibold text-gray-900">{tech.completedToday}</span>
+                  </div>
+
+                  <div className="pt-2">
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span className="text-gray-500">Daily Load</span>
+                      <span className="font-medium text-gray-700">{tech.utilization}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${tech.utilization > 80 ? 'bg-red-500' :
+                            tech.utilization > 50 ? 'bg-orange-400' : 'bg-green-500'
+                          }`}
+                        style={{ width: `${tech.utilization}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Current Jobs</span>
-                  <span className="font-medium">{tech.currentJobs}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Completed Today</span>
-                  <span className="font-medium">{tech.completedToday}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Utilization</span>
-                  <span className="font-medium">{tech.utilization}%</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add Technician Modal */}
@@ -106,15 +251,7 @@ export default function Technicians() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-800">Add Technician</h2>
               <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  setTechnicianForm({
-                    name: "",
-                    status: "Available",
-                    skills: [],
-                  });
-                  setCurrentSkill("");
-                }}
+                onClick={() => setShowAddModal(false)}
                 className="text-gray-400 hover:text-gray-600 transition p-2 rounded-lg hover:bg-gray-100"
               >
                 <X size={24} />
@@ -124,42 +261,68 @@ export default function Technicians() {
             <div className="space-y-4">
               {/* Basic Information */}
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Basic Information</h3>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Account Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Technician Name <span className="text-red-500">*</span>
+                      Full Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={technicianForm.name}
                       onChange={(e) => setTechnicianForm({ ...technicianForm, name: e.target.value })}
-                      placeholder="Enter technician name"
+                      placeholder="e.g. John Doe"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       required
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Status <span className="text-red-500">*</span>
+                      Email <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      value={technicianForm.status}
-                      onChange={(e) => setTechnicianForm({ ...technicianForm, status: e.target.value })}
+                    <input
+                      type="email"
+                      value={technicianForm.email}
+                      onChange={(e) => setTechnicianForm({ ...technicianForm, email: e.target.value })}
+                      placeholder="e.g. john@example.com"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       required
-                    >
-                      <option value="Available">Available</option>
-                      <option value="Busy">Busy</option>
-                      <option value="On Leave">On Leave</option>
-                    </select>
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Phone Number
+                    </label>
+                    <input
+                      type="text"
+                      value={technicianForm.phone}
+                      onChange={(e) => setTechnicianForm({ ...technicianForm, phone: e.target.value })}
+                      placeholder="e.g. +91 98765 43210"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Password <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={technicianForm.password}
+                      onChange={(e) => setTechnicianForm({ ...technicianForm, password: e.target.value })}
+                      placeholder="Enter password"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      required
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Skills */}
+              {/* Skills (Visual Only as backend support is pending) */}
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Skills</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-lg font-semibold text-gray-800">Skills</h3>
+                  <span className="text-xs text-gray-500">(Optional - for display only)</span>
+                </div>
                 <div className="space-y-3">
                   <div className="flex gap-2">
                     <input
@@ -226,54 +389,18 @@ export default function Technicians() {
               {/* Submit Buttons */}
               <div className="flex gap-3 pt-4 border-t border-gray-200">
                 <button
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setTechnicianForm({
-                      name: "",
-                      status: "Available",
-                      skills: [],
-                    });
-                    setCurrentSkill("");
-                  }}
+                  onClick={() => setShowAddModal(false)}
                   className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
+                  disabled={createMutation.isPending}
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    if (!technicianForm.name) {
-                      alert("Please enter technician name.");
-                      return;
-                    }
-
-                    const newTechnician: Technician = {
-                      id: technicians.length + 1,
-                      name: technicianForm.name,
-                      status: technicianForm.status,
-                      currentJobs: 0,
-                      completedToday: 0,
-                      utilization: 0,
-                      skills: technicianForm.skills,
-                    };
-
-                    setTechnicians([...technicians, newTechnician]);
-
-                    const storedTechnicians = safeStorage.getItem<unknown[]>("technicians", []);
-                    storedTechnicians.push(newTechnician);
-                    safeStorage.setItem("technicians", storedTechnicians);
-
-                    setShowAddModal(false);
-                    setTechnicianForm({
-                      name: "",
-                      status: "Available",
-                      skills: [],
-                    });
-                    setCurrentSkill("");
-
-                    alert("Technician added successfully!");
-                  }}
-                  className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+                  onClick={handleSubmit}
+                  disabled={createMutation.isPending}
+                  className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition flex justify-center items-center gap-2"
                 >
+                  {createMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <UserPlus size={18} />}
                   Add Technician
                 </button>
               </div>
