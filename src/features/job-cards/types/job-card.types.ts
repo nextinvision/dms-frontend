@@ -208,6 +208,7 @@ export type CreateJobCardForm = {
 
   // PART 2 items
   part2Items: JobCardPart2Item[];
+  requestedParts: JobCardPart2Item[];
 
   // PART 1 fields
   fullName: string;

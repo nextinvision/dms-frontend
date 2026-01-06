@@ -203,7 +203,9 @@ export class FileUploadQueueManager {
                 })),
             }));
 
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(serializable));
+            if (typeof window !== 'undefined') {
+                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(serializable));
+            }
         } catch (error) {
             console.warn('Failed to save upload queues to storage:', error);
         }
@@ -214,6 +216,7 @@ export class FileUploadQueueManager {
      * Note: This only loads metadata, not actual File objects
      */
     private loadFromStorage(): void {
+        if (typeof window === 'undefined') return;
         try {
             const saved = localStorage.getItem(this.STORAGE_KEY);
             if (!saved) return;

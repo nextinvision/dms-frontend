@@ -7,6 +7,7 @@ import {
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { UserInfo } from '@/shared/types/auth.types';
 import { JobCardPartsRequest } from '@/shared/types/jobcard-inventory.types';
+import { getJobCardVehicleDisplay, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface JobCardTableProps {
     currentJobs: JobCard[];
@@ -117,47 +118,8 @@ const JobCardTable = React.memo<JobCardTableProps>(({
         return nameSource || phone || 'Unknown Customer';
     };
 
-    // Helper to get vehicle display string
-    const getVehicleDisplay = (job: JobCard): string => {
-        // Debug: Log the job object to see what data we have
-        console.log('Job vehicle data:', { vehicle: job.vehicle, vehicleObject: job.vehicleObject, vehicleMake: job.vehicleMake, vehicleModel: job.vehicleModel, part1: job.part1, part1Data: (job as any).part1Data });
-
-        // Try relation first
-        if (job.vehicleObject) {
-            const display = `${job.vehicleObject.vehicleMake || ''} ${job.vehicleObject.vehicleModel || ''}`.trim();
-            if (display) return display;
-        }
-
-        // Try legacy fields
-        if (job.vehicleMake || job.vehicleModel) {
-            const display = `${job.vehicleMake || ''} ${job.vehicleModel || ''}`.trim();
-            if (display) return display;
-        }
-
-        // Try part1 data (camelCase)
-        if (job.part1) {
-            const display = `${job.part1.vehicleBrand || ''} ${job.part1.vehicleModel || ''}`.trim();
-            if (display) return display;
-        }
-
-        // Try part1Data (snake_case from backend)
-        const part1Data = (job as any).part1Data;
-        if (part1Data) {
-            const display = `${part1Data.vehicleBrand || part1Data.vehicle_brand || ''} ${part1Data.vehicleModel || part1Data.vehicle_model || ''}`.trim();
-            if (display) return display;
-        }
-
-        // Last resort: use vehicle string if it exists
-        if (typeof job.vehicle === 'string' && job.vehicle) {
-            return job.vehicle;
-        }
-
-        // Fallback to just the registration if available
-        const reg = job.registration || part1Data?.registrationNumber || part1Data?.registration_number;
-        if (reg) return `Vehicle ${reg}`;
-
-        return 'Unknown Vehicle';
-    };
+    // Helper to get vehicle display string matches shared helper
+    // Uses getJobCardVehicleDisplay from utils
 
     // Helper to get registration number
     const getRegistration = (job: JobCard): string => {
@@ -172,22 +134,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
         return 'N/A';
     };
 
-    const getVehicleString = (vehicle: any): string => {
-        if (typeof vehicle === 'string') return vehicle;
-        if (typeof vehicle === 'object' && vehicle !== null) {
-            return `${vehicle.vehicleModel || ''} ${vehicle.registration ? `(${vehicle.registration})` : ''}`.trim();
-        }
-        return '';
-    };
 
-    const getEngineerName = (engineer: any): string => {
-        if (!engineer) return 'Unassigned';
-        if (typeof engineer === 'string') return engineer;
-        if (typeof engineer === 'object' && engineer !== null) {
-            return engineer.name || 'Unassigned';
-        }
-        return 'Unassigned';
-    };
 
     const formatDate = (dateString: string): string => {
         if (!dateString) return 'N/A';
@@ -311,7 +258,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                             <div className="flex items-center gap-2">
                                                 <Car size={14} className="text-gray-400" />
                                                 <div className="text-sm">
-                                                    <div className="text-gray-900 font-medium">{getVehicleDisplay(job)}</div>
+                                                    <div className="text-gray-900 font-medium">{getJobCardVehicleDisplay(job)}</div>
                                                     <div className="text-gray-500 text-xs">{getRegistration(job)}</div>
                                                 </div>
                                             </div>
@@ -328,7 +275,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         {/* Engineer */}
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <span className="text-sm text-gray-700">
-                                                {getEngineerName(job.assignedEngineer)}
+                                                {getAssignedEngineerName(job.assignedEngineer)}
                                             </span>
                                         </td>
 

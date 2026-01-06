@@ -20,6 +20,7 @@ export const jobCardAdapter = {
         description: "",
         selectedParts: [],
         part2Items: [],
+        requestedParts: [],
         fullName: "",
         mobilePrimary: "",
         customerType: "",
@@ -376,6 +377,23 @@ export const jobCardAdapter = {
 
             // Part 2
             part2Items: jobCard.part2 || [],
+            requestedParts: jobCard.requestedParts || (jobCard.partsRequests?.length ? jobCard.partsRequests.flatMap((pr: any) => pr.items || []).map((item: any, i: number) => ({
+                srNo: i + 1,
+                partName: item.part?.name || item.partName || "Unknown Part",
+                partCode: item.part?.partNumber || item.partId,
+                qty: item.quantity || 1,
+                amount: 0, // Amount might not be in the request item
+                itemType: "part",
+                partWarrantyTag: item.isWarranty || false,
+                serialNumber: item.serialNumber
+            })) : (jobCard.partRequests?.length ? jobCard.partRequests.map((pr: any, i: number) => ({
+                srNo: i + 1,
+                partName: pr.partName || "Unknown Part",
+                partCode: pr.partNumber || pr.partId,
+                qty: pr.quantity || 1,
+                amount: 0,
+                itemType: "part"
+            })) : [])),
 
             // Part 2A Case details
             issueDescription: jobCard.part2A?.issueDescription || jobCard.part2AData?.issueDescription || "",

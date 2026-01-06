@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { X, Package, User } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
+import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface JobCardDetailsModalProps {
     open: boolean;
@@ -74,9 +75,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                         <div className="bg-green-50 p-3 md:p-4 rounded-xl">
                             <h3 className="font-semibold text-green-800 mb-1 md:mb-2 text-sm md:text-base">Vehicle Information</h3>
                             <p className="text-xs md:text-sm text-gray-700 break-words">
-                                {typeof job.vehicle === 'object' && job.vehicle !== null
-                                    ? `${(job.vehicle as any).vehicleModel || ''} ${(job.vehicle as any).registration ? `(${(job.vehicle as any).registration})` : ''}`
-                                    : job.vehicle}
+                                {getVehicleDisplayString(job.vehicle)}
                             </p>
                             <p className="text-xs text-gray-600 mt-1 break-words">{job.registration}</p>
                         </div>
@@ -139,9 +138,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                             <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
                                 <p className="text-xs md:text-sm text-gray-700 flex items-center gap-1 md:gap-2 break-words">
                                     <User size={14} className="text-gray-400 flex-shrink-0" />
-                                    {typeof job.assignedEngineer === 'object' && job.assignedEngineer !== null
-                                        ? (job.assignedEngineer as any).name || 'Unassigned'
-                                        : job.assignedEngineer}
+                                    {getAssignedEngineerName(job.assignedEngineer)}
                                 </p>
                             </div>
                         </div>

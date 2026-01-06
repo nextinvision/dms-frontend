@@ -126,6 +126,25 @@ export default function SCDashboard() {
       const monthStartStr = monthStart.toISOString().split("T")[0];
 
       // Fetch all data in parallel
+      // Define permission sets based on backend controllers (VERIFIED)
+      const canViewJobCards = ["admin", "sc_manager", "service_advisor", "service_engineer"].includes(userRole);
+
+      const canViewQuotations = ["admin", "sc_manager", "service_advisor", "service_engineer"].includes(userRole);
+
+      const canViewInvoices = ["admin", "sc_manager", "service_advisor", "service_engineer"].includes(userRole);
+
+      // Leads: admin, sc_manager, service_advisor, call_center
+      const canViewLeads = ["admin", "sc_manager", "service_advisor", "call_center"].includes(userRole);
+
+      // Inventory: admin, sc_manager, inventory_manager, service_engineer, service_advisor, call_center
+      // BUT Dashboard calls getAll({ lowStock: true }), and GET /inventory is open to all these roles.
+      // However, specific filtering logic might vary. Let's assume standard access.
+      const canViewInventory = ["admin", "sc_manager", "inventory_manager", "service_engineer", "service_advisor", "call_center"].includes(userRole);
+
+      // Appointments: admin, sc_manager, service_advisor, service_engineer, call_center
+      const canViewAppointments = ["admin", "sc_manager", "service_advisor", "service_engineer", "call_center"].includes(userRole);
+
+      // Fetch data conditionally to avoid 403 errors
       const [
         jobCards,
         quotations,
@@ -134,12 +153,12 @@ export default function SCDashboard() {
         inventory,
         leads,
       ] = await Promise.all([
-        jobCardService.getAll().catch(() => []),
-        quotationsService.getAll().catch(() => []),
-        appointmentsService.getAll().catch(() => []),
-        invoicesService.getAll().catch(() => []),
-        inventoryService.getAll({ lowStock: true }).catch(() => []),
-        leadsService.getAll().catch(() => []),
+        canViewJobCards ? jobCardService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewQuotations ? quotationsService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewAppointments ? appointmentsService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewInvoices ? invoicesService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewInventory ? inventoryService.getAll({ lowStock: true }).catch(() => []) : Promise.resolve([]),
+        canViewLeads ? leadsService.getAll().catch(() => []) : Promise.resolve([]),
       ]);
 
       // Calculate Job Card stats

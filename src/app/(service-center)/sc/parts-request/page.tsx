@@ -23,6 +23,10 @@ import {
   filterByServiceCenter,
   getServiceCenterContext,
 } from "@/shared/lib/serviceCenter";
+import {
+  getJobCardVehicleDisplay,
+  getJobCardCustomerName
+} from "@/features/job-cards/utils/job-card-helpers";
 import { serviceEngineerJobCards } from "@/__mocks__/data/job-cards.mock";
 
 export default function PartsRequest() {
@@ -59,6 +63,7 @@ export default function PartsRequest() {
     labourCode: string;
     serialNumber: string;
     isWarranty: boolean;
+    inventoryPartId?: string;
   }>({
     partWarrantyTag: "",
     partName: "",
@@ -70,6 +75,7 @@ export default function PartsRequest() {
     labourCode: "Auto Select With Part",
     serialNumber: "",
     isWarranty: false,
+    inventoryPartId: undefined,
   });
 
   const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
@@ -126,12 +132,17 @@ export default function PartsRequest() {
 
     const query = searchQuery.toLowerCase();
     return activeJobCards.filter(
-      (job) =>
-        job.jobCardNumber?.toLowerCase().includes(query) ||
-        job.customerName?.toLowerCase().includes(query) ||
-        job.vehicle?.toLowerCase().includes(query) ||
-        job.registration?.toLowerCase().includes(query) ||
-        job.serviceType?.toLowerCase().includes(query)
+      (job) => {
+        const vehicleDisplay = getJobCardVehicleDisplay(job).toLowerCase();
+        const customerDisplay = getJobCardCustomerName(job).toLowerCase();
+        return (
+          job.jobCardNumber?.toLowerCase().includes(query) ||
+          customerDisplay.includes(query) ||
+          vehicleDisplay.includes(query) ||
+          job.registration?.toLowerCase().includes(query) ||
+          job.serviceType?.toLowerCase().includes(query)
+        );
+      }
     );
   }, [activeJobCards, searchQuery]);
 
@@ -141,12 +152,37 @@ export default function PartsRequest() {
 
     const loadPartsRequests = async () => {
       try {
-        const allRequests = await partsIssueService.getAll();
         const requestsMap: Record<string, any> = {};
 
-        allRequests.forEach((request) => {
-          if (request.jobCardId) requestsMap[request.jobCardId] = request;
-        });
+        // 1. Fetch from new Job Card Parts Requests (Technician assigned requests)
+        try {
+          const pendingRequests = await jobCardService.getPendingPartsRequests();
+
+          pendingRequests.forEach((req: any) => {
+            if (req.jobCardId) {
+              requestsMap[req.jobCardId] = {
+                ...req,
+                // Ensure compatibility with UI expectations
+                items: req.items || [],
+                status: req.status
+              };
+            }
+          });
+        } catch (e) {
+          console.error("Failed to load active parts requests", e);
+        }
+
+        // 2. Fetch from legacy Parts Issues (Central) - Keep for backward compatibility if needed
+        try {
+          const allRequests = await partsIssueService.getAll();
+          allRequests.forEach((request) => {
+            if (request.jobCardId && !requestsMap[request.jobCardId]) {
+              requestsMap[request.jobCardId] = request;
+            }
+          });
+        } catch (e) {
+          console.warn("Legacy parts issues fetch failed (expected if not used)", e);
+        }
 
         setPartsRequestsData(requestsMap);
       } catch (error) {
@@ -236,6 +272,7 @@ export default function PartsRequest() {
       labourCode: "Auto Select With Part",
       serialNumber: "",
       isWarranty: false,
+      inventoryPartId: part.id || undefined,
     });
     setShowPartDropdown(false);
     setPartSearchResults([]);
@@ -267,6 +304,7 @@ export default function PartsRequest() {
       itemType: newItemForm.itemType,
       serialNumber: newItemForm.isWarranty ? newItemForm.serialNumber : undefined,
       isWarranty: newItemForm.isWarranty,
+      inventoryPartId: newItemForm.inventoryPartId,
     };
 
     setPart2ItemsList([...part2ItemsList, newItem]);
@@ -308,25 +346,36 @@ export default function PartsRequest() {
       setLoading(true);
 
       const items = part2ItemsList.map((item) => ({
-        partId: item.partCode || item.partName, // Using code or name as ID if ID missing
+        partName: item.partName,
+        partNumber: item.partCode || undefined,
         quantity: item.qty,
         isWarranty: item.isWarranty || false,
-        serialNumber: item.isWarranty && item.serialNumber ? item.serialNumber : undefined,
+        inventoryPartId: item.inventoryPartId // Use captured inventory ID
       }));
 
-      await partsIssueService.create({
-        jobCardId: selectedJobCard.id,
-        items,
-        notes: "Requested by technician " + (userInfo?.name || ""),
-      });
+      await jobCardService.createPartsRequest(selectedJobCard.id, items);
 
-      // Refresh requests data
-      const allRequests = await partsIssueService.getAll();
-      const requestsMap: Record<string, any> = {};
-      allRequests.forEach(req => {
-        requestsMap[req.jobCardId] = req;
-      });
-      setPartsRequestsData(requestsMap);
+      // Refresh job cards to show updated status
+      const fetchedJobCards = await jobCardService.getAll();
+      setJobCards(fetchedJobCards);
+
+      // Update selected job card ref if it exists in new list
+      if (selectedJobCard) {
+        const updatedSelected = fetchedJobCards.find(j => j.id === selectedJobCard.id);
+        if (updatedSelected) setSelectedJobCard(updatedSelected);
+      }
+
+      // Refresh legacy parts requests just in case (though we are moving away from it)
+      try {
+        const allRequests = await partsIssueService.getAll();
+        const requestsMap: Record<string, any> = {};
+        allRequests.forEach(req => {
+          if (req.jobCardId) requestsMap[req.jobCardId] = req;
+        });
+        setPartsRequestsData(requestsMap);
+      } catch (e) {
+        console.warn("Failed to refresh legacy requests", e);
+      }
 
       // Reset form
       setPart2ItemsList([]);
@@ -341,6 +390,7 @@ export default function PartsRequest() {
         labourCode: "Auto Select With Part",
         serialNumber: "",
         isWarranty: false,
+        inventoryPartId: undefined,
       });
       setShowPartDropdown(false);
       setPartSearchResults([]);
@@ -372,9 +422,31 @@ export default function PartsRequest() {
   };
 
   const getRequestStatus = (jobCard: JobCard) => {
+    // 1. Check embedded partsRequests (new flow via jobCardService)
+    const requests = (jobCard as any).partsRequests;
+    if (Array.isArray(requests) && requests.length > 0) {
+      // Use the latest request (assuming index 0 is latest or we just take the first one found)
+      // Ideally we might want to show all, but for now let's show the most relevant active one
+      const activeRequest = requests.find((r: any) => r.status !== 'COMPLETED' && r.status !== 'REJECTED') || requests[0];
+
+      return {
+        ...activeRequest,
+        status: activeRequest.status,
+        items: activeRequest.items?.map((i: any) => ({
+          ...i,
+          partName: i.partName || "Unknown Part",
+          partCode: i.partName, // or inventoryPartId
+          quantity: i.requestedQty,
+          status: activeRequest.status // Inherit status for items if individual item status not tracked yet
+        })) || []
+      };
+    }
+
+    // 2. Fallback to partsRequestsData (legacy flow via partsIssueService)
     const request = partsRequestsData[jobCard.id] || partsRequestsData[jobCard.jobCardNumber || ""];
-    if (!request) return null;
-    return request;
+    if (request) return request;
+
+    return null;
   };
 
   // Show loading state
@@ -446,7 +518,7 @@ export default function PartsRequest() {
                               <h3 className="font-semibold text-gray-900 text-sm">
                                 {job.jobCardNumber || job.id}
                               </h3>
-                              <p className="text-xs text-gray-600 mt-1">{job.customerName}</p>
+                              <p className="text-xs text-gray-600 mt-1">{getJobCardCustomerName(job)}</p>
                             </div>
                             {request && (
                               <div className="ml-2">
@@ -461,7 +533,7 @@ export default function PartsRequest() {
 
                           <div className="flex items-center gap-2 text-xs text-gray-600 mt-2">
                             <Car size={14} />
-                            <span>{job.vehicle} ({job.registration})</span>
+                            <span>{getJobCardVehicleDisplay(job)}</span>
                           </div>
 
                           <div className="mt-2 flex items-center gap-2">
@@ -517,12 +589,12 @@ export default function PartsRequest() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="font-medium text-gray-700">Customer:</span>
-                        <span className="ml-2 text-gray-900">{selectedJobCard.customerName}</span>
+                        <span className="ml-2 text-gray-900">{getJobCardCustomerName(selectedJobCard)}</span>
                       </div>
                       <div>
                         <span className="font-medium text-gray-700">Vehicle:</span>
                         <span className="ml-2 text-gray-900">
-                          {selectedJobCard.vehicle} ({selectedJobCard.registration})
+                          {getJobCardVehicleDisplay(selectedJobCard)}
                         </span>
                       </div>
                       <div>
@@ -775,58 +847,151 @@ export default function PartsRequest() {
                   {/* Parts Request Status */}
                   {(() => {
                     const request = getRequestStatus(selectedJobCard);
-                    if (!request) return null;
+
+                    // Check if we have structured items in the request (from partsIssueService)
+                    const hasStructuredItems = request && Array.isArray(request.items) && request.items.length > 0;
+
+                    // Fallback: Check for legacy parts format or job card embedded data
+                    const jobCard = selectedJobCard as any;
+                    const legacyRequestedParts = jobCard.requestedParts || jobCard.partRequests;
+                    const hasLegacyParts = Array.isArray(legacyRequestedParts) && legacyRequestedParts.length > 0;
+
+                    if (!request && !hasLegacyParts) return null;
 
                     return (
                       <div className="mt-6 pt-6 border-t border-gray-200">
                         <h4 className="text-sm font-semibold text-gray-800 mb-3">Parts Request Status</h4>
-                        <div className="space-y-3">
-                          <div className="space-y-2">
-                            <p className="text-xs text-gray-600">
-                              <span className="font-medium">Requested Parts:</span>{" "}
-                              {request.parts && Array.isArray(request.parts)
-                                ? request.parts.map((p: any) => (typeof p === 'string' ? p : p.partName || '')).join(", ")
-                                : "—"}
-                            </p>
-                            <p className="text-xs text-gray-600">
-                              <span className="font-medium">Requested At:</span>{" "}
-                              {request.requestedAt
-                                ? new Date(request.requestedAt).toLocaleString()
-                                : "—"}
-                            </p>
-                          </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-gray-700 min-w-[120px]">SC Manager:</span>
-                            <span className={`px-3 py-1.5 rounded text-xs font-semibold ${request.scManagerApproved
-                              ? "bg-green-500 text-white"
-                              : "bg-red-500 text-white"
-                              }`}>
-                              {request.scManagerApproved ? "✓ Approved" : "Pending"}
-                            </span>
-                            {request.scManagerApproved && request.scManagerApprovedBy && (
-                              <span className="text-xs text-gray-500">
-                                by {request.scManagerApprovedBy}
+                        {/* Render table for structured requested parts (Preferred) */}
+                        {hasStructuredItems ? (
+                          <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-gray-50 border-b border-gray-200">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">SR</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Part Name</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Code</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Qty</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                  {request.items.map((item: any, index: number) => (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                      <td className="px-3 py-2 text-gray-600">{index + 1}</td>
+                                      <td className="px-3 py-2 text-gray-900 font-medium">{item.partName || item.partId}</td>
+                                      <td className="px-3 py-2 text-gray-600 font-mono text-xs">{item.partCode || item.partId || "-"}</td>
+                                      <td className="px-3 py-2 text-gray-600">{item.quantity}</td>
+                                      <td className="px-3 py-2">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${request.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                                          request.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+                                            'bg-orange-100 text-orange-800'
+                                          }`}>
+                                          {request.status === 'APPROVED' ? 'Approved' :
+                                            request.status === 'REJECTED' ? 'Rejected' : 'Sending Parts'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : hasLegacyParts ? (
+                          // Fallback table for embedded data if global request data missing
+                          <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-gray-50 border-b border-gray-200">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">SR</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Part Name</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Code</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Qty</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                  {legacyRequestedParts.map((item: any, index: number) => (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                      <td className="px-3 py-2 text-gray-600">{index + 1}</td>
+                                      <td className="px-3 py-2 text-gray-900 font-medium">{item.partName}</td>
+                                      <td className="px-3 py-2 text-gray-600 font-mono text-xs">{item.partCode || "-"}</td>
+                                      <td className="px-3 py-2 text-gray-600">{item.qty}</td>
+                                      <td className="px-3 py-2">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
+                                          Sending Parts
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Additional Legacy/Meta Status Display */}
+                        {request && (
+                          <div className="space-y-3 mt-4">
+                            <div className="space-y-2">
+                              <p className="text-xs text-gray-600">
+                                <span className="font-medium">Requested At:</span>{" "}
+                                {request.requestedAt
+                                  ? new Date(request.requestedAt).toLocaleString()
+                                  : "—"}
+                              </p>
+                              <p className="text-xs text-gray-600">
+                                <span className="font-medium">Global Status:</span>{" "}
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${request.status === "APPROVED"
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-yellow-100 text-yellow-800"
+                                    }`}
+                                >
+                                  {request.status}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Detailed Approval Status */}
+                        {request && (
+                          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-700 min-w-[120px]">SC Manager:</span>
+                              <span className={`px-3 py-1.5 rounded text-xs font-semibold ${request.scManagerApproved
+                                ? "bg-green-500 text-white"
+                                : "bg-red-500 text-white"
+                                }`}>
+                                {request.scManagerApproved ? "✓ Approved" : "Pending"}
                               </span>
-                            )}
-                          </div>
+                              {request.scManagerApproved && request.scManagerApprovedBy && (
+                                <span className="text-xs text-gray-500">
+                                  by {request.scManagerApprovedBy}
+                                </span>
+                              )}
+                            </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-gray-700 min-w-[120px]">Inventory Manager:</span>
-                            <span className={`px-3 py-1.5 rounded text-xs font-semibold ${request.inventoryManagerAssigned
-                              ? "bg-green-500 text-white"
-                              : request.scManagerApproved
-                                ? "bg-yellow-500 text-white"
-                                : "bg-gray-400 text-white"
-                              }`}>
-                              {request.inventoryManagerAssigned
-                                ? "✓ Parts Assigned"
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-700 min-w-[120px]">Inventory Manager:</span>
+                              <span className={`px-3 py-1.5 rounded text-xs font-semibold ${request.inventoryManagerAssigned
+                                ? "bg-green-500 text-white"
                                 : request.scManagerApproved
-                                  ? "Pending"
-                                  : "Waiting for SC Approval"}
-                            </span>
+                                  ? "bg-yellow-500 text-white"
+                                  : "bg-gray-400 text-white"
+                                }`}>
+                                {request.inventoryManagerAssigned
+                                  ? "✓ Parts Assigned"
+                                  : request.scManagerApproved
+                                    ? "Pending"
+                                    : "Waiting for SC Approval"}
+                              </span>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -841,9 +1006,9 @@ export default function PartsRequest() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
+          </div >
+        </div >
+      </div >
+    </div >
   );
 }

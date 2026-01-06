@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Car, Wrench, FileText, Clock, User } from 'lucide-react';
 import { JobCard, KanbanColumn, JobCardStatus, Priority } from '@/shared/types';
+import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface JobCardKanbanProps {
     kanbanColumns: KanbanColumn[];
@@ -30,9 +31,9 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                     {kanbanColumns
                         .filter((col) => {
                             if (!activeTab) return true; // Show all columns if no activeTab (Manager/Advisor view)
-                            return activeTab === "assigned" ? col.status === "Assigned" :
-                                activeTab === "in_progress" ? col.status === "In Progress" :
-                                    activeTab === "completed" ? col.status === "Completed" : false;
+                            return activeTab === "assigned" ? col.status === "ASSIGNED" :
+                                activeTab === "in_progress" ? col.status === "IN_PROGRESS" :
+                                    activeTab === "completed" ? col.status === "COMPLETED" : false;
                         })
                         .map((column) => {
                             const columnJobs = getJobsByStatus(column.status);
@@ -83,6 +84,16 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                             <p className="text-xs text-gray-600 truncate">
                                                                 {job.customerName}
                                                             </p>
+                                                            {job.customer?.phone && (
+                                                                <p className="text-xs text-gray-500 truncate">
+                                                                    {job.customer.phone}
+                                                                </p>
+                                                            )}
+                                                            {job.customer?.email && (
+                                                                <p className="text-xs text-gray-400 truncate">
+                                                                    {job.customer.email}
+                                                                </p>
+                                                            )}
                                                         </div>
                                                         <span
                                                             className={`w-3 h-3 rounded-full flex-shrink-0 ml-2 ${getPriorityColor(
@@ -95,9 +106,7 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                     <div className="flex items-center gap-2 text-xs text-gray-600 mb-3 pb-3 border-b border-gray-100">
                                                         <Car size={14} className="text-gray-400 flex-shrink-0" />
                                                         <span className="truncate font-medium">
-                                                            {typeof job.vehicle === 'object' && job.vehicle !== null
-                                                                ? `${(job.vehicle as any).vehicleModel || ''} ${(job.vehicle as any).registration ? `(${(job.vehicle as any).registration})` : ''}`
-                                                                : job.vehicle}
+                                                            {getVehicleDisplayString(job.vehicle)}
                                                         </span>
                                                     </div>
 
@@ -108,20 +117,24 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                         </span>
                                                     </div>
 
-                                                    {hasRequest && (
-                                                        <div className="mt-2">
-                                                            <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium">
-                                                                Parts Request Pending
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {request?.inventoryManagerAssigned && (
-                                                        <div className="mt-2">
-                                                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                                                ✓ Parts Assigned
-                                                            </span>
-                                                        </div>
-                                                    )}
+                                                    {
+                                                        hasRequest && (
+                                                            <div className="mt-2">
+                                                                <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium">
+                                                                    Parts Request Pending
+                                                                </span>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    {
+                                                        request?.inventoryManagerAssigned && (
+                                                            <div className="mt-2">
+                                                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
+                                                                    ✓ Parts Assigned
+                                                                </span>
+                                                            </div>
+                                                        )
+                                                    }
 
                                                     {/* Footer Info */}
                                                     <div className="flex items-center justify-between text-xs pt-3 border-t border-gray-100 mt-3">
@@ -134,56 +147,60 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                         </span>
                                                     </div>
 
-                                                    {job.assignedEngineer && (
-                                                        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs">
-                                                            <div className="flex items-center gap-1.5 text-gray-600">
-                                                                <User size={12} className="text-gray-400" />
-                                                                <span className="font-medium truncate">
-                                                                    {typeof job.assignedEngineer === 'object' && job.assignedEngineer !== null
-                                                                        ? (job.assignedEngineer as any).name || 'Unassigned'
-                                                                        : job.assignedEngineer}
-                                                                </span>
+                                                    {
+                                                        job.assignedEngineer && (
+                                                            <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs">
+                                                                <div className="flex items-center gap-1.5 text-gray-600">
+                                                                    <User size={12} className="text-gray-400" />
+                                                                    <span className="font-medium truncate">
+                                                                        {getAssignedEngineerName(job.assignedEngineer)}
+                                                                    </span>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    )}
+                                                        )
+                                                    }
 
                                                     {/* Status Change Buttons for Service Engineer */}
-                                                    {isTechnician && onUpdateStatus && (
-                                                        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
-                                                            {job.status === "Assigned" && (
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        if (confirm(`Start work on job card ${job.jobCardNumber || job.id}?`)) {
-                                                                            onUpdateStatus(job.id, "In Progress");
-                                                                        }
-                                                                    }}
-                                                                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition"
-                                                                >
-                                                                    Start Work (In Progress)
-                                                                </button>
-                                                            )}
-                                                            {job.status === "In Progress" && (
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        if (confirm(`Mark job card ${job.jobCardNumber || job.id} as completed?`)) {
-                                                                            onUpdateStatus(job.id, "Completed");
-                                                                        }
-                                                                    }}
-                                                                    className="w-full px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition"
-                                                                >
-                                                                    Mark as Completed
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                    {
+                                                        isTechnician && onUpdateStatus && (
+                                                            <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                                                                {job.status === "ASSIGNED" && (
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (confirm(`Start work on job card ${job.jobCardNumber || job.id}?`)) {
+                                                                                onUpdateStatus(job.id, "IN_PROGRESS");
+                                                                            }
+                                                                        }}
+                                                                        className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition"
+                                                                    >
+                                                                        Start Work (In Progress)
+                                                                    </button>
+                                                                )}
+                                                                {job.status === "IN_PROGRESS" && (
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (confirm(`Mark job card ${job.jobCardNumber || job.id} as completed?`)) {
+                                                                                onUpdateStatus(job.id, "COMPLETED");
+                                                                            }
+                                                                        }}
+                                                                        className="w-full px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition"
+                                                                    >
+                                                                        Mark as Completed
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    }
 
-                                                    {!job.assignedEngineer && activeTab && (
-                                                        <div className="mt-3 pt-3 border-t border-gray-100">
-                                                            <p className="text-xs text-blue-600 font-medium">Click to request parts</p>
-                                                        </div>
-                                                    )}
+                                                    {
+                                                        !job.assignedEngineer && activeTab && (
+                                                            <div className="mt-3 pt-3 border-t border-gray-100">
+                                                                <p className="text-xs text-blue-600 font-medium">Click to view details</p>
+                                                            </div>
+                                                        )
+                                                    }
                                                 </div>
                                             );
                                         })}
@@ -205,7 +222,7 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                         })}
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 

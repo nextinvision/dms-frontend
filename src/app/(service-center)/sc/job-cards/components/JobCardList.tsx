@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { FileText, Wrench, Car, User, Calendar, Eye, Edit, Clock } from 'lucide-react';
+import { FileText, Wrench, Car, User, Calendar, Eye, Edit, Clock, Banknote } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { UserInfo } from '@/shared/types/auth.types';
 import { JobCardPartsRequest } from '@/shared/types/jobcard-inventory.types';
+import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface JobCardListProps {
     currentJobs: JobCard[];
@@ -102,14 +103,22 @@ const JobCardList = React.memo<JobCardListProps>(({
                             <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 gap-3 md:gap-4 mb-3">
                                 <div className="flex items-center gap-2 text-gray-700">
                                     <User size={16} className="text-gray-400 flex-shrink-0" />
-                                    <span className="font-medium text-sm md:text-base truncate">{job.customerName}</span>
+                                    <div className="flex flex-col">
+                                        <span className="font-medium text-sm md:text-base truncate">{job.customerName}</span>
+                                        {job.customer?.phone && (
+                                            <span className="text-xs text-gray-500">{job.customer.phone}</span>
+                                        )}
+                                        {job.customer?.email && (
+                                            <span className="text-xs text-gray-400 truncate max-w-[200px]">{job.customer.email}</span>
+                                        )}
+                                    </div>
                                 </div>
+
+
                                 <div className="flex items-center gap-2 text-gray-700">
                                     <Car size={16} className="text-gray-400 flex-shrink-0" />
                                     <span className="text-sm md:text-base truncate">
-                                        {typeof job.vehicle === 'object' && job.vehicle !== null
-                                            ? `${(job.vehicle as any).vehicleModel || ''} ${(job.vehicle as any).registration ? `(${(job.vehicle as any).registration})` : ''}`
-                                            : job.vehicle}
+                                        {getVehicleDisplayString(job.vehicle)}
                                     </span>
                                     <span className="text-gray-500 text-xs md:text-sm hidden sm:inline">• {job.registration}</span>
                                 </div>
@@ -121,6 +130,14 @@ const JobCardList = React.memo<JobCardListProps>(({
                                     <Calendar size={16} className="text-gray-400 flex-shrink-0" />
                                     <span className="text-sm md:text-base truncate">{job.createdAt}</span>
                                 </div>
+                                <div className="flex items-center gap-2 text-gray-700">
+                                    <Banknote size={16} className="text-gray-400 flex-shrink-0" />
+                                    <span className="text-sm md:text-base truncate">{job.estimatedCost || "No Estimate"}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-gray-700">
+                                    <Clock size={16} className="text-gray-400 flex-shrink-0" />
+                                    <span className="text-sm md:text-base truncate">{job.estimatedTime || "No Time Est."}</span>
+                                </div>
                             </div>
 
                             <p className="text-gray-600 text-xs md:text-sm mb-2 line-clamp-2 break-words">{job.description}</p>
@@ -129,18 +146,10 @@ const JobCardList = React.memo<JobCardListProps>(({
                                 {job.assignedEngineer && (
                                     <span className="text-gray-500 truncate">
                                         Engineer: <span className="font-medium text-gray-700">
-                                            {typeof job.assignedEngineer === 'object' && job.assignedEngineer !== null
-                                                ? (job.assignedEngineer as any).name || 'Unassigned'
-                                                : job.assignedEngineer}
+                                            {getAssignedEngineerName(job.assignedEngineer)}
                                         </span>
                                     </span>
                                 )}
-                                <span className="text-gray-500">
-                                    Estimated: <span className="font-medium text-gray-700">{job.estimatedCost}</span>
-                                </span>
-                                <span className="text-gray-500">
-                                    Time: <span className="font-medium text-gray-700">{job.estimatedTime}</span>
-                                </span>
                             </div>
                         </div>
 
@@ -278,7 +287,7 @@ const JobCardList = React.memo<JobCardListProps>(({
                             )}
 
                             {isTechnician && !job.assignedEngineer && (
-                                <p className="text-xs text-blue-600 font-medium text-center bg-blue-50 py-1 rounded">Click to request parts</p>
+                                <p className="text-xs text-blue-600 font-medium text-center bg-blue-50 py-1 rounded">Click to view details</p>
                             )}
                         </div>
                     </div>

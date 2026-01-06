@@ -4,6 +4,7 @@ import { X, Package, PlusCircle, Loader2 } from 'lucide-react';
 import { JobCard } from '@/shared/types';
 import { JobCardPart2Item } from '@/shared/types/job-card.types';
 import { partsMasterService } from '@/features/inventory/services/partsMaster.service';
+import { getJobCardVehicleDisplay, getJobCardCustomerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface PartsRequestModalProps {
     open: boolean;
@@ -157,8 +158,8 @@ const PartsRequestModal: React.FC<PartsRequestModalProps> = ({
                     <label className="text-sm font-semibold text-gray-700 mb-2 block">Job Card Information</label>
                     <div className="p-4 bg-gray-50 rounded-lg space-y-2">
                         <p><span className="font-medium text-gray-700">Job Card:</span> <span className="text-gray-900">{selectedJobCard.jobCardNumber || selectedJobCard.id}</span></p>
-                        <p><span className="font-medium text-gray-700">Customer:</span> <span className="text-gray-900">{selectedJobCard.customerName}</span></p>
-                        <p><span className="font-medium text-gray-700">Vehicle:</span> <span className="text-gray-900">{selectedJobCard.vehicle} ({selectedJobCard.registration})</span></p>
+                        <p><span className="font-medium text-gray-700">Customer:</span> <span className="text-gray-900">{getJobCardCustomerName(selectedJobCard)}</span></p>
+                        <p><span className="font-medium text-gray-700">Vehicle:</span> <span className="text-gray-900">{getJobCardVehicleDisplay(selectedJobCard)}</span></p>
                     </div>
                 </div>
 

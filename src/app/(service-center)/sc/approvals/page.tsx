@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList, Package } from "lucide-react";
 const safeStorage = {
   getItem: <T,>(key: string, defaultValue: T): T => {
     if (typeof window === "undefined") return defaultValue;
@@ -30,7 +30,7 @@ const safeStorage = {
   }
 };
 import type { Quotation } from "@/shared/types";
-import type { JobCard } from "@/shared/types/job-card.types";
+import type { JobCard, PartsRequest } from "@/shared/types/job-card.types";
 import { getServiceCenterContext, filterByServiceCenter, shouldFilterByServiceCenter } from "@/shared/lib/serviceCenter";
 
 // Service Intake Request types (matching appointments page)
@@ -111,6 +111,7 @@ interface ServiceIntakeRequest {
 
 export default function Approvals() {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [partsRequests, setPartsRequests] = useState<PartsRequest[]>([]);
   const [serviceIntakeRequests, setServiceIntakeRequests] = useState<ServiceIntakeRequest[]>([]);
   const [jobCardApprovals, setJobCardApprovals] = useState<JobCard[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<ServiceIntakeRequest | null>(null);
@@ -184,6 +185,20 @@ export default function Approvals() {
         // Fallback to empty if API fails (or keep mock logic if preferred, but usually we want real data)
         // For now, let's just use empty or the mock data if fetch fails
         setJobCardApprovals([]);
+      }
+
+      // Load pending parts requests
+      try {
+        const pendingParts = await jobCardService.getPendingPartsRequests();
+        let filteredParts = pendingParts;
+        if (shouldFilter && serviceCenterContext.serviceCenterId) {
+          // Client side filtering if needed, though backend supports param
+          filteredParts = pendingParts.filter(p => p.jobCard?.serviceCenterId === serviceCenterContext.serviceCenterId);
+        }
+        setPartsRequests(filteredParts);
+      } catch (error) {
+        console.error("Failed to fetch pending parts requests:", error);
+        setPartsRequests([]);
       }
 
       // Reload from localStorage to ensure we have the latest data
@@ -275,6 +290,23 @@ export default function Approvals() {
         description.includes(query);
     });
   }, [jobCardApprovals, searchQuery]);
+
+  const filteredPartsRequests = useMemo(() => {
+    if (!searchQuery.trim()) return partsRequests;
+
+    const query = searchQuery.toLowerCase();
+    return partsRequests.filter((req) => {
+      const customerName = req.jobCard?.customerName?.toLowerCase() || "";
+      const vehicle = `${req.jobCard?.vehiclemake || ""} ${req.jobCard?.vehiclemodel || ""} ${req.jobCard?.registration || ""}`.toLowerCase();
+      const jobCardNumber = req.jobCard?.jobCardNumber?.toLowerCase() || "";
+      const items = req.items.map(i => i.partName.toLowerCase()).join(" ");
+
+      return customerName.includes(query) ||
+        vehicle.includes(query) ||
+        jobCardNumber.includes(query) ||
+        items.includes(query);
+    });
+  }, [partsRequests, searchQuery]);
 
   const handleApproveQuotation = async (quotationId: string) => {
     if (!confirm("Are you sure you want to approve this quotation?")) return;
@@ -403,11 +435,42 @@ export default function Approvals() {
       });
       setJobCardApprovals(pendingJobCards);
 
-      setShowJobCardModal(false);
-      setSelectedJobCard(null);
     } catch (error) {
       console.error("Rejection failed", error);
       alert("Failed to reject job card. Please try again.");
+    }
+  };
+
+  const handleApprovePartsRequest = async (requestId: string) => {
+    if (!confirm("Approve this parts request? This will authorize the parts issue.")) return;
+
+    try {
+      await jobCardService.updatePartsRequestStatus(requestId, "APPROVED");
+      alert("Parts Request Approved!");
+
+      // Refresh
+      const pendingParts = await jobCardService.getPendingPartsRequests();
+      setPartsRequests(pendingParts);
+    } catch (error) {
+      console.error("Failed to approve parts request", error);
+      alert("Failed to approve parts request");
+    }
+  };
+
+  const handleRejectPartsRequest = async (requestId: string) => {
+    const reason = prompt("Please provide a reason for rejection:");
+    if (!reason) return;
+
+    try {
+      await jobCardService.updatePartsRequestStatus(requestId, "REJECTED", reason);
+      alert("Parts Request Rejected!");
+
+      // Refresh
+      const pendingParts = await jobCardService.getPendingPartsRequests();
+      setPartsRequests(pendingParts);
+    } catch (error) {
+      console.error("Failed to reject parts request", error);
+      alert("Failed to reject parts request");
     }
   };
 
@@ -516,6 +579,77 @@ export default function Approvals() {
             </div>
           )}
 
+          {/* Parts Request Approvals Section */}
+          {filteredPartsRequests.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                Parts Request Approvals {filteredPartsRequests.length > 0 && `(${filteredPartsRequests.length})`}
+              </h2>
+              <div className="space-y-4">
+                {filteredPartsRequests.map((request) => (
+                  <div key={request.id} className="bg-white rounded-2xl shadow-md p-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-3">
+                          <Package className="text-orange-600" size={20} />
+                          <span className="font-semibold text-lg">Parts Request</span>
+                          <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                            Pending Approval
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 mb-4">
+                          <p className="text-gray-700">
+                            <span className="font-semibold">Job Card:</span> {request.jobCard?.jobCardNumber || "N/A"}
+                          </p>
+                          <p className="text-gray-700">
+                            <span className="font-semibold">Customer:</span> {request.jobCard?.customerName}
+                          </p>
+                          <p className="text-gray-700">
+                            <span className="font-semibold">Vehicle:</span> {request.jobCard?.vehicleObject ?
+                              `${request.jobCard.vehicleObject.vehicleMake} ${request.jobCard.vehicleObject.vehicleModel} (${request.jobCard.vehicleObject.registration})` :
+                              (typeof request.jobCard?.vehicle === 'string' ? request.jobCard?.vehicle : request.jobCard?.registration)}
+                          </p>
+                          <div className="mt-2 bg-gray-50 p-3 rounded-md">
+                            <span className="font-semibold text-gray-700 block mb-1">Requested Items:</span>
+                            <ul className="list-disc list-inside text-sm text-gray-600">
+                              {request.items.map((item, idx) => (
+                                <li key={idx}>
+                                  {item.partName} {item.partNumber && `(${item.partNumber})`} - Qty: {item.requestedQty}
+                                  {item.isWarranty && <span className="ml-2 text-green-600 text-xs font-semibold px-1 border border-green-200 rounded">Warranty</span>}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <p className="text-sm text-gray-500 mt-2">
+                            Requested: {new Date(request.createdAt).toLocaleString("en-IN")}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => handleApprovePartsRequest(request.id)}
+                          className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-medium"
+                        >
+                          <ShieldCheck size={18} />
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleRejectPartsRequest(request.id)}
+                          className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium"
+                        >
+                          <ShieldX size={18} />
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Service Intake Requests Section */}
           {filteredServiceIntakeRequests.length > 0 && (
             <div className="mb-6">
@@ -595,7 +729,7 @@ export default function Approvals() {
                 Quotation Approvals {filteredQuotations.length > 0 && `(${filteredQuotations.length})`}
               </h2>
             )}
-            {filteredQuotations.length === 0 && filteredServiceIntakeRequests.length === 0 && filteredJobCardApprovals.length === 0 ? (
+            {filteredQuotations.length === 0 && filteredServiceIntakeRequests.length === 0 && filteredJobCardApprovals.length === 0 && filteredPartsRequests.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-md p-12 text-center">
                 <FileText className="mx-auto text-gray-400 mb-4" size={48} />
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">No Pending Approvals</h3>

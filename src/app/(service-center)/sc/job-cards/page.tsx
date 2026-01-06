@@ -228,8 +228,8 @@ export default function JobCards() {
       : null;
 
     const handleJobCardClick = (job: JobCard) => {
-      setSelectedJobCardForRequest(job.id);
-      setShowPartsRequestModal(true);
+      // Navigate to the full job card detail view which includes images, parts list, customer info, etc.
+      router.push(`/sc/job-cards/${job.id}`);
     };
 
     const getJobsByStatusForTechnician = (status: JobCardStatus): JobCard[] => {
