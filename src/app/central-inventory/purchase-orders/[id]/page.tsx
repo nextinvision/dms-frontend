@@ -27,6 +27,8 @@ import { useToast } from "@/contexts/ToastContext";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { useRole } from "@/shared/hooks/useRole";
 import { validateItemsAgainstStock } from "@/shared/utils/part-matching.utils";
+import { calculatePOItemIssuedQuantities, calculateRemainingQuantity } from "@/shared/utils/po-fulfillment.utils";
+import { findMatchingPOItem } from "@/shared/utils/po-item-matching.utils";
 import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
 
 export default function PurchaseOrderDetailPage() {
@@ -67,41 +69,7 @@ export default function PurchaseOrderDetailPage() {
         const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
         const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
         
-        const issuedQtyMap = new Map<string, number>();
-        
-        relatedIssues.forEach(issue => {
-          issue.items.forEach((issueItem: any) => {
-            // Match parts issue items to PO items
-            const poItem = po.items.find((poItem: any) => {
-              return (
-                (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
-                (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
-                (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
-                (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
-                (poItem.partName && issueItem.partName && 
-                 poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
-                (poItem.partNumber && issueItem.partNumber && 
-                 poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
-              );
-            });
-            
-            if (poItem) {
-              const currentIssued = issuedQtyMap.get(poItem.id) || 0;
-              let issueQty = Number(issueItem.issuedQty) || 0;
-              const dispatches = issueItem.dispatches;
-              if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
-                const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
-                  return sum + (Number(dispatch.quantity) || 0);
-                }, 0);
-                if (dispatchQty > issueQty) {
-                  issueQty = dispatchQty;
-                }
-              }
-              issuedQtyMap.set(poItem.id, currentIssued + issueQty);
-            }
-          });
-        });
-        
+        const issuedQtyMap = calculatePOItemIssuedQuantities(po.items, relatedIssues);
         setItemIssuedQty(issuedQtyMap);
         
         // If issueRemaining is true, automatically trigger issue parts flow
@@ -296,41 +264,8 @@ export default function PurchaseOrderDetailPage() {
                         // Recalculate if state is empty
                         const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
                         const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
-                        const calculatedIssuedQty = new Map<string, number>();
-                        
-                        relatedIssues.forEach(issue => {
-                          issue.items.forEach((issueItem: any) => {
-                            // Match parts issue items to PO items
-                            const poItem = purchaseOrder.items.find((poItem: any) => {
-                              return (
-                                (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
-                                (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
-                                (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
-                                (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
-                                (poItem.partName && issueItem.partName && 
-                                 poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
-                                (poItem.partNumber && issueItem.partNumber && 
-                                 poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
-                              );
-                            });
-                            
-                            if (poItem) {
-                              const currentIssued = calculatedIssuedQty.get(poItem.id) || 0;
-                              // Use issuedQty from parts issue item, or sum from dispatch records
-                              let issueQty = Number(issueItem.issuedQty) || 0;
-                              const dispatches = issueItem.dispatches;
-                              if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
-                                const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
-                                  return sum + (Number(dispatch.quantity) || 0);
-                                }, 0);
-                                if (dispatchQty > issueQty) {
-                                  issueQty = dispatchQty;
-                                }
-                              }
-                              calculatedIssuedQty.set(poItem.id, currentIssued + issueQty);
-                            }
-                          });
-                        });
+                        // Use utility function to calculate issued quantities
+                        const calculatedIssuedQty = calculatePOItemIssuedQuantities(purchaseOrder.items, relatedIssues);
                         currentIssuedQty = calculatedIssuedQty;
                       }
                       
@@ -338,7 +273,7 @@ export default function PurchaseOrderDetailPage() {
                       const itemsWithRemaining = purchaseOrder.items.map(item => {
                         const requestedQty = Number(item.requestedQty || item.quantity || 0);
                         const issuedQty = Number(currentIssuedQty.get(item.id) || 0);
-                        const remainingQty = Math.max(0, requestedQty - issuedQty);
+                        const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
                         
                         return {
                           partId: item.partId,
@@ -595,7 +530,7 @@ export default function PurchaseOrderDetailPage() {
                         const isExpanded = expandedItems.has(item.id);
                         const requestedQty = item.requestedQty || item.quantity || 0;
                         const issuedQty = itemIssuedQty.get(item.id) || 0;
-                        const remainingQty = Math.max(0, requestedQty - issuedQty);
+                        const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
                         const colSpan = purchaseOrder.status === "approved" ? 9 : 7;
                         
                         return (
