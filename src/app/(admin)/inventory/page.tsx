@@ -12,16 +12,22 @@ import {
   ClipboardList,
   Filter,
   ArrowRightLeft,
-  Boxes
+  Boxes,
+  Building2,
+  ArrowLeft
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
 // Services & Repositories
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { adminApprovalService } from "@/features/inventory/services/adminApproval.service";
+import { serviceCenterService } from "@/features/service-centers/services/service-center.service";
+import { inventoryRepository } from "@/core/repositories/inventory.repository";
 
 // Types
 import type { CentralStock, PartsIssue } from "@/shared/types/central-inventory.types";
+import type { ServiceCenter } from "@/shared/types/service-center.types";
+import type { InventoryPart } from "@/core/repositories/inventory.repository";
 
 /**
  * Enhanced Inventory Page for Admin
@@ -29,18 +35,25 @@ import type { CentralStock, PartsIssue } from "@/shared/types/central-inventory.
  */
 export default function InventoryPage() {
   // --- State ---
-  const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'requests'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'requests' | 'service-centers'>('overview');
+  const [selectedServiceCenter, setSelectedServiceCenter] = useState<ServiceCenter | null>(null);
 
   // Data State
   const [inventory, setInventory] = useState<CentralStock[]>([]);
   const [pendingRequests, setPendingRequests] = useState<PartsIssue[]>([]);
+  const [serviceCenters, setServiceCenters] = useState<ServiceCenter[]>([]);
+  const [serviceCenterInventory, setServiceCenterInventory] = useState<InventoryPart[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingServiceCenters, setIsLoadingServiceCenters] = useState(false);
+  const [isLoadingSCInventory, setIsLoadingSCInventory] = useState(false);
 
   // Filter State
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [serviceCenterSearch, setServiceCenterSearch] = useState("");
+  const [scInventorySearch, setScInventorySearch] = useState("");
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   // --- Initial Data Fetch ---
   const fetchData = async () => {
@@ -92,6 +105,71 @@ export default function InventoryPage() {
     fetchData();
   }, []);
 
+  // Fetch service centers when tab is active
+  useEffect(() => {
+    if (activeTab === 'service-centers' && serviceCenters.length === 0) {
+      fetchServiceCenters();
+    }
+  }, [activeTab, serviceCenters.length]);
+
+  // Fetch service center inventory when one is selected
+  useEffect(() => {
+    if (selectedServiceCenter) {
+      fetchServiceCenterInventory(selectedServiceCenter.id);
+    }
+  }, [selectedServiceCenter]);
+
+  const fetchServiceCenters = async () => {
+    try {
+      setIsLoadingServiceCenters(true);
+      const centers = await serviceCenterService.getAll();
+      setServiceCenters(centers);
+    } catch (error) {
+      console.error("Failed to fetch service centers:", error);
+      toast.error("Failed to load service centers");
+    } finally {
+      setIsLoadingServiceCenters(false);
+    }
+  };
+
+  // Helper function to normalize inventory item fields
+  const normalizeInventoryItem = (item: any) => {
+    const stockQty = item.stockQuantity ?? item.quantity ?? 0;
+    const minLevel = item.minStockLevel ?? item.minLevel ?? 0;
+    const maxLevel = item.maxStockLevel ?? item.maxLevel ?? 0;
+    
+    return {
+      ...item,
+      stockQuantity: stockQty,
+      minStockLevel: minLevel,
+      maxStockLevel: maxLevel,
+      quantity: stockQty,
+      minLevel,
+      maxLevel,
+    };
+  };
+
+  // Helper function to calculate part status
+  const calculatePartStatus = (stockQty: number, minLevel: number): string => {
+    if (stockQty <= 0) return "Out of Stock";
+    if (minLevel > 0 && stockQty <= minLevel) return "Low Stock";
+    return "In Stock";
+  };
+
+  const fetchServiceCenterInventory = async (serviceCenterId: string) => {
+    try {
+      setIsLoadingSCInventory(true);
+      const inventory = await inventoryRepository.getAll({ serviceCenterId });
+      const mappedInventory = inventory.map(normalizeInventoryItem);
+      setServiceCenterInventory(mappedInventory);
+    } catch (error) {
+      console.error("Failed to fetch service center inventory:", error);
+      toast.error("Failed to load service center inventory");
+    } finally {
+      setIsLoadingSCInventory(false);
+    }
+  };
+
   // --- Derived State ---
   const categories = useMemo(() => {
     const unique = new Set(inventory.map(i => i.category));
@@ -124,6 +202,59 @@ export default function InventoryPage() {
 
     return { totalParts, inStock, lowStock, outOfStock, totalValue, allocatedValue };
   }, [inventory]);
+
+  // Filtered service centers
+  const filteredServiceCenters = useMemo(() => {
+    if (!serviceCenterSearch) return serviceCenters;
+    const search = serviceCenterSearch.toLowerCase();
+    return serviceCenters.filter(center =>
+      center.name.toLowerCase().includes(search) ||
+      center.code?.toLowerCase().includes(search) ||
+      center.city?.toLowerCase().includes(search) ||
+      center.email?.toLowerCase().includes(search) ||
+      center.phone?.includes(search)
+    );
+  }, [serviceCenters, serviceCenterSearch]);
+
+  // Filtered service center inventory
+  const filteredSCInventory = useMemo(() => {
+    if (!scInventorySearch) return serviceCenterInventory;
+    const search = scInventorySearch.toLowerCase();
+    return serviceCenterInventory.filter(item =>
+      item.partName.toLowerCase().includes(search) ||
+      item.partNumber?.toLowerCase().includes(search) ||
+      item.category?.toLowerCase().includes(search) ||
+      item.oemPartNumber?.toLowerCase().includes(search) ||
+      item.brandName?.toLowerCase().includes(search) ||
+      item.description?.toLowerCase().includes(search)
+    );
+  }, [serviceCenterInventory, scInventorySearch]);
+
+  // Service center inventory stats
+  const scInventoryStats = useMemo(() => {
+    const totalParts = serviceCenterInventory.length;
+    let inStock = 0;
+    let lowStock = 0;
+    let outOfStock = 0;
+    let totalQuantity = 0;
+    let totalValue = 0;
+
+    serviceCenterInventory.forEach(item => {
+      const qty = item.stockQuantity ?? item.quantity ?? 0;
+      const minLevel = item.minStockLevel ?? item.minLevel ?? 0;
+      const status = calculatePartStatus(qty, minLevel);
+      
+      if (status === "In Stock") inStock++;
+      else if (status === "Low Stock") lowStock++;
+      else outOfStock++;
+      
+      totalQuantity += qty;
+      const price = typeof item.unitPrice === 'string' ? parseFloat(item.unitPrice) : (item.unitPrice ?? 0);
+      totalValue += qty * price;
+    });
+
+    return { totalParts, inStock, lowStock, outOfStock, totalQuantity, totalValue };
+  }, [serviceCenterInventory]);
 
   // --- Handlers ---
   const handleApproveRequest = async (issueId: string) => {
@@ -194,6 +325,15 @@ export default function InventoryPage() {
           icon={ClipboardList}
           count={pendingRequests.length}
           alert={pendingRequests.length > 0}
+        />
+        <TabButton
+          active={activeTab === 'service-centers'}
+          onClick={() => {
+            setActiveTab('service-centers');
+            setSelectedServiceCenter(null);
+          }}
+          label="Service Centers Inventory"
+          icon={Building2}
         />
       </div>
 
@@ -437,6 +577,469 @@ export default function InventoryPage() {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. SERVICE CENTERS INVENTORY TAB */}
+      {activeTab === 'service-centers' && (
+        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+          {!selectedServiceCenter ? (
+            // Service Centers List View
+            <div className="space-y-4">
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 mb-2 flex items-center gap-2">
+                      <Building2 size={20} className="text-purple-600" />
+                      All Service Centers
+                    </h2>
+                    <p className="text-sm text-slate-500">Select a service center to view its inventory</p>
+                  </div>
+                  <button
+                    onClick={fetchServiceCenters}
+                    disabled={isLoadingServiceCenters}
+                    className="px-4 py-2 text-sm font-semibold text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
+                  >
+                    {isLoadingServiceCenters ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Search service centers by name, code, location..."
+                    value={serviceCenterSearch}
+                    onChange={(e) => setServiceCenterSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-sm"
+                  />
+                </div>
+                {serviceCenterSearch && (
+                  <p className="text-xs text-slate-500 mt-2">
+                    Showing {filteredServiceCenters.length} of {serviceCenters.length} service centers
+                  </p>
+                )}
+              </div>
+
+              {isLoadingServiceCenters ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-slate-500">Loading service centers...</p>
+                </div>
+              ) : serviceCenters.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <Building2 size={48} className="text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">No Service Centers</h3>
+                  <p className="text-slate-500">No service centers found in the system.</p>
+                </div>
+              ) : filteredServiceCenters.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <Search size={48} className="text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">No Service Centers Found</h3>
+                  <p className="text-slate-500 mb-4">No service centers match your search criteria.</p>
+                  <button
+                    onClick={() => setServiceCenterSearch("")}
+                    className="text-sm font-semibold text-purple-600 hover:text-purple-700"
+                  >
+                    Clear Search
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredServiceCenters.map((center) => (
+                    <button
+                      key={center.id}
+                      onClick={() => setSelectedServiceCenter(center)}
+                      className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 hover:shadow-md transition-all text-left group"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <h3 className="font-bold text-lg text-slate-900 group-hover:text-purple-700 transition-colors">
+                            {center.name}
+                          </h3>
+                          <p className="text-sm text-slate-500 mt-1">{center.code}</p>
+                        </div>
+                        <div className={`px-2 py-1 rounded-full text-xs font-bold ${
+                          center.status === 'Active' || center.status === 'active'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {center.status}
+                        </div>
+                      </div>
+                      <div className="space-y-1 text-sm text-slate-600">
+                        {center.city && (
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Location:</span>
+                            <span>{center.city}{center.state ? `, ${center.state}` : ''}</span>
+                          </div>
+                        )}
+                        {center.phone && (
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Phone:</span>
+                            <span>{center.phone}</span>
+                          </div>
+                        )}
+                        {center.email && (
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Email:</span>
+                            <span className="text-xs">{center.email}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        <span className="text-xs font-semibold text-purple-600 group-hover:text-purple-700">
+                          View Inventory →
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Service Center Inventory View
+            <div className="space-y-4">
+              {/* Back Button and Header */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <button
+                  onClick={() => {
+                    setSelectedServiceCenter(null);
+                    setScInventorySearch("");
+                  }}
+                  className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-purple-600 mb-4 transition-colors"
+                >
+                  <ArrowLeft size={16} />
+                  Back to Service Centers
+                </button>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                      <Building2 size={20} className="text-purple-600" />
+                      {selectedServiceCenter.name} - Inventory
+                    </h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {selectedServiceCenter.code} • {selectedServiceCenter.city || 'Location not specified'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => selectedServiceCenter && fetchServiceCenterInventory(selectedServiceCenter.id)}
+                    disabled={isLoadingSCInventory}
+                    className="px-4 py-2 text-sm font-semibold text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
+                  >
+                    {isLoadingSCInventory ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+
+                {/* Statistics */}
+                {serviceCenterInventory.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                    <div className="bg-slate-50 p-3 rounded-lg">
+                      <div className="text-xs text-slate-500 font-medium">Total Parts</div>
+                      <div className="text-lg font-bold text-slate-900">{scInventoryStats.totalParts}</div>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <div className="text-xs text-green-600 font-medium">In Stock</div>
+                      <div className="text-lg font-bold text-green-700">{scInventoryStats.inStock}</div>
+                    </div>
+                    <div className="bg-yellow-50 p-3 rounded-lg">
+                      <div className="text-xs text-yellow-600 font-medium">Low Stock</div>
+                      <div className="text-lg font-bold text-yellow-700">{scInventoryStats.lowStock}</div>
+                    </div>
+                    <div className="bg-red-50 p-3 rounded-lg">
+                      <div className="text-xs text-red-600 font-medium">Out of Stock</div>
+                      <div className="text-lg font-bold text-red-700">{scInventoryStats.outOfStock}</div>
+                    </div>
+                    <div className="bg-purple-50 p-3 rounded-lg">
+                      <div className="text-xs text-purple-600 font-medium">Total Value</div>
+                      <div className="text-lg font-bold text-purple-700">{formatCurrency(scInventoryStats.totalValue)}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* View Mode Toggle */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setViewMode('table')}
+                      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                        viewMode === 'table'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <List size={16} className="inline mr-2" />
+                      Table
+                    </button>
+                    <button
+                      onClick={() => setViewMode('cards')}
+                      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                        viewMode === 'cards'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <Boxes size={16} className="inline mr-2" />
+                      Cards
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Search parts by name, number, category..."
+                    value={scInventorySearch}
+                    onChange={(e) => setScInventorySearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-sm"
+                  />
+                </div>
+                {scInventorySearch && (
+                  <p className="text-xs text-slate-500 mt-2">
+                    Showing {filteredSCInventory.length} of {serviceCenterInventory.length} parts
+                  </p>
+                )}
+              </div>
+
+              {/* Inventory Table */}
+              {isLoadingSCInventory ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-slate-500">Loading inventory...</p>
+                </div>
+              ) : serviceCenterInventory.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <Package size={48} className="text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">No Inventory Found</h3>
+                  <p className="text-slate-500">This service center has no inventory items.</p>
+                </div>
+              ) : filteredSCInventory.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <Search size={48} className="text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">No Parts Found</h3>
+                  <p className="text-slate-500 mb-4">
+                    {scInventorySearch 
+                      ? "No parts match your search criteria." 
+                      : "This service center has no inventory items."}
+                  </p>
+                  {scInventorySearch && (
+                    <button
+                      onClick={() => setScInventorySearch("")}
+                      className="text-sm font-semibold text-purple-600 hover:text-purple-700"
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                </div>
+              ) : viewMode === 'table' ? (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-semibold">
+                        <tr>
+                          <th className="px-4 py-3">Part Details</th>
+                          <th className="px-4 py-3">Category</th>
+                          <th className="px-4 py-3 text-center">Stock Qty</th>
+                          <th className="px-4 py-3 text-center">Min/Max</th>
+                          <th className="px-4 py-3 text-center">Unit Price</th>
+                          <th className="px-4 py-3 text-center">Total Value</th>
+                          <th className="px-4 py-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredSCInventory.map((item) => {
+                          const qty = item.stockQuantity ?? item.quantity ?? 0;
+                          const minLevel = item.minStockLevel ?? item.minLevel ?? 0;
+                          const maxLevel = item.maxStockLevel ?? item.maxLevel ?? 0;
+                          const status = calculatePartStatus(qty, minLevel);
+                          const unitPrice = typeof item.unitPrice === 'string' ? parseFloat(item.unitPrice) : (item.unitPrice ?? 0);
+                          const totalValue = qty * unitPrice;
+                          
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-medium text-slate-900">{item.partName}</div>
+                                <div className="text-xs text-slate-500 font-mono mt-0.5">
+                                  {item.partNumber}
+                                  {item.oemPartNumber && ` • OEM: ${item.oemPartNumber}`}
+                                </div>
+                                {item.brandName && (
+                                  <div className="text-xs text-slate-400 mt-0.5">Brand: {item.brandName}</div>
+                                )}
+                                {item.variant && (
+                                  <div className="text-xs text-slate-400">Variant: {item.variant}</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="space-y-1">
+                                  {item.category && (
+                                    <span className="px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-medium block">
+                                      {item.category}
+                                    </span>
+                                  )}
+                                  {item.partType && (
+                                    <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-xs font-medium block">
+                                      {item.partType}
+                                    </span>
+                                  )}
+                                  {item.originType && (
+                                    <span className="text-xs text-slate-400">{item.originType}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="font-bold text-slate-900">{qty}</div>
+                                {item.unit && (
+                                  <div className="text-xs text-slate-500">{item.unit}</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center text-slate-600 text-xs">
+                                <div>Min: {minLevel}</div>
+                                <div>Max: {maxLevel}</div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="font-mono text-slate-700">₹{unitPrice.toLocaleString()}</div>
+                                {item.gstRate && (
+                                  <div className="text-xs text-slate-500">GST: {item.gstRate}%</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="font-mono font-semibold text-slate-900">₹{totalValue.toLocaleString()}</div>
+                                {item.costPrice && (
+                                  <div className="text-xs text-slate-500">
+                                    Cost: ₹{typeof item.costPrice === 'string' ? parseFloat(item.costPrice).toLocaleString() : item.costPrice.toLocaleString()}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <StatusBadge status={status} />
+                                {item.highValuePart && (
+                                  <div className="mt-1">
+                                    <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-xs font-bold">
+                                      High Value
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredSCInventory.map((item) => {
+                    const qty = item.stockQuantity ?? item.quantity ?? 0;
+                    const minLevel = item.minStockLevel ?? item.minLevel ?? 0;
+                    const maxLevel = item.maxStockLevel ?? item.maxLevel ?? 0;
+                    const status = calculatePartStatus(qty, minLevel);
+                    const unitPrice = typeof item.unitPrice === 'string' ? parseFloat(item.unitPrice) : (item.unitPrice ?? 0);
+                    const totalValue = qty * unitPrice;
+                    const costPrice = item.costPrice ? (typeof item.costPrice === 'string' ? parseFloat(item.costPrice) : item.costPrice) : 0;
+                    
+                    return (
+                      <div key={item.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <h3 className="font-bold text-lg text-slate-900 mb-1">{item.partName}</h3>
+                            <div className="text-xs text-slate-500 font-mono mb-2">
+                              {item.partNumber}
+                              {item.oemPartNumber && ` • ${item.oemPartNumber}`}
+                            </div>
+                          </div>
+                          <StatusBadge status={status} />
+                        </div>
+
+                        <div className="space-y-2 mb-4">
+                          {item.category && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-slate-500">Category:</span>
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-xs">{item.category}</span>
+                            </div>
+                          )}
+                          
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="bg-slate-50 p-2 rounded">
+                              <div className="text-xs text-slate-500">Stock Qty</div>
+                              <div className="font-bold text-slate-900">{qty} {item.unit || ''}</div>
+                            </div>
+                            <div className="bg-slate-50 p-2 rounded">
+                              <div className="text-xs text-slate-500">Min/Max</div>
+                              <div className="font-bold text-slate-900">{minLevel}/{maxLevel}</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="bg-purple-50 p-2 rounded">
+                              <div className="text-xs text-purple-600">Unit Price</div>
+                              <div className="font-bold text-purple-700">₹{unitPrice.toLocaleString()}</div>
+                            </div>
+                            <div className="bg-indigo-50 p-2 rounded">
+                              <div className="text-xs text-indigo-600">Total Value</div>
+                              <div className="font-bold text-indigo-700">₹{totalValue.toLocaleString()}</div>
+                            </div>
+                          </div>
+
+                          {costPrice > 0 && (
+                            <div className="bg-green-50 p-2 rounded">
+                              <div className="text-xs text-green-600">Cost Price</div>
+                              <div className="font-bold text-green-700">₹{costPrice.toLocaleString()}</div>
+                            </div>
+                          )}
+
+                          {item.brandName && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-slate-500">Brand:</span>
+                              <span className="text-slate-700 font-medium">{item.brandName}</span>
+                            </div>
+                          )}
+
+                          {item.variant && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-slate-500">Variant:</span>
+                              <span className="text-slate-700 font-medium">{item.variant}</span>
+                            </div>
+                          )}
+
+                          {item.location && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-slate-500">Location:</span>
+                              <span className="text-slate-700 font-medium">{item.location}</span>
+                            </div>
+                          )}
+
+                          {item.partType && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-slate-500">Type:</span>
+                              <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-xs">{item.partType}</span>
+                            </div>
+                          )}
+
+                          {item.gstRate && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-slate-500">GST Rate:</span>
+                              <span className="text-slate-700 font-medium">{item.gstRate}%</span>
+                            </div>
+                          )}
+
+                          {item.highValuePart && (
+                            <div className="mt-2">
+                              <span className="px-2 py-1 rounded bg-orange-100 text-orange-700 text-xs font-bold">
+                                ⚠ High Value Part
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
