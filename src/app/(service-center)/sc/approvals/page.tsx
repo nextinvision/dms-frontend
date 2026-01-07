@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useToast } from "@/core/contexts/ToastContext";
 import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
 import { Modal } from "@/components/ui/Modal/Modal";
@@ -114,6 +115,7 @@ interface ServiceIntakeRequest {
 }
 
 export default function Approvals() {
+  const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [partsRequests, setPartsRequests] = useState<PartsRequest[]>([]);
   const [serviceIntakeRequests, setServiceIntakeRequests] = useState<ServiceIntakeRequest[]>([]);
@@ -608,18 +610,7 @@ export default function Approvals() {
 
                       <div className="flex flex-col gap-2">
                         <button
-                          onClick={async () => {
-                            setSelectedJobCard(jobCard);
-                            setShowJobCardModal(true);
-                            try {
-                              const fullDetails = await jobCardService.getById(jobCard.id);
-                              if (fullDetails) {
-                                setSelectedJobCard(fullDetails);
-                              }
-                            } catch (e) {
-                              console.error("Failed to load full job card details", e);
-                            }
-                          }}
+                          onClick={() => router.push(`/sc/job-cards/${jobCard.id}`)}
                           className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 font-medium"
                         >
                           <Eye size={18} />
@@ -1211,257 +1202,7 @@ export default function Approvals() {
           )
         }
 
-        {/* Job Card Approval Detail Modal */}
-        {
-          showJobCardModal && selectedJobCard && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-800">Job Card Approval Details</h2>
-                  <button
-                    onClick={() => {
-                      setShowJobCardModal(false);
-                      setSelectedJobCard(null);
-                    }}
-                    className="text-gray-400 hover:text-gray-600 transition p-2 rounded-lg hover:bg-gray-100"
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
 
-                <div className="space-y-6">
-                  {/* Job Card Information */}
-                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <ClipboardList className="text-indigo-600" size={20} />
-                      Job Card Information
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Job Card Number</p>
-                        <p className="font-medium text-gray-800">{selectedJobCard.jobCardNumber || selectedJobCard.id}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Status</p>
-                        <p className="font-medium text-gray-800">{selectedJobCard.status}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Priority</p>
-                        <p className="font-medium text-gray-800">{selectedJobCard.priority}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Service Center</p>
-                        <p className="font-medium text-gray-800">
-                          {selectedJobCard.serviceCenterName ||
-                            (String(selectedJobCard.serviceCenterId) === String(serviceCenterContext.serviceCenterId)
-                              ? serviceCenterContext.serviceCenterName
-                              : "") ||
-                            selectedJobCard.serviceCenterCode ||
-                            "N/A"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Customer & Vehicle Information */}
-                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <User className="text-blue-600" size={20} />
-                      Customer & Vehicle Information
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Customer Name</p>
-                        <p className="font-medium text-gray-800">
-                          {selectedJobCard.customerName ||
-                            selectedJobCard.part1?.fullName ||
-                            selectedJobCard.part1Data?.fullName ||
-                            selectedJobCard.customer?.name ||
-                            "N/A"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Customer Type</p>
-                        <p className="font-medium text-gray-800">
-                          {selectedJobCard.customerType ||
-                            selectedJobCard.part1?.customerType ||
-                            selectedJobCard.part1Data?.customerType ||
-                            selectedJobCard.customer?.customerType ||
-                            "N/A"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Vehicle</p>
-                        <p className="font-medium text-gray-800">
-                          {typeof selectedJobCard.vehicle === 'string'
-                            ? selectedJobCard.vehicle
-                            : `${selectedJobCard.vehicle?.vehicleModel || ''} (${selectedJobCard.vehicle?.registration || ''})`}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Registration</p>
-                        <p className="font-medium text-gray-800">
-                          {selectedJobCard.registration ||
-                            selectedJobCard.part1?.registrationNumber ||
-                            selectedJobCard.part1Data?.registrationNumber ||
-                            (typeof selectedJobCard.vehicle !== 'string' ? selectedJobCard.vehicle?.registration : "") ||
-                            "N/A"}
-                        </p>
-                      </div>
-                      {selectedJobCard.part1 && (
-                        <>
-                          <div>
-                            <p className="text-sm text-gray-500 mb-1">VIN/Chassis Number</p>
-                            <p className="font-medium text-gray-800">{selectedJobCard.part1.vinChassisNumber || "N/A"}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500 mb-1">Variant/Battery Capacity</p>
-                            <p className="font-medium text-gray-800">{selectedJobCard.part1.variantBatteryCapacity || "N/A"}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500 mb-1">Warranty Status</p>
-                            <p className="font-medium text-gray-800">{selectedJobCard.part1.warrantyStatus || "N/A"}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500 mb-1">Customer Address</p>
-                            <p className="font-medium text-gray-800">{selectedJobCard.part1.customerAddress || "N/A"}</p>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Service Details */}
-                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <Wrench className="text-purple-600" size={20} />
-                      Service Details
-                    </h3>
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Service Type</p>
-                        <p className="font-medium text-gray-800">{selectedJobCard.serviceType}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Description</p>
-                        <p className="font-medium text-gray-800">
-                          {selectedJobCard.description ||
-                            selectedJobCard.part1?.customerFeedback ||
-                            selectedJobCard.part1Data?.customerFeedback ||
-                            "N/A"}
-                        </p>
-                      </div>
-                      {selectedJobCard.part1 && (
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Customer Feedback</p>
-                          <p className="font-medium text-gray-800">{selectedJobCard.part1.customerFeedback || "N/A"}</p>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Estimated Cost</p>
-                          <p className="font-medium text-gray-800">
-                            {selectedJobCard.estimatedCost ||
-                              (selectedJobCard.part2?.length
-                                ? `₹${selectedJobCard.part2.reduce((sum: number, item: any) => sum + (item.amount || 0), 0)}`
-                                : "N/A")}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Estimated Time</p>
-                          <p className="font-medium text-gray-800">
-                            {selectedJobCard.estimatedTime ||
-                              selectedJobCard.part1?.estimatedDeliveryDate ||
-                              selectedJobCard.part1Data?.estimatedDeliveryDate ||
-                              "N/A"}
-                          </p>
-                        </div>
-                        {selectedJobCard.part1 && (
-                          <div>
-                            <p className="text-sm text-gray-500 mb-1">Estimated Delivery Date</p>
-                            <p className="font-medium text-gray-800">{selectedJobCard.part1.estimatedDeliveryDate || "N/A"}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Parts & Work Items */}
-                  {selectedJobCard.part2 && selectedJobCard.part2.length > 0 && (
-                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Parts & Work Items</h3>
-                      <div className="border border-gray-200 rounded-lg overflow-hidden">
-                        <table className="w-full">
-                          <thead className="bg-gray-100">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Sr No</th>
-                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Part/Work Item</th>
-                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Part Code</th>
-                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-700">Qty</th>
-                              <th className="px-4 py-2 text-right text-xs font-semibold text-gray-700">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {selectedJobCard.part2.map((item, idx) => (
-                              <tr key={idx}>
-                                <td className="px-4 py-2 text-sm text-gray-800">{item.srNo}</td>
-                                <td className="px-4 py-2 text-sm text-gray-800">{item.partName}</td>
-                                <td className="px-4 py-2 text-sm text-gray-800">{item.partCode || "N/A"}</td>
-                                <td className="px-4 py-2 text-sm text-center text-gray-800">{item.qty}</td>
-                                <td className="px-4 py-2 text-sm text-right text-gray-800">₹{item.amount.toLocaleString("en-IN")}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Required Parts (Legacy) */}
-                  {selectedJobCard.parts && selectedJobCard.parts.length > 0 && (
-                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Required Parts</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedJobCard.parts.map((part, idx) => (
-                          <span key={idx} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
-                            {part}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3 pt-4 border-t border-gray-200">
-                    <button
-                      onClick={() => {
-                        setShowJobCardModal(false);
-                        setSelectedJobCard(null);
-                      }}
-                      className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
-                    >
-                      Close
-                    </button>
-                    <button
-                      onClick={() => handleRejectJobCard(selectedJobCard.id)}
-                      className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-700 transition flex items-center justify-center gap-2"
-                    >
-                      <ShieldX size={18} />
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => handleApproveJobCard(selectedJobCard.id)}
-                      className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition flex items-center justify-center gap-2"
-                    >
-                      <ShieldCheck size={18} />
-                      Approve
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        }
       </div >
     </div >
   );

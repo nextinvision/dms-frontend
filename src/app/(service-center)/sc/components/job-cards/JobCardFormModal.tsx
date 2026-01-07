@@ -714,26 +714,30 @@ export default function JobCardFormModal({
           )}
 
 
-          {isServiceManager && hydratedCard?.passedToManager && (hydratedCard?.status === "CREATED" || hydratedCard?.status === "AWAITING_QUOTATION_APPROVAL") && (
-            <>
-              <button
-                type="button"
-                onClick={() => handleManagerDecision("APPROVED", "Approved via Form")}
-                disabled={isSubmitting}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-200 transition-all disabled:opacity-50"
-              >
-                <CheckCircle size={20} /> Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => handleManagerDecision("REJECTED")}
-                disabled={isSubmitting}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 transition-all disabled:opacity-50"
-              >
-                <XCircle size={20} /> Reject
-              </button>
-            </>
-          )}
+          {isServiceManager && hydratedCard?.passedToManager && (
+            hydratedCard?.status === "CREATED" ||
+            hydratedCard?.status === "AWAITING_QUOTATION_APPROVAL" ||
+            (hydratedCard as any).managerReviewStatus === "PENDING"
+          ) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleManagerDecision("APPROVED", "Approved via Form")}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-200 transition-all disabled:opacity-50"
+                >
+                  <CheckCircle size={20} /> Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleManagerDecision("REJECTED")}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 transition-all disabled:opacity-50"
+                >
+                  <XCircle size={20} /> Reject
+                </button>
+              </>
+            )}
 
         </div>
 

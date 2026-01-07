@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Upload, Video, Image as ImageIcon, FileText, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, Upload, Video, Image as ImageIcon, FileText, Trash2, CheckCircle2, AlertCircle, Eye } from "lucide-react";
 import { useCloudinaryUploadWithMetadata } from "@/shared/hooks/useCloudinaryUploadWithMetadata";
 import { optimizeCloudinaryUrl } from "@/services/cloudinary/cloudinary.service";
 import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
@@ -348,14 +348,27 @@ export default function WarrantyDocumentationModal({
                                                                 className="w-full h-full object-cover rounded-lg border border-gray-200"
                                                             />
                                                         )}
-                                                        {!isViewMode && (
-                                                            <button
-                                                                onClick={() => handleRemoveFile(section.field, index)}
-                                                                className="absolute top-1 right-1 bg-red-600 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition shadow-lg"
+
+                                                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                            <a
+                                                                href={url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="bg-blue-600 text-white p-1.5 rounded-full shadow-lg hover:bg-blue-700 transition flex items-center justify-center"
+                                                                title="View"
                                                             >
-                                                                <Trash2 size={12} />
-                                                            </button>
-                                                        )}
+                                                                <Eye size={12} />
+                                                            </a>
+                                                            {!isViewMode && (
+                                                                <button
+                                                                    onClick={() => handleRemoveFile(section.field, index)}
+                                                                    className="bg-red-600 text-white p-1.5 rounded-full shadow-lg hover:bg-red-700 transition flex items-center justify-center"
+                                                                    title="Remove"
+                                                                >
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
