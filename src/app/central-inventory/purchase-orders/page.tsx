@@ -18,10 +18,10 @@ import {
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
-import { 
-  calculatePOItemIssuedQuantities, 
+import {
+  calculatePOItemIssuedQuantities,
   calculateRemainingQuantity,
-  hasClosedSubPo 
+  hasClosedSubPo
 } from "@/shared/utils/po-fulfillment.utils";
 import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
 
@@ -52,7 +52,7 @@ export default function PurchaseOrdersPage() {
       try {
         const orders = await centralInventoryRepository.getAllPurchaseOrders();
         const partsIssues = await centralInventoryRepository.getAllPartsIssues();
-        
+
         // Calculate fulfillment status for each PO
         const ordersWithFulfillment: PurchaseOrderWithFulfillment[] = orders.map(po => {
           // Find all parts issues related to this PO
@@ -62,17 +62,17 @@ export default function PurchaseOrdersPage() {
             if (issue.purchaseOrderId === po.id) return true;
             return false;
           });
-          
+
           // Fallback: If no issues found by purchaseOrderId, try to match by service center and items
           // This handles cases where purchaseOrderId might not be set
           if (relatedIssues.length === 0 && po.serviceCenterId) {
-            const serviceCenterIssues = partsIssues.filter(issue => 
+            const serviceCenterIssues = partsIssues.filter(issue =>
               issue.serviceCenterId === po.serviceCenterId &&
               issue.status !== 'pending_admin_approval' &&
               issue.status !== 'cim_approved' &&
               issue.status !== 'admin_rejected'
             );
-            
+
             // Try to match by items - if all PO items can be found in a parts issue, consider it related
             relatedIssues = serviceCenterIssues.filter(issue => {
               let matchedItems = 0;
@@ -83,10 +83,10 @@ export default function PurchaseOrdersPage() {
                     (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
                     (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
                     (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
-                    (poItem.partName && issueItem.partName && 
-                     poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
-                    (poItem.partNumber && issueItem.partNumber && 
-                     poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
+                    (poItem.partName && issueItem.partName &&
+                      poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
+                    (poItem.partNumber && issueItem.partNumber &&
+                      poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
                   );
                 });
                 if (foundInIssue) matchedItems++;
@@ -95,13 +95,13 @@ export default function PurchaseOrdersPage() {
               return matchedItems > 0 && matchedItems >= Math.ceil(po.items.length * 0.5);
             });
           }
-          
+
           // Note: Debug logging removed for production - uncomment if needed for troubleshooting
-          
+
           // Calculate issued quantities per PO item
           const itemIssuedQty = calculatePOItemIssuedQuantities(po.items, relatedIssues);
           const itemHasClosedSubPo = new Map<string, boolean>();
-          
+
           // Check for closed sub-POs
           relatedIssues.forEach(issue => {
             issue.items.forEach(issueItem => {
@@ -111,10 +111,10 @@ export default function PurchaseOrdersPage() {
                   return (
                     (item.centralInventoryPartId && issueItem.partId && item.centralInventoryPartId === issueItem.partId) ||
                     (item.partId && issueItem.partId && item.partId === issueItem.partId) ||
-                    (item.partName && issueItem.partName && 
-                     item.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
-                    (item.partNumber && issueItem.partNumber && 
-                     item.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
+                    (item.partName && issueItem.partName &&
+                      item.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
+                    (item.partNumber && issueItem.partNumber &&
+                      item.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
                   );
                 });
                 if (poItem) {
@@ -123,19 +123,19 @@ export default function PurchaseOrdersPage() {
               }
             });
           });
-          
+
           // Calculate remaining items and fulfillment status
           const remainingItems: PurchaseOrderWithFulfillment['remainingItems'] = [];
           let fullyFulfilledCount = 0;
           let partiallyFulfilledCount = 0;
           let itemsWithClosedSubPo = 0;
-          
+
           po.items.forEach(item => {
             const requestedQty = Number(item.requestedQty || item.quantity || 0);
             const issuedQty = Number(itemIssuedQty.get(item.id) || 0);
             const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
             const hasClosedSubPo = itemHasClosedSubPo.get(item.id) || false;
-            
+
             // Check if item is fully fulfilled
             // Criteria: 
             // 1. issuedQty >= requestedQty (all requested quantity has been issued)
@@ -146,9 +146,9 @@ export default function PurchaseOrdersPage() {
               // Primary check: issued quantity must be >= requested quantity (with tiny rounding tolerance)
               issuedQty >= requestedQty - 0.01
             );
-            
+
             // Note: Closed sub-PO mismatch warning removed - quantities are verified regardless
-            
+
             if (remainingQty > 0) {
               remainingItems.push({
                 id: item.id,
@@ -159,7 +159,7 @@ export default function PurchaseOrdersPage() {
                 remainingQty,
               });
             }
-            
+
             if (isFullyFulfilled) {
               fullyFulfilledCount++;
               if (hasClosedSubPo) {
@@ -169,14 +169,14 @@ export default function PurchaseOrdersPage() {
               partiallyFulfilledCount++;
             }
           });
-          
+
           // Determine fulfillment status
           // A PO is fully fulfilled ONLY if:
           // 1. All items have issuedQty >= requestedQty (with minimal rounding tolerance of 0.01)
           // 2. All items have no remaining quantity
           // 3. We verify quantities match exactly (within tolerance)
           let fulfillmentStatus: "not_fulfilled" | "partially_fulfilled" | "fully_fulfilled";
-          
+
           if (po.items.length === 0) {
             fulfillmentStatus = "not_fulfilled";
           } else {
@@ -187,10 +187,10 @@ export default function PurchaseOrdersPage() {
               // Item is fully fulfilled if requestedQty > 0 and issuedQty >= requestedQty (within tolerance)
               return requestedQty > 0 && issuedQty >= requestedQty - 0.01;
             });
-            
+
             // Check if there are any remaining items
             const hasRemainingItems = remainingItems.length > 0;
-            
+
             if (allItemsFullyIssued && !hasRemainingItems) {
               // All items are fully issued and no remaining items - fully fulfilled
               fulfillmentStatus = "fully_fulfilled";
@@ -202,22 +202,22 @@ export default function PurchaseOrdersPage() {
               fulfillmentStatus = "not_fulfilled";
             }
           }
-          
+
           // Final verification: Double-check that fully fulfilled POs have no remaining items
           if (fulfillmentStatus === "fully_fulfilled" && remainingItems.length > 0) {
             // If there are remaining items, it can't be fully fulfilled
             fulfillmentStatus = "partially_fulfilled";
           }
-          
+
           // Note: Debug logging removed for production - uncomment if needed for troubleshooting
-          
+
           return {
             ...po,
             fulfillmentStatus,
             remainingItems,
           };
         });
-        
+
         setPurchaseOrders(ordersWithFulfillment);
         setFilteredOrders(ordersWithFulfillment);
       } catch (error) {
@@ -242,7 +242,7 @@ export default function PurchaseOrdersPage() {
           const isApproved = po.status === "approved";
           const isNotFullyFulfilled = po.fulfillmentStatus !== "fully_fulfilled";
           const hasRemainingItems = po.remainingItems && po.remainingItems.length > 0;
-          
+
           // Must be approved, not fully fulfilled, and have remaining items
           return isApproved && isNotFullyFulfilled && hasRemainingItems;
         });
@@ -254,11 +254,11 @@ export default function PurchaseOrdersPage() {
           const isFullyFulfilled = po.fulfillmentStatus === "fully_fulfilled";
           // Should have no remaining items
           const hasNoRemainingItems = !po.remainingItems || po.remainingItems.length === 0;
-          
+
           return isFullyFulfilled && hasNoRemainingItems;
         });
       } else {
-      filtered = filtered.filter((po) => po.status === statusFilter);
+        filtered = filtered.filter((po) => po.status === statusFilter);
       }
     }
 
@@ -290,7 +290,7 @@ export default function PurchaseOrdersPage() {
         return <Badge className="bg-blue-100 text-blue-800">Partially Fulfilled</Badge>;
       }
     }
-    
+
     // Default status badges
     const variants: Record<PurchaseOrder["status"], { color: string; label: string }> = {
       pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending Approval" },
@@ -319,8 +319,8 @@ export default function PurchaseOrdersPage() {
     pending: purchaseOrders.filter((po) => po.status === "pending").length,
     approved: purchaseOrders.filter((po) => po.status === "approved").length,
     rejected: purchaseOrders.filter((po) => po.status === "rejected").length,
-    not_fully_fulfilled: purchaseOrders.filter((po) => 
-      po.status === "approved" && 
+    not_fully_fulfilled: purchaseOrders.filter((po) =>
+      po.status === "approved" &&
       (po.fulfillmentStatus === "partially_fulfilled" || po.fulfillmentStatus === "not_fulfilled")
     ).length,
     fulfilled: purchaseOrders.filter((po) => po.fulfillmentStatus === "fully_fulfilled").length,
@@ -377,11 +377,10 @@ export default function PurchaseOrdersPage() {
                   <button
                     key={filter.key}
                     onClick={() => setStatusFilter(filter.key as FilterStatus)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
-                      statusFilter === filter.key
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${statusFilter === filter.key
                         ? "bg-blue-50 border-blue-300 text-blue-700"
                         : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
-                    }`}
+                      }`}
                   >
                     <filter.icon className="w-4 h-4" />
                     <span>{filter.label}</span>
@@ -490,7 +489,7 @@ export default function PurchaseOrdersPage() {
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Show remaining items for partially fulfilled POs */}
                       {po.fulfillmentStatus === "partially_fulfilled" && po.remainingItems.length > 0 && (
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
@@ -538,13 +537,13 @@ export default function PurchaseOrdersPage() {
                           <Package className="w-5 h-5" />
                         </Link>
                       )}
-                    <Link
-                      href={`/central-inventory/purchase-orders/${po.id}`}
+                      <Link
+                        href={`/central-inventory/purchase-orders/${po.id}`}
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title="View Details"
-                    >
-                      <Eye className="w-5 h-5" />
-                    </Link>
+                      >
+                        <Eye className="w-5 h-5" />
+                      </Link>
                     </div>
                   </div>
                 </CardBody>

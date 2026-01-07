@@ -135,6 +135,22 @@ export interface PurchaseOrder {
   jobCardId?: string;
   vehicleNumber?: string;
   customerName?: string;
+  // Dispatch information
+  dispatchStatus?: 'approved' | 'dispatched' | 'pending';
+  trackingNumber?: string;
+  transporter?: string;
+  expectedDelivery?: string;
+  partsIssues?: Array<{
+    id: string;
+    issueNumber: string;
+    status: string;
+    transportDetails?: {
+      transporter?: string;
+      trackingNumber?: string;
+      expectedDelivery?: string;
+    };
+    dispatchedDate?: string;
+  }>;
 }
 
 /**
@@ -147,7 +163,7 @@ export interface PartsIssue {
   serviceCenterName: string;
   issuedBy: string;
   issuedAt: string;
-  status: "pending" | "pending_admin_approval" | "admin_approved" | "admin_rejected" | "issued" | "received" | "cancelled";
+  status: "pending" | "pending_admin_approval" | "cim_approved" | "admin_approved" | "admin_rejected" | "issued" | "dispatched" | "completed" | "received" | "rejected" | "cancelled";
   items: Array<{
     id: string;
     partId: string;
@@ -172,6 +188,7 @@ export interface PartsIssue {
   }>;
   totalAmount: number;
   purchaseOrderId?: string;
+  purchaseOrderNumber?: string;
   receivedBy?: string;
   receivedAt?: string;
   notes?: string;

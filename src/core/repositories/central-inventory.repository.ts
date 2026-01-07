@@ -105,6 +105,19 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
     /**
      * Get parts issue by ID
      */
+    /**
+     * Update transport details for a dispatched parts issue
+     */
+    async updatePartsIssueTransportDetails(
+        id: string,
+        transportDetails: { transporter?: string; trackingNumber?: string; expectedDelivery?: string }
+    ): Promise<PartsIssue> {
+        const response = await apiClient.patch<any>(`/parts-issues/${id}/update-transport-details`, {
+            transportDetails
+        });
+        return this.mapBackendIssueToFrontend(response.data);
+    }
+
     async getPartsIssueById(id: string): Promise<PartsIssue | null> {
         try {
             const response = await apiClient.get<any>(`/parts-issues/${id}`);
@@ -248,13 +261,6 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
                 const partNumber = item.partNumber || stockItem?.partNumber || undefined;
                 const partName = item.partName || stockItem?.partName || undefined;
                 
-                console.log(`Mapping item for backend:`, {
-                    fromStock: item.fromStock,
-                    partNumber: partNumber,
-                    partName: partName,
-                    foundInStock: !!stockItem
-                });
-                
                 return {
                     centralInventoryPartId: item.fromStock,
                     requestedQty: item.quantity,
@@ -328,13 +334,34 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
         // Calculate total amount
         const totalAmount = items.reduce((sum: number, item: any) => sum + (item.totalPrice || 0), 0);
 
+        // Parse transportDetails if it's a string
+        let transportDetails = backendIssue.transportDetails;
+        if (typeof transportDetails === 'string') {
+            try {
+                transportDetails = JSON.parse(transportDetails);
+            } catch (e) {
+                console.warn('Failed to parse transportDetails:', e);
+                transportDetails = {};
+            }
+        }
+
+        // Get PO number if purchaseOrder relation is included
+        let poNumber = undefined;
+        if (backendIssue.purchaseOrder) {
+            poNumber = backendIssue.purchaseOrder.poNumber;
+        } else if (backendIssue.purchaseOrderId) {
+            // If only ID is available, use it as fallback
+            poNumber = backendIssue.purchaseOrderId;
+        }
+
         return {
             ...backendIssue,
             status: statusMap[backendIssue.status] || backendIssue.status?.toLowerCase(),
             items: items,
             totalAmount: totalAmount || 0,
-            // Include purchaseOrderId if present
+            // Include purchaseOrderId and poNumber if present
             purchaseOrderId: backendIssue.purchaseOrderId || undefined,
+            purchaseOrderNumber: poNumber,
             // Set admin approval flags based on status
             adminApproved: isAdminApproved,
             adminRejected: isAdminRejected,
@@ -348,6 +375,9 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
             // Request info
             issuedBy: backendIssue.requestedBy?.name || backendIssue.requestedBy || 'Unknown',
             issuedAt: backendIssue.createdAt,
+            // Transport details
+            transportDetails: transportDetails || backendIssue.transportDetails,
+            dispatchedDate: backendIssue.dispatchedDate,
         };
     }
 
@@ -431,6 +461,38 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
         if (!serviceCenter || !backendPO.fromServiceCenterId) {
             return null; // Will be filtered out
         }
+
+        // Map parts issues to get dispatch information
+        const partsIssues = backendPO.partsIssues || [];
+        const dispatchedIssues = partsIssues.filter((issue: any) => 
+            issue.status === 'DISPATCHED' || issue.status === 'ADMIN_APPROVED'
+        );
+        
+        // Get the latest dispatch tracking information
+        let latestTrackingNumber: string | undefined;
+        let latestTransporter: string | undefined;
+        let latestExpectedDelivery: string | undefined;
+        let dispatchStatus: 'approved' | 'dispatched' | 'pending' = 'pending';
+
+        if (dispatchedIssues.length > 0) {
+            // Get the most recent dispatch
+            const latestIssue = dispatchedIssues[0];
+            if (latestIssue.transportDetails) {
+                const transportDetails = typeof latestIssue.transportDetails === 'string' 
+                    ? JSON.parse(latestIssue.transportDetails) 
+                    : latestIssue.transportDetails;
+                latestTrackingNumber = transportDetails?.trackingNumber;
+                latestTransporter = transportDetails?.transporter;
+                latestExpectedDelivery = transportDetails?.expectedDelivery;
+            }
+            
+            // Check if any issue is dispatched
+            if (dispatchedIssues.some((issue: any) => issue.status === 'DISPATCHED')) {
+                dispatchStatus = 'dispatched';
+            } else if (dispatchedIssues.some((issue: any) => issue.status === 'ADMIN_APPROVED')) {
+                dispatchStatus = 'approved';
+            }
+        }
         
         return {
             ...backendPO,
@@ -451,6 +513,20 @@ class CentralInventoryRepository extends BaseRepository<CentralInventoryItem> {
             approvedBy: backendPO.approvedBy?.name,
             approvedAt: backendPO.approvedAt,
             totalAmount: Number(backendPO.totalAmount) || 0,
+            // Dispatch information
+            dispatchStatus: dispatchStatus,
+            trackingNumber: latestTrackingNumber,
+            transporter: latestTransporter,
+            expectedDelivery: latestExpectedDelivery,
+            partsIssues: partsIssues.map((issue: any) => ({
+                id: issue.id,
+                issueNumber: issue.issueNumber,
+                status: issue.status,
+                transportDetails: typeof issue.transportDetails === 'string' 
+                    ? JSON.parse(issue.transportDetails) 
+                    : issue.transportDetails,
+                dispatchedDate: issue.dispatchedDate,
+            })),
             items: backendPO.items?.map((item: any) => {
                 // Handle both central inventory parts and service center inventory parts
                 const centralPart = item.centralInventoryPartId ? partsMap.get(item.centralInventoryPartId) : null;

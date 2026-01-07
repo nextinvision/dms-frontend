@@ -4,33 +4,7 @@
  */
 
 import { apiClient } from '@/core/api/client';
-
-export interface Invoice {
-  id: string;
-  invoiceNumber: string;
-  purchaseOrderId: string;
-  supplierId: string;
-  supplierName: string;
-  invoiceDate: string;
-  dueDate?: string;
-  totalAmount: number;
-  taxAmount: number;
-  status: 'Draft' | 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
-  items: InvoiceItem[];
-  notes?: string;
-  createdAt?: string;
-}
-
-export interface InvoiceItem {
-  id?: string;
-  partId: string;
-  partName: string;
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-  taxRate?: number;
-  taxAmount?: number;
-}
+import type { Invoice, InvoiceFormData } from '@/shared/types/invoice.types';
 
 class InvoiceService {
   /**
@@ -52,9 +26,9 @@ class InvoiceService {
   }
 
   /**
-   * Create invoice
+   * Create invoice from parts issue
    */
-  async createInvoice(data: Partial<Invoice>): Promise<Invoice> {
+  async createInvoice(data: InvoiceFormData): Promise<Invoice> {
     const response = await apiClient.post<Invoice>('/invoices', data);
     return response.data;
   }
