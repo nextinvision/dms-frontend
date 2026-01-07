@@ -14,6 +14,8 @@ interface JobCardDetailsModalProps {
     onUpdateStatus: (jobId: string, initialStatus: JobCardStatus) => void;
     onApprove?: (jobId: string) => void;
     onReject?: (jobId: string) => void;
+    onSendToManager?: (jobId: string) => void;
+    onCreateQuotation?: (job: JobCard) => void;
 }
 
 const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
@@ -27,6 +29,8 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
     onUpdateStatus,
     onApprove,
     onReject,
+    onSendToManager,
+    onCreateQuotation,
 }) => {
     if (!open || !job) return null;
 
@@ -164,6 +168,15 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 Assign Engineer
                             </button>
                         )}
+                        {!job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && onSendToManager && (
+                            <button
+                                onClick={() => onSendToManager(job.id)}
+                                className="flex-1 bg-purple-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:bg-purple-700 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <ShieldCheck size={18} />
+                                Send to Manager
+                            </button>
+                        )}
                         {job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && onApprove && (
                             <button
                                 onClick={() => onApprove(job.id)}
@@ -188,6 +201,15 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base"
                             >
                                 Update Status
+                            </button>
+                        )}
+                        {job.managerReviewStatus === "APPROVED" && !job.quotationId && !job.quotation && onCreateQuotation && (
+                            <button
+                                onClick={() => onCreateQuotation(job)}
+                                className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <FileText size={18} />
+                                Create Quotation
                             </button>
                         )}
                         {job.status === "COMPLETED" && (
