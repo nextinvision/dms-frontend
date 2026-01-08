@@ -2,7 +2,7 @@
  * Job Card Inventory Types
  */
 
-export type PartsRequestStatus = "pending" | "approved" | "rejected";
+export type PartsRequestStatus = "PENDING" | "APPROVED" | "PARTIALLY_APPROVED" | "REJECTED" | "COMPLETED";
 
 export interface JobCardPartsRequest {
   id: string;

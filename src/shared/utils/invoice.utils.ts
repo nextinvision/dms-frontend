@@ -216,32 +216,67 @@ export function populateInvoiceFromJobCard(
   const part1 = jobCard.part1;
   const part2 = jobCard.part2 || [];
 
+  // Helper to extract customer name safely
+  const getCustomerName = () => {
+    if (part1?.fullName) return part1.fullName;
+    if (jobCard.customerName) return jobCard.customerName;
+    if ((jobCard as any).customer?.name) return (jobCard as any).customer.name;
+    return "";
+  };
+
+  // Helper to extract customer phone safely
+  const getCustomerPhone = () => {
+    if (part1?.mobilePrimary) return part1.mobilePrimary;
+    if ((jobCard as any).customer?.mobile) return (jobCard as any).customer.mobile;
+    if ((jobCard as any).mobileNumber) return (jobCard as any).mobileNumber;
+    return "";
+  };
+
+  const customerName = getCustomerName();
+  const customerPhone = getCustomerPhone();
+
   // Extract customer details from part1
-  const customerDetails = part1
-    ? {
-        name: part1.fullName || jobCard.customerName,
-        address: part1.customerAddress || "",
-        phone: part1.mobilePrimary || "",
-        state: "", // Will need to extract from address or customer data
-      }
-    : {
-        name: jobCard.customerName,
-        address: "",
-        phone: "",
-        state: "",
-      };
+  const customerDetails = {
+    name: customerName,
+    address: part1?.customerAddress || (jobCard as any).address || "",
+    phone: customerPhone,
+    state: "", // Will need to extract from address or customer data
+  };
+
+  // Helper to format vehicle string
+  const getVehicleString = () => {
+    if (typeof jobCard.vehicle === 'string') return jobCard.vehicle;
+    if (jobCard.vehicle && typeof jobCard.vehicle === 'object') {
+      const v = jobCard.vehicle as any;
+      const make = v.make || v.vehicleMake || "";
+      const model = v.model || v.vehicleModel || "";
+      const reg = v.registrationNumber || v.registration || "";
+      return `${make} ${model} ${reg}`.trim();
+    }
+
+    // Fallback if vehicle is not populated but fields are on jobCard
+    const make = jobCard.vehicleMake || "";
+    const model = jobCard.vehicleModel || "";
+    const reg = jobCard.registration || "";
+    return `${make} ${model} ${reg}`.trim();
+  };
+
+  const vehicleString = getVehicleString();
 
   // Extract items from part2
   const enhancedItems: EnhancedServiceCenterInvoiceItem[] = part2.map((item, index) => {
-    const taxableAmount = item.amount || 0;
+    // If warranty tag is true, amount must be 0. Otherwise use the item amount.
+    const isWarranty = item.partWarrantyTag || false;
+    const itemAmount = isWarranty ? 0 : (item.amount || 0);
+
+    const taxableAmount = itemAmount;
     const gstRate = 18; // Default GST rate, can be made configurable
     const placeOfSupply = customerDetails.state || serviceCenter.state;
     const gst = calculateGST(taxableAmount, gstRate, placeOfSupply, serviceCenter.state);
 
     return {
-      name: item.partName || (item.partWarrantyTag ? "Warranty Item" : `Item ${index + 1}`) || `Item ${index + 1}`,
-      hsnSacCode: item.partCode || "",
-      unitPrice: item.amount || 0,
+      name: item.partName || (isWarranty ? "Warranty Item" : `Item ${index + 1}`) || `Item ${index + 1}`,
+      unitPrice: itemAmount,
       quantity: item.qty || 1,
       taxableAmount: taxableAmount,
       gstRate: gstRate,
@@ -249,7 +284,8 @@ export function populateInvoiceFromJobCard(
       sgstAmount: gst.sgst,
       igstAmount: gst.igst,
       totalAmount: taxableAmount + gst.cgst + gst.sgst + gst.igst,
-    };
+      enhancedItem: true
+    } as EnhancedServiceCenterInvoiceItem;
   });
 
   // Calculate totals
@@ -260,12 +296,16 @@ export function populateInvoiceFromJobCard(
   const totalTax = totalCgst + totalSgst + totalIgst;
   const grandTotal = subtotal + totalTax;
 
+  // Use jobCardNumber if available, otherwise just leave undefined or handle in UI
+  const jobCardReference = (jobCard as any).jobCardNumber || (jobCard as any).jobCardNo || "";
+
   return {
-    jobCardId: jobCard.id,
+    jobCardId: jobCardReference, // Using Number instead of ID as requested
+    // We explicitly DO NOT include the internal ID if that's what was requested
     customerId: jobCard.customerId,
-    vehicleId: jobCard.vehicleId,
+    // vehicleId: jobCard.vehicleId, // Commented out to avoid confusion if vehicle string is used
     customerName: customerDetails.name,
-    vehicle: jobCard.vehicle || `${jobCard.vehicleMake || ""} ${jobCard.vehicleModel || ""} (${jobCard.registration || ""})`.trim(),
+    vehicle: vehicleString,
     date: new Date().toISOString().split("T")[0],
     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0], // 7 days from now
     amount: `₹${grandTotal.toLocaleString("en-IN")}`,

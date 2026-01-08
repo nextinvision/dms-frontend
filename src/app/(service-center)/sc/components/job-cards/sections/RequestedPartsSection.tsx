@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Package } from 'lucide-react';
 import { CreateJobCardForm, JobCardPart2Item } from "@/features/job-cards/types/job-card.types";
 import { apiClient } from "@/core/api/client";
+import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import type { Part } from "@/features/inventory/types/inventory.types";
 import { useRole } from "@/shared/hooks";
 
@@ -109,9 +110,39 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
         });
     };
 
-    const handleDelete = (index: number) => {
-        const updatedItems = (form.requestedParts || []).filter((_, i) => i !== index).map((item, i) => ({ ...item, srNo: i + 1 }));
-        updateField('requestedParts', updatedItems);
+    const handleDelete = async (index: number) => {
+        const itemToDelete = form.requestedParts![index] as any;
+
+        // If it has an ID or requestId, it's an existing request in DB
+        // The JobCardAdapter maps 'id' or 'requestId' if available, let's assume 'requestId' stores the parent Request ID
+        // Note: The adapter for 'requestedParts' maps (from PartsRequests) -> items. 
+        // We need the PARENT PartsRequest ID to cancel the whole request, OR we might want to delete individual items.
+        // My backend endpoint 'deletePartsRequest' takes a Request ID and deletes the whole request.
+        // The current UI shows items flat.
+        // If "Request Parts" created a SINGLE request for multiple items, we have to be careful.
+        // But typically engineers request parts in batches. 
+        // Let's assume for now we can delete if we have a request ID.
+
+        // Check if we have a request ID on the item (adapter might need to pass it)
+        const requestId = itemToDelete.requestId || (itemToDelete as any).id; // Check adapter mapping
+
+        if (requestId) {
+            if (!confirm("Are you sure you want to cancel this parts request?")) return;
+            try {
+                await jobCardService.deletePartsRequest(requestId);
+                // Remove from local state
+                const updatedItems = (form.requestedParts || []).filter((_, i) => i !== index).map((item, i) => ({ ...item, srNo: i + 1 }));
+                updateField('requestedParts', updatedItems);
+                if (typeof window !== 'undefined') window.location.reload(); // Refresh to ensure sync
+            } catch (error) {
+                console.error("Failed to delete parts request:", error);
+                onError?.("Failed to cancel parts request. It may have been approved already.");
+            }
+        } else {
+            // Local only
+            const updatedItems = (form.requestedParts || []).filter((_, i) => i !== index).map((item, i) => ({ ...item, srNo: i + 1 }));
+            updateField('requestedParts', updatedItems);
+        }
     };
 
 

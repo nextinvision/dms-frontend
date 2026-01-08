@@ -30,7 +30,6 @@ export interface ServiceCenterInvoiceItem {
   qty: number;
   price: string;
   // Extended GST fields (optional for backward compatibility)
-  hsnSacCode?: string;
   unitPrice?: number;
   quantity?: number;
   taxableAmount?: number;
@@ -46,7 +45,6 @@ export interface ServiceCenterInvoiceItem {
  */
 export interface EnhancedServiceCenterInvoiceItem {
   name: string;
-  hsnSacCode?: string;
   unitPrice: number;
   quantity: number;
   taxableAmount: number;
@@ -119,7 +117,7 @@ export interface ServiceCenterInvoice {
   serviceCenterId?: string;
   serviceCenterName?: string;
   items: ServiceCenterInvoiceItem[]; // Legacy items array
-  
+
   // Extended GST and tax fields
   serviceCenterDetails?: ServiceCenterInvoiceDetails;
   customerDetails?: CustomerInvoiceDetails;
@@ -140,7 +138,7 @@ export interface ServiceCenterInvoice {
   bankDetails?: BankDetails;
   createdBy?: string;
   approvedBy?: string;
-  
+
   // Enhanced items array (optional, for new invoices)
   enhancedItems?: EnhancedServiceCenterInvoiceItem[];
 }

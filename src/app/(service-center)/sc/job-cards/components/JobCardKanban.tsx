@@ -68,7 +68,13 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                         {columnJobs.map((job) => {
                                             const jobCardId = job.id || job.jobCardNumber;
                                             const request = partsRequestsData[jobCardId] || partsRequestsData[job.id] || partsRequestsData[job.jobCardNumber || ""];
-                                            const hasRequest = request && !request.inventoryManagerAssigned;
+
+                                            // Status Inference
+                                            const reqStatus = request?.status;
+                                            const isScApproved = request?.scManagerApproved || reqStatus === 'APPROVED' || reqStatus === 'COMPLETED' || reqStatus === 'PARTIALLY_APPROVED';
+                                            const isPartsAssigned = request?.inventoryManagerAssigned || reqStatus === 'COMPLETED';
+                                            const isRejected = reqStatus === 'REJECTED';
+                                            const hasPendingRequest = request && !isScApproved && !isPartsAssigned && !isRejected;
 
                                             return (
                                                 <div
@@ -117,24 +123,29 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                         </span>
                                                     </div>
 
-                                                    {
-                                                        hasRequest && (
-                                                            <div className="mt-2">
-                                                                <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium">
-                                                                    Parts Request Pending
-                                                                </span>
-                                                            </div>
-                                                        )
-                                                    }
-                                                    {
-                                                        request?.inventoryManagerAssigned && (
-                                                            <div className="mt-2">
-                                                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                                                    ✓ Parts Assigned
-                                                                </span>
-                                                            </div>
-                                                        )
-                                                    }
+                                                    {/* Parts Request Status Badges */}
+                                                    <div className="space-y-1 mt-2">
+                                                        {hasPendingRequest && (
+                                                            <span className="inline-block px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium">
+                                                                Parts Request Pending
+                                                            </span>
+                                                        )}
+                                                        {isRejected && (
+                                                            <span className="inline-block px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
+                                                                Parts Rejected
+                                                            </span>
+                                                        )}
+                                                        {isScApproved && !isPartsAssigned && (
+                                                            <span className="inline-block px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
+                                                                ✓ Parts Approved
+                                                            </span>
+                                                        )}
+                                                        {isPartsAssigned && (
+                                                            <span className="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                                                                ✓ Parts Assigned
+                                                            </span>
+                                                        )}
+                                                    </div>
 
                                                     {/* Footer Info */}
                                                     <div className="flex items-center justify-between text-xs pt-3 border-t border-gray-100 mt-3">

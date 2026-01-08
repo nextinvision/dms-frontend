@@ -26,7 +26,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { usePartsApproval } from "@/shared/hooks/usePartsApproval";
 import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
-import { partsIssueService, type PartsIssue } from "@/features/inventory/services/parts-issue.service"; // Updated
+import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { inventoryPurchaseOrderService, type InventoryPurchaseOrder } from "@/features/inventory/services/inventoryPurchaseOrder.service";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
@@ -42,28 +42,30 @@ interface QuickAction {
 }
 
 // Reuse mapping helper from Approvals Page (or duplicate for now to avoid specific shared file dependency hell right now)
-const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
-  const isApproved = issue.status === 'APPROVED' || issue.status === 'ISSUED';
-  const isIssued = issue.status === 'ISSUED';
-  const items = issue.items || []; // Safety check for undefined items
+// Reuse mapping helper from Approvals Page
+const mapPartsRequestToFrontend = (req: any): JobCardPartsRequest => {
+  const status = req.status;
+  // Map COMPLETED to 'approved' for dashboard visual consistency (Green badge)
+  const dashboardStatus = status === 'COMPLETED' ? 'approved' : status === 'REJECTED' ? 'rejected' : 'pending';
 
   return {
-    id: issue.id,
-    jobCardId: issue.jobCardId,
-    vehicleNumber: "N/A",
-    customerName: "N/A",
-    requestedBy: issue.requestedBy,
-    requestedAt: issue.requestedAt,
-    status: issue.status === 'ISSUED' ? 'approved' : issue.status === 'REJECTED' ? 'rejected' : 'pending',
-    parts: items.map(i => ({
-      partId: i.partId,
-      partName: `Part ${i.partId}`,
-      quantity: i.quantity,
-      isWarranty: i.isWarranty,
-      serialNumber: i.serialNumber
+    id: req.id,
+    jobCardId: req.jobCard?.jobCardNumber || req.jobCardId,
+    vehicleNumber: req.jobCard?.vehicle?.registration || req.jobCard?.vehicle?.vehicleMake || "N/A",
+    customerName: req.jobCard?.customer?.name || "N/A",
+    requestedBy: req.jobCard?.assignedEngineer?.name || "Service Engineer",
+    requestedAt: req.createdAt,
+    status: dashboardStatus,
+    parts: (req.items || []).map((item: any) => ({
+      partId: item.id,
+      partName: item.partName || `Part #${item.partNumber}`,
+      quantity: item.requestedQty || item.quantity,
+      isWarranty: item.isWarranty,
+      serialNumber: item.partNumber
     })),
-    scManagerApproved: isApproved,
-    inventoryManagerAssigned: isIssued,
+    // Flags for logic
+    scManagerApproved: status === 'APPROVED' || status === 'COMPLETED',
+    inventoryManagerAssigned: status === 'COMPLETED',
   };
 };
 
@@ -95,8 +97,9 @@ export default function InventoryManagerDashboard() {
         const totalValue = parts.reduce((sum, p) => sum + (p.price ?? 0) * p.stockQuantity, 0);
 
         // Fetch recent parts requests (last 5)
-        const allIssues = await partsIssueService.getAll();
-        const allRequests = allIssues.map(mapPartsIssueToRequest);
+        const scContext = getServiceCenterContext();
+        const allRequestsData = await jobCardService.getPendingPartsRequests(scContext.serviceCenterId || undefined);
+        const allRequests = allRequestsData.map(mapPartsRequestToFrontend);
 
         const recent = allRequests
           .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime())
@@ -130,25 +133,25 @@ export default function InventoryManagerDashboard() {
             const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
             // Filter parts issues dispatched to this service center
             const dispatchedIssues = allPartsIssues.filter((issue: CentralPartsIssue) => {
-              const isForThisSC = issue.serviceCenterId === context.serviceCenterId || 
-                                   String(issue.serviceCenterId) === String(context.serviceCenterId);
-              const isDispatched = issue.status === 'dispatched' || 
-                                  issue.status === 'issued' || 
-                                  issue.status === 'admin_approved';
+              const isForThisSC = issue.serviceCenterId === context.serviceCenterId ||
+                String(issue.serviceCenterId) === String(context.serviceCenterId);
+              const isDispatched = issue.status === 'dispatched' ||
+                issue.status === 'issued' ||
+                issue.status === 'admin_approved';
               return isForThisSC && isDispatched;
             });
-            
+
             // Sort by dispatched date or created date, most recent first
             const sortedIssues = dispatchedIssues.sort((a, b) => {
-              const dateA = a.transportDetails?.expectedDelivery 
+              const dateA = a.transportDetails?.expectedDelivery
                 ? new Date(a.transportDetails.expectedDelivery).getTime()
                 : new Date(a.issuedAt).getTime();
-              const dateB = b.transportDetails?.expectedDelivery 
+              const dateB = b.transportDetails?.expectedDelivery
                 ? new Date(b.transportDetails.expectedDelivery).getTime()
                 : new Date(b.issuedAt).getTime();
               return dateB - dateA;
             });
-            
+
             setDispatchedPartsIssues(sortedIssues.slice(0, 5));
           }
         } catch (error) {
@@ -228,9 +231,9 @@ export default function InventoryManagerDashboard() {
     const trackingNumber = transportDetails.trackingNumber || "";
     const transporter = transportDetails.transporter || "";
     const searchLower = trackingSearchQuery.toLowerCase();
-    return trackingNumber.toLowerCase().includes(searchLower) || 
-           transporter.toLowerCase().includes(searchLower) ||
-           issue.issueNumber.toLowerCase().includes(searchLower);
+    return trackingNumber.toLowerCase().includes(searchLower) ||
+      transporter.toLowerCase().includes(searchLower) ||
+      issue.issueNumber.toLowerCase().includes(searchLower);
   };
 
   const quickActions: QuickAction[] = [
@@ -500,41 +503,41 @@ export default function InventoryManagerDashboard() {
             ) : (
               <div className="space-y-4">
                 {recentPurchaseOrders.map((po) => (
-                    <div
-                      key={po.id}
-                      className="p-4 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <Link
-                            href={`/inventory-manager/parts-order-view`}
-                            className="font-semibold text-indigo-600 hover:text-indigo-700"
-                          >
-                            {po.poNumber}
-                          </Link>
-                          <p className="text-sm text-gray-600 mt-1">{po.items.length} item(s)</p>
-                        </div>
-                        {getPOStatusBadge(po.status, po.dispatchStatus)}
+                  <div
+                    key={po.id}
+                    className="p-4 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <Link
+                          href={`/inventory-manager/parts-order-view`}
+                          className="font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                          {po.poNumber}
+                        </Link>
+                        <p className="text-sm text-gray-600 mt-1">{po.items.length} item(s)</p>
                       </div>
-                      {(po.trackingNumber || po.transporter) && (
-                        <div className="mt-2 pt-2 border-t border-gray-100">
-                          {po.trackingNumber && (
-                            <div className="text-xs text-gray-600">
-                              <span className="font-medium">Tracking:</span> {po.trackingNumber}
-                            </div>
-                          )}
-                          {po.transporter && (
-                            <div className="text-xs text-gray-600 mt-1">
-                              <span className="font-medium">Transporter:</span> {po.transporter}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <div className="text-xs text-gray-400 mt-2">
-                        {new Date(po.requestedAt).toLocaleDateString()}
-                      </div>
+                      {getPOStatusBadge(po.status, po.dispatchStatus)}
                     </div>
-                  ))}
+                    {(po.trackingNumber || po.transporter) && (
+                      <div className="mt-2 pt-2 border-t border-gray-100">
+                        {po.trackingNumber && (
+                          <div className="text-xs text-gray-600">
+                            <span className="font-medium">Tracking:</span> {po.trackingNumber}
+                          </div>
+                        )}
+                        {po.transporter && (
+                          <div className="text-xs text-gray-600 mt-1">
+                            <span className="font-medium">Transporter:</span> {po.transporter}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-400 mt-2">
+                      {new Date(po.requestedAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardBody>
@@ -582,138 +585,138 @@ export default function InventoryManagerDashboard() {
                   .filter(filterDispatchedIssues)
                   .map((issue: CentralPartsIssue) => {
 
-                  const transportDetails = issue.transportDetails || {};
-                  const trackingNumber = transportDetails.trackingNumber;
-                  const transporter = transportDetails.transporter;
-                  const expectedDelivery = transportDetails.expectedDelivery;
+                    const transportDetails = issue.transportDetails || {};
+                    const trackingNumber = transportDetails.trackingNumber;
+                    const transporter = transportDetails.transporter;
+                    const expectedDelivery = transportDetails.expectedDelivery;
 
-                  return (
-                    <div
-                      key={issue.id}
-                      className="p-4 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors bg-gradient-to-r from-blue-50 to-indigo-50"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Package className="text-indigo-600" size={18} />
-                            <span className="font-semibold text-indigo-600">
-                              {issue.issueNumber}
-                            </span>
-                            {getPartsIssueStatusBadge(issue.status)}
+                    return (
+                      <div
+                        key={issue.id}
+                        className="p-4 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors bg-gradient-to-r from-blue-50 to-indigo-50"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Package className="text-indigo-600" size={18} />
+                              <span className="font-semibold text-indigo-600">
+                                {issue.issueNumber}
+                              </span>
+                              {getPartsIssueStatusBadge(issue.status)}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1">
+                              <p className="text-sm text-gray-600">
+                                {issue.items.length} item(s) • Total: ₹{issue.totalAmount.toLocaleString()}
+                              </p>
+                              {(issue.purchaseOrderNumber || issue.purchaseOrderId) && (
+                                <div className="flex items-center gap-1 text-xs text-blue-600">
+                                  <FileCheck size={12} />
+                                  <span className="font-medium">PO: {issue.purchaseOrderNumber || issue.purchaseOrderId}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3 mt-1">
-                            <p className="text-sm text-gray-600">
-                              {issue.items.length} item(s) • Total: ₹{issue.totalAmount.toLocaleString()}
-                            </p>
-                            {(issue.purchaseOrderNumber || issue.purchaseOrderId) && (
-                              <div className="flex items-center gap-1 text-xs text-blue-600">
-                                <FileCheck size={12} />
-                                <span className="font-medium">PO: {issue.purchaseOrderNumber || issue.purchaseOrderId}</span>
-                              </div>
+                        </div>
+
+                        {/* Purchase Order Link - If linked to a PO */}
+                        {(issue.purchaseOrderNumber || issue.purchaseOrderId) && (
+                          <div className="mt-2 mb-2 p-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <FileCheck className="w-4 h-4 text-indigo-600" />
+                              <span className="text-xs font-medium text-indigo-900">Linked Purchase Order:</span>
+                              <Link
+                                href={`/inventory-manager/parts-order-view`}
+                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline flex items-center gap-1"
+                              >
+                                {issue.purchaseOrderNumber || issue.purchaseOrderId}
+                                <LinkIcon size={10} />
+                              </Link>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Transport Details - Highlighted for Tracking */}
+                        {(trackingNumber || transporter || expectedDelivery) && (
+                          <div className="mt-3 pt-3 border-t border-indigo-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border-2 border-blue-200">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Truck className="w-5 h-5 text-blue-600" />
+                              <h4 className="text-sm font-bold text-blue-900">Tracking Information</h4>
+                              {(issue.purchaseOrderNumber || issue.purchaseOrderId) && (
+                                <Badge variant="info" className="ml-auto text-xs bg-indigo-100 text-indigo-700">
+                                  Track PO: {issue.purchaseOrderNumber || issue.purchaseOrderId}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {trackingNumber && (
+                                <div className="flex items-start gap-2 bg-white p-2 rounded border border-blue-200">
+                                  <MapPin className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <p className="text-xs font-medium text-gray-600">Tracking ID</p>
+                                    <p className="text-sm font-bold text-blue-900 break-all">{trackingNumber}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Use this ID to track your shipment</p>
+                                  </div>
+                                </div>
+                              )}
+                              {transporter && (
+                                <div className="flex items-start gap-2 bg-white p-2 rounded border border-green-200">
+                                  <Truck className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <p className="text-xs font-medium text-gray-600">Company Name</p>
+                                    <p className="text-sm font-bold text-green-900">{transporter}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Shipping company</p>
+                                  </div>
+                                </div>
+                              )}
+                              {expectedDelivery && (
+                                <div className="flex items-start gap-2 bg-white p-2 rounded border border-orange-200">
+                                  <Clock className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <p className="text-xs font-medium text-gray-600">Expected Delivery</p>
+                                    <p className="text-sm font-bold text-orange-900">
+                                      {new Date(expectedDelivery).toLocaleDateString('en-IN', {
+                                        day: 'numeric',
+                                        month: 'short',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1">Estimated arrival</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Items Summary */}
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <p className="text-xs font-medium text-gray-700 mb-2">Parts:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {issue.items.slice(0, 3).map((item, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-md text-xs font-medium text-gray-700 border border-gray-200"
+                              >
+                                <Package size={10} />
+                                {item.partName} (Qty: {item.quantity || item.issuedQty || item.approvedQty || 0})
+                              </span>
+                            ))}
+                            {issue.items.length > 3 && (
+                              <span className="inline-flex items-center px-2 py-1 bg-gray-100 rounded-md text-xs text-gray-600">
+                                +{issue.items.length - 3} more
+                              </span>
                             )}
                           </div>
+                        </div>
+
+                        <div className="text-xs text-gray-400 mt-2">
+                          Dispatched: {issue.issuedAt ? new Date(issue.issuedAt).toLocaleDateString() : 'N/A'}
                         </div>
                       </div>
-
-                      {/* Purchase Order Link - If linked to a PO */}
-                      {(issue.purchaseOrderNumber || issue.purchaseOrderId) && (
-                        <div className="mt-2 mb-2 p-2 bg-indigo-50 border border-indigo-200 rounded-lg">
-                          <div className="flex items-center gap-2">
-                            <FileCheck className="w-4 h-4 text-indigo-600" />
-                            <span className="text-xs font-medium text-indigo-900">Linked Purchase Order:</span>
-                            <Link
-                              href={`/inventory-manager/parts-order-view`}
-                              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline flex items-center gap-1"
-                            >
-                              {issue.purchaseOrderNumber || issue.purchaseOrderId}
-                              <LinkIcon size={10} />
-                            </Link>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Transport Details - Highlighted for Tracking */}
-                      {(trackingNumber || transporter || expectedDelivery) && (
-                        <div className="mt-3 pt-3 border-t border-indigo-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border-2 border-blue-200">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Truck className="w-5 h-5 text-blue-600" />
-                            <h4 className="text-sm font-bold text-blue-900">Tracking Information</h4>
-                            {(issue.purchaseOrderNumber || issue.purchaseOrderId) && (
-                              <Badge variant="info" className="ml-auto text-xs bg-indigo-100 text-indigo-700">
-                                Track PO: {issue.purchaseOrderNumber || issue.purchaseOrderId}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {trackingNumber && (
-                              <div className="flex items-start gap-2 bg-white p-2 rounded border border-blue-200">
-                                <MapPin className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-medium text-gray-600">Tracking ID</p>
-                                  <p className="text-sm font-bold text-blue-900 break-all">{trackingNumber}</p>
-                                  <p className="text-xs text-gray-500 mt-1">Use this ID to track your shipment</p>
-                                </div>
-                              </div>
-                            )}
-                            {transporter && (
-                              <div className="flex items-start gap-2 bg-white p-2 rounded border border-green-200">
-                                <Truck className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-medium text-gray-600">Company Name</p>
-                                  <p className="text-sm font-bold text-green-900">{transporter}</p>
-                                  <p className="text-xs text-gray-500 mt-1">Shipping company</p>
-                                </div>
-                              </div>
-                            )}
-                            {expectedDelivery && (
-                              <div className="flex items-start gap-2 bg-white p-2 rounded border border-orange-200">
-                                <Clock className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-medium text-gray-600">Expected Delivery</p>
-                                  <p className="text-sm font-bold text-orange-900">
-                                    {new Date(expectedDelivery).toLocaleDateString('en-IN', {
-                                      day: 'numeric',
-                                      month: 'short',
-                                      year: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit'
-                                    })}
-                                  </p>
-                                  <p className="text-xs text-gray-500 mt-1">Estimated arrival</p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Items Summary */}
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <p className="text-xs font-medium text-gray-700 mb-2">Parts:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {issue.items.slice(0, 3).map((item, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-md text-xs font-medium text-gray-700 border border-gray-200"
-                            >
-                              <Package size={10} />
-                              {item.partName} (Qty: {item.quantity || item.issuedQty || item.approvedQty || 0})
-                            </span>
-                          ))}
-                          {issue.items.length > 3 && (
-                            <span className="inline-flex items-center px-2 py-1 bg-gray-100 rounded-md text-xs text-gray-600">
-                              +{issue.items.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-xs text-gray-400 mt-2">
-                        Dispatched: {issue.issuedAt ? new Date(issue.issuedAt).toLocaleDateString() : 'N/A'}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             )}
           </CardBody>

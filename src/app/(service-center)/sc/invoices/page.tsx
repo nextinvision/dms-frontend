@@ -1,8 +1,9 @@
 "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { Suspense, useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoiceRepository } from "@/core/repositories/invoice.repository";
+import { jobCardRepository } from "@/core/repositories/job-card.repository";
 import { useRole } from "@/shared/hooks";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -37,13 +38,16 @@ function InvoicesContent() {
   const [selectedInvoice, setSelectedInvoice] = useState<ServiceCenterInvoice | null>(null);
   const [showDetails, setShowDetails] = useState<boolean>(false);
   const [showGenerateModal, setShowGenerateModal] = useState<boolean>(false);
+  const [selectedJobCardForInvoice, setSelectedJobCardForInvoice] = useState<string>("");
   const [invoiceForm, setInvoiceForm] = useState({
     customerName: "",
     vehicle: "",
     jobCardId: "",
+    customerId: "", // Store customer ID
+    vehicleId: "",  // Store vehicle ID
     date: new Date().toISOString().split("T")[0],
     dueDate: "",
-    items: [{ name: "", qty: 1, price: "", hsnSacCode: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { hsnSacCode?: string; gstRate?: number }>,
+    items: [{ name: "", qty: 1, price: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,
     paymentMethod: "" as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "",
     gstRequirement: false,
     businessNameForInvoice: "",
@@ -60,6 +64,7 @@ function InvoicesContent() {
   const searchParams = useSearchParams();
   const invoiceIdFromParams = searchParams?.get("invoiceId");
   const [handledInvoiceId, setHandledInvoiceId] = useState<string | null>(null);
+  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
 
   // Fetch invoices from backend
   const { data: fetchedInvoices = [], isLoading } = useQuery({
@@ -67,7 +72,26 @@ function InvoicesContent() {
     queryFn: () => invoiceRepository.getAll(),
   });
 
+  // Fetch completed job cards from backend
+  const { data: completedJobCards = [] } = useQuery({
+    queryKey: ['jobCards', 'completed'],
+    queryFn: () => jobCardRepository.getByStatus('COMPLETED'),
+  });
+
   const [invoices, setInvoices] = useState<ServiceCenterInvoice[]>([]);
+  const queryClient = useQueryClient();
+
+  const createInvoiceMutation = useMutation({
+    mutationFn: (invoice: ServiceCenterInvoice) => invoiceRepository.create(invoice),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      alert(`Invoice generated and saved successfully! Invoice Number: ${data.invoiceNumber || data.id}`);
+    },
+    onError: (err) => {
+      console.error("Failed to save invoice", err);
+      alert("Invoice generated locally but failed to save to server. It may be lost on refresh.");
+    }
+  });
 
   // Sync fetched invoices to local state
   useEffect(() => {
@@ -76,6 +100,21 @@ function InvoicesContent() {
     }
   }, [fetchedInvoices]);
 
+  // Filter completed job cards that don't have invoices yet
+  const availableJobCardsForInvoice = useMemo(() => {
+    const invoicedJobCardIds = new Set(
+      invoices
+        .filter(inv => inv.jobCardId)
+        .map(inv => inv.jobCardId)
+    );
+
+    return completedJobCards.filter(
+      jc => !invoicedJobCardIds.has(jc.id) && !invoicedJobCardIds.has(jc.jobCardNumber)
+    );
+  }, [completedJobCards, invoices]);
+
+
+  const createFromJobCardId = searchParams?.get("createFromJobCard");
 
   useEffect(() => {
     if (!invoiceIdFromParams || handledInvoiceId === invoiceIdFromParams) {
@@ -98,7 +137,68 @@ function InvoicesContent() {
 
   }, [invoiceIdFromParams, handledInvoiceId, invoices, router]);
 
-  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
+  // Handle createFromJobCard query param
+  useEffect(() => {
+    if (createFromJobCardId) {
+      const fetchAndPopulate = async () => {
+        try {
+          const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
+          const jobCard = await jobCardService.getById(createFromJobCardId);
+
+          if (jobCard) {
+            // Mock service center data for utility (since we don't have full object in context)
+            const serviceCenterData: any = {
+              id: serviceCenterContext.serviceCenterId || "sc-001",
+              name: serviceCenterContext.serviceCenterName || "Service Center",
+              state: "Maharashtra", // Default or fetch real one
+              address: "",
+              phone: ""
+            };
+
+            const populatedData = populateInvoiceFromJobCard(jobCard, serviceCenterData);
+
+            // Map enhancedItems to form items to ensure correct unit price usage
+            const formItems = populatedData.enhancedItems?.map(item => ({
+              name: item.name,
+              qty: item.quantity,
+              price: item.unitPrice.toString(), // Use unit price, not total amount
+              gstRate: item.gstRate
+            })) || [{ name: "", qty: 1, price: "", gstRate: 18 }];
+
+            setInvoiceForm({
+              customerName: populatedData.customerName || "",
+              vehicle: populatedData.vehicle || "",
+              jobCardId: populatedData.jobCardId || "", // Using Job Card Number from utils
+              customerId: jobCard.customerId || "", // Store customer ID
+              vehicleId: jobCard.vehicleId || "",   // Store vehicle ID
+              date: new Date().toISOString().split("T")[0],
+              dueDate: populatedData.dueDate || new Date().toISOString().split("T")[0],
+              items: formItems,
+              paymentMethod: "",
+              gstRequirement: false,
+              businessNameForInvoice: "",
+              customerGstNumber: populatedData.customerDetails?.gstNumber || "",
+              customerPanNumber: "",
+              customerAddress: populatedData.customerDetails?.address || "",
+              customerState: populatedData.customerDetails?.state || "",
+              placeOfSupply: populatedData.placeOfSupply || "",
+              discount: 0,
+            });
+            setShowGenerateModal(true);
+
+            // Clean up URL
+            router.replace("/sc/invoices");
+          }
+        } catch (error) {
+          console.error("Error fetching job card for invoice:", error);
+          alert("Failed to load Job Card details for invoice generation.");
+        }
+      };
+
+      fetchAndPopulate();
+    }
+  }, [createFromJobCardId, serviceCenterContext, router]);
+
   const visibleInvoices = useMemo(
     () => filterByServiceCenter(invoices, serviceCenterContext),
     [invoices, serviceCenterContext]
@@ -287,7 +387,7 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
   const handleAddInvoiceItem = () => {
     setInvoiceForm({
       ...invoiceForm,
-      items: [...invoiceForm.items, { name: "", qty: 1, price: "", hsnSacCode: "", gstRate: 18 }],
+      items: [...invoiceForm.items, { name: "", qty: 1, price: "", gstRate: 18 }],
     });
   };
 
@@ -306,7 +406,7 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
     setInvoiceForm({ ...invoiceForm, items: updatedItems });
   };
 
-  const handleGenerateInvoice = () => {
+  const handleGenerateInvoice = async () => {
     // Validate form
     if (!invoiceForm.customerName || !invoiceForm.vehicle || !invoiceForm.date || !invoiceForm.dueDate) {
       alert("Please fill in all required fields.");
@@ -318,157 +418,169 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
       return;
     }
 
-    // Get service center details
-    const contextServiceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
-    const contextServiceCenterName = serviceCenterContext.serviceCenterName ?? "Service Center";
+    // We need to get actual IDs for the backend
+    // For now, we'll need to handle the case where we don't have them
+    // The backend expects UUIDs for serviceCenterId, customerId, and vehicleId
 
-    // Determine service center code and state (default values for now)
-    let serviceCenterCode = "SC001";
-    let serviceCenterState = "Delhi";
-    if (contextServiceCenterId === "2" || contextServiceCenterId === "sc-002") {
-      serviceCenterCode = "SC002";
-      serviceCenterState = "Maharashtra";
-    } else if (contextServiceCenterId === "3" || contextServiceCenterId === "sc-003") {
-      serviceCenterCode = "SC003";
-      serviceCenterState = "Karnataka";
-    }
+    try {
+      // Get service center details
+      const contextServiceCenterId = String(serviceCenterContext.serviceCenterId ?? "1");
 
-    // Generate invoice number
-    const currentYear = new Date().getFullYear();
-    const invoiceNumber = generateInvoiceNumber(serviceCenterCode, currentYear, invoices);
+      // Check if we have the necessary UUIDs
+      // We need to fetch or have stored: customerId and vehicleId from the job card or form
+      // This is a limitation - we need these IDs to be available
 
-    // Process items and calculate GST
-    const placeOfSupply = invoiceForm.placeOfSupply || invoiceForm.customerState || serviceCenterState;
-    const enhancedItems: EnhancedServiceCenterInvoiceItem[] = invoiceForm.items.map((item) => {
-      const unitPrice = parseFloat(item.price.replace("₹", "").replace(",", "")) || 0;
-      const quantity = item.qty || 1;
-      const taxableAmount = unitPrice * quantity;
-      const gstRate = item.gstRate || 18;
+      // For job card invoices, we should have this data from the populated invoice
+      let customerId: string | undefined;
+      let vehicleId: string | undefined;
+      let jobCardIdUUID: string | undefined;
 
-      const gst = calculateGST(taxableAmount, gstRate, placeOfSupply, serviceCenterState);
+      // If creating from job card, try to get from the query params
+      const createFromJobCardId = searchParams?.get("createFromJobCard");
+      if (createFromJobCardId) {
+        // Fetch the job card to get customer and vehicle IDs
+        const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
+        const jobCard = await jobCardService.getById(createFromJobCardId);
 
-      return {
-        name: item.name,
-        hsnSacCode: item.hsnSacCode || "",
-        unitPrice: unitPrice,
-        quantity: quantity,
-        taxableAmount: taxableAmount,
-        gstRate: gstRate,
-        cgstAmount: gst.cgst,
-        sgstAmount: gst.sgst,
-        igstAmount: gst.igst,
-        totalAmount: taxableAmount + gst.cgst + gst.sgst + gst.igst,
+        if (jobCard) {
+          customerId = jobCard.customerId;
+          vehicleId = jobCard.vehicleId;
+          jobCardIdUUID = jobCard.id;
+        }
+      }
+
+      // If we still don't have the IDs, we can't proceed
+      if (!customerId || !vehicleId) {
+        alert("Missing customer or vehicle information. Please ensure you have selected a customer and vehicle.");
+        return;
+      }
+
+      // Prepare items for backend (matching the DTO)
+      const backendItems = invoiceForm.items.map((item) => {
+        const unitPrice = parseFloat(item.price.replace("₹", "").replace(",", "")) || 0;
+        return {
+          name: item.name,
+          unitPrice: unitPrice,
+          quantity: item.qty || 1,
+          gstRate: item.gstRate || 18,
+        };
+      });
+
+      // Prepare DTO for backend
+      const createInvoiceDto = {
+        serviceCenterId: contextServiceCenterId,
+        customerId: customerId,
+        vehicleId: vehicleId,
+        jobCardId: jobCardIdUUID,
+        invoiceType: jobCardIdUUID ? 'JOB_CARD' : 'OTC_ORDER' as any,
+        items: backendItems,
+        placeOfSupply: invoiceForm.placeOfSupply || invoiceForm.customerState || undefined,
       };
-    });
 
-    // Calculate totals
-    const subtotal = enhancedItems.reduce((sum, item) => sum + item.taxableAmount, 0);
-    const totalCgst = enhancedItems.reduce((sum, item) => sum + item.cgstAmount, 0);
-    const totalSgst = enhancedItems.reduce((sum, item) => sum + item.sgstAmount, 0);
-    const totalIgst = enhancedItems.reduce((sum, item) => sum + item.igstAmount, 0);
-    const totalTax = totalCgst + totalSgst + totalIgst;
-    const discount = invoiceForm.discount || 0;
-    const roundOff = 0; // Can be calculated if needed
-    const grandTotal = subtotal + totalTax - discount + roundOff;
+      // Call mutation to save to backend
+      createInvoiceMutation.mutate(createInvoiceDto as any);
 
-    // Get service center details (mock data for now - should come from service center config)
-    const serviceCenterDetails = {
-      name: contextServiceCenterName,
-      address: "123 Service Center Address",
-      city: serviceCenterState === "Delhi" ? "New Delhi" : serviceCenterState === "Maharashtra" ? "Mumbai" : "Bangalore",
-      state: serviceCenterState,
-      pincode: "110001",
-      gstNumber: "29ABCDE1234F1Z5", // Mock GST - should come from service center config
-      panNumber: "ABCDE1234F", // Mock PAN - should come from service center config
-      phone: "+91-1234567890",
-      email: "info@servicecenter.com",
-    };
+      // Reset form and close modal
+      setInvoiceForm({
+        customerName: "",
+        vehicle: "",
+        jobCardId: "",
+        customerId: "", // Store customer ID
+        vehicleId: "",  // Store vehicle ID
+        date: new Date().toISOString().split("T")[0],
+        dueDate: "",
+        items: [{ name: "", qty: 1, price: "", gstRate: 18 }],
+        paymentMethod: "",
+        gstRequirement: false,
+        businessNameForInvoice: "",
+        customerGstNumber: "",
+        customerPanNumber: "",
+        customerAddress: "",
+        customerState: "",
+        placeOfSupply: "",
+        discount: 0,
+      });
+      setSelectedJobCardForInvoice("");
+      setShowGenerateModal(false);
+    } catch (error) {
+      console.error("Error generating invoice:", error);
+      alert("Failed to generate invoice. Please try again.");
+    }
+  };
 
-    const customerDetails = {
-      name: invoiceForm.customerName,
-      address: invoiceForm.customerAddress || "",
-      state: invoiceForm.customerState || placeOfSupply,
-      phone: "",
-      email: "",
-      gstNumber: invoiceForm.customerGstNumber || undefined,
-      panNumber: invoiceForm.customerPanNumber || undefined,
-    };
+  // Handle job card selection from dropdown
+  const handleJobCardSelection = (jobCardId: string) => {
+    setSelectedJobCardForInvoice(jobCardId);
 
-    // Create new invoice with enhanced structure
-    const newInvoice: ServiceCenterInvoice = {
-      id: invoiceNumber,
-      invoiceNumber: invoiceNumber,
-      jobCardId: invoiceForm.jobCardId || undefined,
-      customerName: invoiceForm.customerName,
-      vehicle: invoiceForm.vehicle,
-      date: invoiceForm.date,
-      dueDate: invoiceForm.dueDate,
-      amount: `₹${grandTotal.toLocaleString("en-IN")}`,
-      paidAmount: "₹0",
-      balance: `₹${grandTotal.toLocaleString("en-IN")}`,
-      status: "Unpaid" as PaymentStatus,
-      paymentMethod: invoiceForm.paymentMethod || null,
-      serviceCenterId: contextServiceCenterId,
-      serviceCenterName: contextServiceCenterName,
-      items: invoiceForm.items.map(item => ({
-        name: item.name,
-        qty: item.qty,
-        price: item.price,
-      })),
-      // Enhanced fields
-      serviceCenterDetails,
-      customerDetails,
-      placeOfSupply,
-      subtotal,
-      totalTaxableAmount: subtotal,
-      totalCgst,
-      totalSgst,
-      totalIgst,
-      totalTax,
-      discount,
-      roundOff,
-      grandTotal,
-      amountInWords: convertNumberToWords(grandTotal),
-      enhancedItems,
-      createdBy: "System", // Should come from user info
-    };
-
-    // Validate invoice
-    const validation = validateInvoiceData(newInvoice);
-    if (!validation.valid) {
-      alert(`Validation errors:\n${validation.errors.join("\n")}`);
+    if (!jobCardId) {
+      // Reset form if no job card is selected
+      setInvoiceForm({
+        customerName: "",
+        vehicle: "",
+        jobCardId: "",
+        customerId: "",
+        vehicleId: "",
+        date: new Date().toISOString().split("T")[0],
+        dueDate: "",
+        items: [{ name: "", qty: 1, price: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,
+        paymentMethod: "" as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "",
+        gstRequirement: false,
+        businessNameForInvoice: "",
+        customerGstNumber: "",
+        customerPanNumber: "",
+        customerAddress: "",
+        customerState: "",
+        placeOfSupply: "",
+        discount: 0,
+      });
       return;
     }
 
-    // Add to invoices list
-    setInvoices([...invoices, newInvoice]);
+    // Find the selected job card
+    const jobCard = availableJobCardsForInvoice.find(
+      jc => jc.id === jobCardId || jc.jobCardNumber === jobCardId
+    );
 
-    // Store in localStorage
-    const storedInvoices = safeStorage.getItem<ServiceCenterInvoice[]>("invoices", []);
-    storedInvoices.push(newInvoice);
-    safeStorage.setItem("invoices", storedInvoices);
+    if (jobCard) {
+      const serviceCenter: any = {
+        id: jobCard.serviceCenterId,
+        code: jobCard.serviceCenterCode || "SC001",
+        name: jobCard.serviceCenterName || serviceCenterContext.serviceCenterName || "Service Center",
+        state: "Delhi", // Default, should come from service center config
+      };
 
-    // Reset form and close modal
-    setInvoiceForm({
-      customerName: "",
-      vehicle: "",
-      jobCardId: "",
-      date: new Date().toISOString().split("T")[0],
-      dueDate: "",
-      items: [{ name: "", qty: 1, price: "", hsnSacCode: "", gstRate: 18 }],
-      paymentMethod: "",
-      gstRequirement: false,
-      businessNameForInvoice: "",
-      customerGstNumber: "",
-      customerPanNumber: "",
-      customerAddress: "",
-      customerState: "",
-      placeOfSupply: "",
-      discount: 0,
-    });
-    setShowGenerateModal(false);
+      const populatedData = populateInvoiceFromJobCard(jobCard, serviceCenter);
 
-    alert(`Invoice generated successfully! Invoice Number: ${invoiceNumber}`);
+      if (populatedData) {
+        // Map enhancedItems to form items
+        const formItems = populatedData.enhancedItems?.map(item => ({
+          name: item.name,
+          qty: item.quantity,
+          price: item.unitPrice.toString(),
+          gstRate: item.gstRate
+        })) || [{ name: "", qty: 1, price: "", gstRate: 18 }];
+
+        setInvoiceForm({
+          customerName: populatedData.customerName || "",
+          vehicle: populatedData.vehicle || "",
+          jobCardId: populatedData.jobCardId || "",
+          customerId: jobCard.customerId || "",
+          vehicleId: jobCard.vehicleId || "",
+          date: new Date().toISOString().split("T")[0],
+          dueDate: populatedData.dueDate || new Date().toISOString().split("T")[0],
+          items: formItems as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,
+          paymentMethod: "" as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "",
+          gstRequirement: false,
+          businessNameForInvoice: "",
+          customerGstNumber: populatedData.customerDetails?.gstNumber || "",
+          customerPanNumber: "",
+          customerAddress: populatedData.customerDetails?.address || "",
+          customerState: populatedData.customerDetails?.state || "",
+          placeOfSupply: populatedData.placeOfSupply || "",
+          discount: 0,
+        });
+      }
+    }
   };
 
   if (isLoading) {
@@ -491,14 +603,17 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
           <button
             onClick={() => {
               setShowGenerateModal(true);
+              setSelectedJobCardForInvoice("");
               setInvoiceForm({
                 customerName: "",
                 vehicle: "",
                 jobCardId: "",
+                customerId: "",
+                vehicleId: "",
                 date: new Date().toISOString().split("T")[0],
                 dueDate: "",
-                items: [{ name: "", qty: 1, price: "", gstRate: 18 }],
-                paymentMethod: "",
+                items: [{ name: "", qty: 1, price: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,
+                paymentMethod: "" as "Cash" | "Card" | "UPI" | "Online" | "Cheque" | "",
                 gstRequirement: false,
                 businessNameForInvoice: "",
                 customerGstNumber: "",
@@ -850,10 +965,13 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
               <button
                 onClick={() => {
                   setShowGenerateModal(false);
+                  setSelectedJobCardForInvoice("");
                   setInvoiceForm({
                     customerName: "",
                     vehicle: "",
                     jobCardId: "",
+                    customerId: "",
+                    vehicleId: "",
                     date: new Date().toISOString().split("T")[0],
                     dueDate: "",
                     items: [{ name: "", qty: 1, price: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,
@@ -875,6 +993,43 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
             </div>
 
             <div className="space-y-4">
+              {/* Job Card Selection */}
+              <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-4 rounded-lg border-2 border-indigo-200">
+                <h3 className="text-lg font-semibold text-indigo-900 mb-3 flex items-center gap-2">
+                  <FileText className="text-indigo-600" size={20} />
+                  Select Completed Job Card
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Choose a job card to auto-fill invoice details
+                    </label>
+                    <select
+                      value={selectedJobCardForInvoice}
+                      onChange={(e) => handleJobCardSelection(e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-white text-gray-800 font-medium"
+                    >
+                      <option value="">-- Select a completed job card or enter manually --</option>
+                      {availableJobCardsForInvoice.map((jc) => (
+                        <option key={jc.id} value={jc.id}>
+                          {jc.jobCardNumber} - {jc.customerName} - {jc.vehicleMake} {jc.vehicleModel} ({jc.registration})
+                        </option>
+                      ))}
+                    </select>
+                    {availableJobCardsForInvoice.length === 0 && (
+                      <p className="mt-2 text-sm text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
+                        ℹ No completed job cards available for invoicing. All completed job cards already have invoices or there are no completed job cards.
+                      </p>
+                    )}
+                    {availableJobCardsForInvoice.length > 0 && (
+                      <p className="mt-2 text-sm text-indigo-600">
+                        💡 {availableJobCardsForInvoice.length} completed job card{availableJobCardsForInvoice.length !== 1 ? 's' : ''} available for invoicing
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Customer Information */}
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Customer Information</h3>
@@ -1214,10 +1369,13 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
                 <button
                   onClick={() => {
                     setShowGenerateModal(false);
+                    setSelectedJobCardForInvoice("");
                     setInvoiceForm({
                       customerName: "",
                       vehicle: "",
                       jobCardId: "",
+                      customerId: "",
+                      vehicleId: "",
                       date: new Date().toISOString().split("T")[0],
                       dueDate: "",
                       items: [{ name: "", qty: 1, price: "", gstRate: 18 }] as Array<ServiceCenterInvoiceItem & { gstRate?: number }>,

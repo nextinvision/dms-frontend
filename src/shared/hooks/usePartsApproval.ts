@@ -1,66 +1,62 @@
 /**
  * Hook for managing parts approval requests
- * Refactored to use API instead of localStorage
+ * Refactored to use JobCardService for Job Card Parts Requests
  */
 
 import { useState, useEffect, useCallback } from "react";
 import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types";
-import { partsIssueService, type PartsIssue } from "@/features/inventory/services/parts-issue.service";
+import { jobCardService } from "@/features/job-cards/services/jobCard.service";
+import { useRole } from "./useRole"; // Assuming in same directory or adjust import
 
-// Helper function to extract user name from user object or string
-const extractUserName = (user: any): string => {
-  if (!user) return "Unknown";
-  if (typeof user === "string") return user;
-  if (typeof user === "object") {
-    // Handle user object with name property
-    if (user.name) return user.name;
-    if (user.email) return user.email;
-    if (user.id) return user.id;
-  }
-  return String(user);
-};
-
-// Reuse mapping helper (can be moved to a shared util later if needed)
-const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
-  const isApproved = issue.status === 'APPROVED' || issue.status === 'ISSUED';
-  const isIssued = issue.status === 'ISSUED';
-  const items = issue.items || []; // Safety check for undefined items
+// Helper to map Backend PartsRequest to Frontend JobCardPartsRequest
+const mapPartsRequestToFrontend = (req: any): JobCardPartsRequest => {
+  const status = req.status;
+  const isScApproved = status === 'APPROVED' || status === 'COMPLETED' || status === 'PARTIALLY_APPROVED';
+  const isIssued = status === 'COMPLETED';
 
   return {
-    id: issue.id,
-    jobCardId: issue.jobCardId,
-    vehicleNumber: "N/A",
-    customerName: "N/A",
-    requestedBy: extractUserName(issue.requestedBy),
-    requestedAt: issue.requestedAt,
-    status: issue.status === 'ISSUED' ? 'approved' : issue.status === 'REJECTED' ? 'rejected' : 'pending',
-    parts: items.map(i => ({
-      partId: i.partId,
-      partName: `Part ${i.partId}`,
-      quantity: i.quantity,
-      isWarranty: i.isWarranty,
-      serialNumber: i.serialNumber
+    id: req.id,
+    jobCardId: req.jobCard?.jobCardNumber || req.jobCardId,
+    vehicleNumber: req.jobCard?.vehicle?.registration || req.jobCard?.vehicle?.vehicleMake || "N/A",
+    customerName: req.jobCard?.customer?.name || "N/A",
+    requestedBy: req.jobCard?.assignedEngineer?.name || "Service Engineer",
+    requestedAt: req.createdAt,
+    status: status === 'COMPLETED' ? 'APPROVED' : status === 'REJECTED' ? 'REJECTED' : 'PENDING',
+    parts: (req.items || []).map((item: any) => ({
+      partId: item.id,
+      partName: item.partName || `Part #${item.partNumber}`,
+      quantity: item.requestedQty || item.quantity,
+      isWarranty: item.isWarranty,
+      serialNumber: item.partNumber
     })),
-    scManagerApproved: isApproved,
-    scManagerApprovedBy: issue.approvedBy ? extractUserName(issue.approvedBy) : undefined,
-    scManagerApprovedAt: issue.approvedAt,
+    scManagerApproved: isScApproved,
+    scManagerApprovedBy: isScApproved ? "SC Manager" : undefined,
+    scManagerApprovedAt: isScApproved ? req.updatedAt : undefined,
     inventoryManagerAssigned: isIssued,
-    // inventoryManagerAssignedBy not directly available
+    assignedEngineer: isIssued ? (req.jobCard?.assignedEngineer?.name || "Engineer") : undefined
   };
 };
 
 export function usePartsApproval() {
+  const { userInfo } = useRole();
   const [pendingRequests, setPendingRequests] = useState<JobCardPartsRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadRequests = useCallback(async () => {
     try {
-      const allIssues = await partsIssueService.getAll();
-      const allRequests = allIssues.map(mapPartsIssueToRequest);
-      // Filter for requests that need attention (Pending SC Approval OR Pending Inventory Assignment?)
-      // The original hook filtered for 'pending' status.
-      // In new mapping: status 'pending' = Created, not SC approved.
-      const pending = allRequests.filter((r) => r.status === "pending" || (r.scManagerApproved && !r.inventoryManagerAssigned));
+      // Fetch parts requests via JobCardService
+      const allRequestsData = await jobCardService.getPendingPartsRequests(userInfo?.serviceCenterId?.toString() || undefined);
+      const allRequests = allRequestsData.map(mapPartsRequestToFrontend);
+
+      // Filter for requests that need attention:
+      // 1. Pending SC Approval (status != 'approved/rejected' and !scManagerApproved)
+      // 2. SC Approved but not Issued (scManagerApproved and !inventoryManagerAssigned)
+      // We want to show pending count.
+      // Dashboard usually shows "Actionable" items.
+      const pending = allRequests.filter((r) =>
+        (r.status !== 'REJECTED') &&
+        (!r.scManagerApproved || (!r.inventoryManagerAssigned && r.scManagerApproved))
+      );
 
       setPendingRequests(pending);
     } catch (error) {
@@ -68,41 +64,25 @@ export function usePartsApproval() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [userInfo?.serviceCenterId]);
 
   useEffect(() => {
-    loadRequests();
-    // Refresh every 30 seconds to catch new requests
-    const interval = setInterval(loadRequests, 30000);
-    return () => clearInterval(interval);
+    if (typeof window !== 'undefined') {
+      loadRequests();
+      const interval = setInterval(loadRequests, 30000);
+      return () => clearInterval(interval);
+    }
   }, [loadRequests]);
 
   const approve = useCallback(async (id: string, approvedBy: string, notes?: string) => {
     try {
-      // Logic for approval depends on current state.
-      // If we are SC Manager, we call approve.
-      // If we are Inventory Manager, we call dispatch (assign).
-      // This hook seems generic.
-      // Assuming this is used by Inventory Dashboard to "approve" -> meaning dispatch/assign?
-      // Or is it used by SC Manager?
-      // Looking at previous code, it did stock deduction -> so it was likely Inventory Manager "issue".
-      // Let's assume this refers to the *Next Step* of approval suitable for the context.
-      // Since it's 'usePartsApproval' and usually used in dashboard, let's treat it as "Approve/Process".
-      // But wait, the original code specifically did STOCK DEDUCTION. That implies Inventory Manager action.
-      // However, separating concerns: this hook should just call the API.
-
-      // If the request is pending SC approval, we should call approve.
-      // If it is SC approved, we should call dispatch.
-      // But we don't know the intent easily here without more context.
-      // For safety, let's assume it attempts to move the workflow forward.
-
-      // Fetch specific request to check status? Or just try approve.
-      // Simplification: Call approve endpoint. If it's already approved, backend should handle or we call dispatch.
-      // Actually, let's just use partsIssueService.approve for now, as that's the generic "approve" action.
-      // If it needs dispatch, the UI should call dispatch directly (like in ApprovalsPage).
-
-      await partsIssueService.approve(id, []);
-
+      // 'Approve' generic action. 
+      // If we are implicitly 'approving' in dashboard, it might mean Issue or Sc Approve.
+      // But typically this hook might be used by generic component. 
+      // For safety, let's assume 'APPROVED' status update (SC Manager step).
+      // If Inventory Manager uses it, they usually 'Issue'.
+      // If we simply set status APPROVED, it moves to next step.
+      await jobCardService.updatePartsRequestStatus(id, 'APPROVED', notes);
       await loadRequests();
     } catch (error) {
       console.error("Failed to approve request:", error);
@@ -112,8 +92,7 @@ export function usePartsApproval() {
 
   const reject = useCallback(async (id: string, rejectedBy: string, notes?: string) => {
     try {
-      console.warn("Reject not implemented in API yet. Stubbing success.");
-      // await partsIssueService.reject(id, notes); // If available
+      await jobCardService.updatePartsRequestStatus(id, 'REJECTED', notes);
       await loadRequests();
     } catch (error) {
       console.error("Failed to reject request:", error);

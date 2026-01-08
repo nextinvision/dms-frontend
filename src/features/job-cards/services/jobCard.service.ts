@@ -115,6 +115,9 @@ class JobCardService {
     });
     return response.data;
   }
+  async deletePartsRequest(id: string): Promise<void> {
+    await apiClient.post(`${API_ENDPOINTS.JOB_CARDS}/parts-requests/${id}/delete`);
+  }
 }
 
 export const jobCardService = new JobCardService();

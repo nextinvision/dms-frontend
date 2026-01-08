@@ -2,7 +2,7 @@
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ClipboardList, ArrowLeft } from "lucide-react";
+import { ClipboardList, ArrowLeft, FileText } from "lucide-react";
 import type { JobCard } from "@/shared/types";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import JobCardFormModal from "../../components/job-cards/JobCardFormModal";
@@ -136,6 +136,7 @@ export default function AdvisorJobCardDetailPage({ params, searchParams }: Advis
             </div>
           </div>
           <div className="flex items-center gap-2">
+
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${jobCard.status === "CREATED" ? "bg-blue-100 text-blue-700" :
               jobCard.status === "IN_PROGRESS" ? "bg-yellow-100 text-yellow-700" :
                 jobCard.status === "COMPLETED" ? "bg-green-100 text-green-700" :
