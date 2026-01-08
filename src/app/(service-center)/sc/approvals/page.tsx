@@ -5,7 +5,9 @@ import { useToast } from "@/core/contexts/ToastContext";
 import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { Button } from "@/components/ui/Button";
-import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList, Package } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList, Package, UserPlus } from "lucide-react";
+import { staffService } from "@/features/workshop/services/staff.service";
+import type { Engineer } from "@/shared/types/workshop.types";
 const safeStorage = {
   getItem: <T,>(key: string, defaultValue: T): T => {
     if (typeof window === "undefined") return defaultValue;
@@ -489,21 +491,93 @@ export default function Approvals() {
     openRejection(jobCardId, 'JOB_CARD');
   };
 
+  // Engineers State
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [approvePartsModalState, setApprovePartsModalState] = useState<{
+    isOpen: boolean;
+    requestId: string | null;
+    selectedEngineerId: string;
+    currentEngineerName: string;
+    jobCardId: string;
+  }>({
+    isOpen: false,
+    requestId: null,
+    selectedEngineerId: "",
+    currentEngineerName: "",
+    jobCardId: "",
+  });
+
+  // Fetch engineers on mount
+  useEffect(() => {
+    const fetchEngineers = async () => {
+      try {
+        const data = await staffService.getEngineers(serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined);
+        setEngineers(data);
+      } catch (error) {
+        console.error("Failed to fetch engineers:", error);
+      }
+    };
+    if (serviceCenterContext.serviceCenterId) {
+      fetchEngineers();
+    }
+  }, [serviceCenterContext.serviceCenterId]);
+
   const handleApprovePartsRequest = async (requestId: string) => {
-    openConfirmation(
-      "Approve Parts Request",
-      "Approve this parts request? This will authorize the parts issue.",
-      async () => {
-        try {
-          await jobCardService.updatePartsRequestStatus(requestId, "APPROVED");
-          await refreshPartsRequests();
-          showSuccess("Parts Request Approved!");
-        } catch (error) {
-          console.error("Failed to approve parts request", error);
-          showError("Failed to approve parts request");
+    const request = partsRequests.find(r => r.id === requestId);
+    if (!request || !request.jobCard) return;
+
+    let assignedEngineerId = "";
+    let assignedEngineerName = "Unassigned";
+
+    const { assignedEngineer } = request.jobCard;
+
+    if (assignedEngineer) {
+      if (typeof assignedEngineer === 'string') {
+        assignedEngineerId = assignedEngineer;
+        const engineer = engineers.find(e => e.id === assignedEngineer);
+        if (engineer) assignedEngineerName = engineer.name;
+      } else {
+        assignedEngineerId = assignedEngineer.id;
+        assignedEngineerName = assignedEngineer.name;
+      }
+    }
+
+    setApprovePartsModalState({
+      isOpen: true,
+      requestId,
+      selectedEngineerId: assignedEngineerId, // Pre-select assigned one
+      currentEngineerName: assignedEngineerName,
+      jobCardId: request.jobCard.id,
+    });
+  };
+
+  const handleConfirmPartsApproval = async () => {
+    const { requestId, selectedEngineerId, jobCardId } = approvePartsModalState;
+    if (!requestId) return;
+
+    try {
+      // 1. If engineer changed/selected (and differs from original), update assignment
+      if (selectedEngineerId) {
+        // Optionally check if different, but re-assigning is safe
+        // Find engineer name
+        const engineer = engineers.find(e => e.id === selectedEngineerId);
+        if (engineer) {
+          await jobCardService.assignEngineer(jobCardId, selectedEngineerId, engineer.name);
         }
       }
-    );
+
+      // 2. Approve Request
+      await jobCardService.updatePartsRequestStatus(requestId, "APPROVED");
+
+      await refreshPartsRequests();
+      await refreshJobCards(); // In case status changed
+
+      setApprovePartsModalState(prev => ({ ...prev, isOpen: false }));
+      showSuccess("Parts Request Approved & Engineer Confirmed!");
+    } catch (error) {
+      console.error("Failed to approve parts request", error);
+      showError("Failed to approve parts request");
+    }
   };
 
   const handleRejectPartsRequest = async (requestId: string) => {
@@ -579,7 +653,6 @@ export default function Approvals() {
                           <p className="text-gray-700">
                             <span className="font-semibold">Service Type:</span> {
                               jobCard.serviceType ||
-                              jobCard.part1?.serviceType ||
                               "General Service"
                             }
                           </p>
@@ -652,51 +725,115 @@ export default function Approvals() {
                         <div className="flex items-center gap-3 mb-3">
                           <Package className="text-orange-600" size={20} />
                           <span className="font-semibold text-lg">Parts Request</span>
-                          <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
-                            Pending Approval
+                          {/* 
+                            Logic to show detailed status:
+                            - PENDING: Needs general approval
+                            - APPROVED: Approved by Inventory Manager, pending final action
+                            - PARTIALLY_APPROVED: Some items approved
+                          */}
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${request.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                            request.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                            {request.status === 'PENDING' ? 'Pending Approval' : request.status.replace('_', ' ')}
                           </span>
                         </div>
 
-                        <div className="space-y-2 mb-4">
-                          <p className="text-gray-700">
-                            <span className="font-semibold">Job Card:</span> {request.jobCard?.jobCardNumber || "N/A"}
-                          </p>
-                          <p className="text-gray-700">
-                            <span className="font-semibold">Customer:</span> {request.jobCard?.customerName}
-                          </p>
-                          <p className="text-gray-700">
-                            <span className="font-semibold">Vehicle:</span> {request.jobCard?.vehicleObject ?
-                              `${request.jobCard.vehicleObject.vehicleMake} ${request.jobCard.vehicleObject.vehicleModel} (${request.jobCard.vehicleObject.registration})` :
-                              (typeof request.jobCard?.vehicle === 'string' ? request.jobCard?.vehicle : request.jobCard?.registration)}
-                          </p>
-                          <div className="mt-2 bg-gray-50 p-3 rounded-md">
-                            <span className="font-semibold text-gray-700 block mb-1">Requested Items:</span>
-                            <ul className="list-disc list-inside text-sm text-gray-600">
-                              {request.items.map((item, idx) => (
-                                <li key={idx}>
-                                  {item.partName} {item.partNumber && `(${item.partNumber})`} - Qty: {item.requestedQty}
-                                  {item.isWarranty && <span className="ml-2 text-green-600 text-xs font-semibold px-1 border border-green-200 rounded">Warranty</span>}
-                                </li>
-                              ))}
-                            </ul>
+                        <div className="space-y-4 mb-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Job Card:</span> {request.jobCard?.jobCardNumber || "N/A"}
+                            </p>
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Technician:</span> {
+                                (typeof request.jobCard?.assignedEngineer === 'string'
+                                  ? engineers.find(e => e.id === request.jobCard?.assignedEngineer)?.name
+                                  : request.jobCard?.assignedEngineer?.name) || "Unassigned"
+                              }
+                            </p>
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Customer:</span> {request.jobCard?.customerName || request.jobCard?.customer?.name || "N/A"}
+                            </p>
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Vehicle:</span> {
+                                (() => {
+                                  const jc = request.jobCard;
+                                  if (!jc) return "N/A";
+
+                                  const makeModel =
+                                    (jc.vehicleObject && `${jc.vehicleObject.vehicleMake} ${jc.vehicleObject.vehicleModel}`) ||
+                                    (typeof jc.vehicle === 'string' ? jc.vehicle : (jc.vehicle?.vehicleMake && `${jc.vehicle.vehicleMake} ${jc.vehicle.vehicleModel}`)) ||
+                                    (jc.vehicleMake && `${jc.vehicleMake} ${jc.vehicleModel || ''}`) ||
+                                    "N/A";
+
+                                  const reg =
+                                    jc.vehicleObject?.registration ||
+                                    jc.registration ||
+                                    (typeof jc.vehicle !== 'string' ? jc.vehicle?.registration : '') ||
+                                    "No Reg";
+
+                                  return `${makeModel} (${reg})`;
+                                })()
+                              }
+                            </p>
                           </div>
-                          <p className="text-sm text-gray-500 mt-2">
+
+                          <div className="mt-2 text-sm text-gray-500">
                             Requested: {new Date(request.createdAt).toLocaleString("en-IN")}
-                          </p>
+                          </div>
+
+                          <div className="mt-4 border rounded-lg overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Part Details</th>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested Qty</th>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Status</th>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {request.items.map((item, idx) => (
+                                  <tr key={idx}>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      <div className="font-medium">{item.partName}</div>
+                                      <div className="text-xs text-gray-500">{item.partNumber || "N/A"}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      {item.requestedQty}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                      {/* This would ideally check real-time stock */}
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                        Check Stock
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                      {item.isWarranty ? (
+                                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">Warranty</span>
+                                      ) : (
+                                        <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">Paid</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
 
                       <div className="flex flex-col gap-2">
                         <button
                           onClick={() => handleApprovePartsRequest(request.id)}
-                          className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-medium"
+                          className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-medium justify-center"
                         >
                           <ShieldCheck size={18} />
                           Approve
                         </button>
                         <button
                           onClick={() => handleRejectPartsRequest(request.id)}
-                          className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium"
+                          className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium justify-center"
                         >
                           <ShieldX size={18} />
                           Reject
@@ -931,6 +1068,61 @@ export default function Approvals() {
                   disabled={!rejectionReason.trim()}
                 >
                   Confirm Rejection
+                </Button>
+              </div>
+            </div>
+          </Modal>
+
+          {/* Parts Approval & Engineer Selection Modal */}
+          <Modal
+            isOpen={approvePartsModalState.isOpen}
+            onClose={() => setApprovePartsModalState(prev => ({ ...prev, isOpen: false }))}
+            title="Approve Parts & Confirm Engineer"
+            size="md"
+          >
+            <div className="space-y-6">
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
+                <p className="text-sm text-blue-800">
+                  <span className="font-semibold">Note:</span> Please verify the engineer receiving the parts.
+                  The currently assigned engineer is pre-selected. Changing the engineer here will update the job card assignment.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assigned Engineer <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <UserPlus className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                  <select
+                    value={approvePartsModalState.selectedEngineerId}
+                    onChange={(e) => setApprovePartsModalState(prev => ({ ...prev, selectedEngineerId: e.target.value }))}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none"
+                  >
+                    <option value="" disabled>Select Engineer</option>
+                    {engineers.map((engineer) => (
+                      <option key={engineer.id} value={engineer.id}>
+                        {engineer.name} {engineer.status !== 'Available' ? `(${engineer.status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <Button
+                  onClick={() => setApprovePartsModalState(prev => ({ ...prev, isOpen: false }))}
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmPartsApproval}
+                  className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+                  disabled={!approvePartsModalState.selectedEngineerId}
+                >
+                  <ShieldCheck size={18} />
+                  Approve & Issue
                 </Button>
               </div>
             </div>

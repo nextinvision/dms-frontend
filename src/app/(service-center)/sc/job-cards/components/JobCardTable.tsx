@@ -20,17 +20,21 @@ interface JobCardTableProps {
     isServiceManager?: boolean;
     isTechnician?: boolean;
     userInfo?: UserInfo | null;
+    engineers?: any[]; // Allow any for flexibility, ideal is User[]
     onView?: (jobId: string) => void;
     onCreateQuotation?: (job: JobCard) => void;
     onEditDraft?: (job: JobCard) => void;
     onEdit?: (jobId: string) => void;
     onAssignEngineer?: (jobId: string) => void;
+    onDirectAssignEngineer?: (jobId: string, engineerId: string) => void;
     onUpdateStatus?: (jobId: string, status: JobCardStatus) => void;
+    onDirectUpdateStatus?: (jobId: string, status: JobCardStatus) => void;
     getNextStatus?: (status: JobCardStatus) => JobCardStatus[];
     hasQuotation?: (jobId: string) => boolean;
     onPassToManager?: (jobId: string) => void;
     onApprove?: (jobId: string) => void;
     onReject?: (jobId: string) => void;
+    onCreateInvoice?: (job: JobCard) => void;
 }
 
 const JobCardTable = React.memo<JobCardTableProps>(({
@@ -43,17 +47,21 @@ const JobCardTable = React.memo<JobCardTableProps>(({
     isServiceManager,
     isTechnician,
     userInfo,
+    engineers = [],
     onView,
     onCreateQuotation,
     onEditDraft,
     onEdit,
     onAssignEngineer,
+    onDirectAssignEngineer,
     onUpdateStatus,
+    onDirectUpdateStatus,
     getNextStatus,
     hasQuotation,
     onPassToManager,
     onApprove,
     onReject,
+    onCreateInvoice,
 }) => {
     const [sortColumn, setSortColumn] = React.useState<string>('createdAt');
     const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
@@ -123,10 +131,6 @@ const JobCardTable = React.memo<JobCardTableProps>(({
         return nameSource || phone || 'Unknown Customer';
     };
 
-    // Helper to get vehicle display string matches shared helper
-    // Uses getJobCardVehicleDisplay from utils
-
-    // Helper to get registration number
     const getRegistration = (job: JobCard): string => {
         if (job.vehicleObject?.registration) {
             return job.vehicleObject.registration;
@@ -138,8 +142,6 @@ const JobCardTable = React.memo<JobCardTableProps>(({
         if (part1Data?.registration_number) return part1Data.registration_number;
         return 'N/A';
     };
-
-
 
     const formatDate = (dateString: string): string => {
         if (!dateString) return 'N/A';
@@ -186,7 +188,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
             <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead>
-                        <tr><th className="px-4 py-3 bg-gray-50"></th><SortableHeader column="jobCardNumber" label="Job Card #" /><SortableHeader column="status" label="Status" /><SortableHeader column="priority" label="Priority" /><SortableHeader column="customerName" label="Customer" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Vehicle</th><SortableHeader column="serviceType" label="Service Type" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Engineer</th><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Estimated</th><SortableHeader column="createdAt" label="Created" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Actions</th></tr>
+                        <tr><th className="px-4 py-3 bg-gray-50"></th><SortableHeader column="jobCardNumber" label="Job Card #" /><SortableHeader column="status" label="Status" /><SortableHeader column="priority" label="Priority" /><SortableHeader column="customerName" label="Customer" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Vehicle</th><SortableHeader column="serviceType" label="Service Type" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Engineer</th><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Parts Status</th><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Estimated</th><SortableHeader column="createdAt" label="Created" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Actions</th></tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedJobs.map((job) => {
@@ -279,9 +281,69 @@ const JobCardTable = React.memo<JobCardTableProps>(({
 
                                         {/* Engineer */}
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className="text-sm text-gray-700">
-                                                {getAssignedEngineerName(job.assignedEngineer)}
-                                            </span>
+                                            {isServiceManager && job.status !== 'COMPLETED' && job.status !== 'INVOICED' ? (
+                                                <select
+                                                    value={job.assignedEngineer && typeof job.assignedEngineer === 'object' ? job.assignedEngineer.id : (engineers.find(e => e.name === job.assignedEngineer)?.id || "")}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val && onDirectAssignEngineer) {
+                                                            onDirectAssignEngineer(job.id, val);
+                                                        }
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="p-1 px-2 text-xs border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-700 w-full"
+                                                    style={{ minWidth: '140px' }}
+                                                >
+                                                    <option value="">Unassigned</option>
+                                                    {engineers.map((eng: any) => (
+                                                        <option key={eng.id} value={eng.id}>
+                                                            {eng.name || `${eng.firstName || ''} ${eng.lastName || ''}`.trim()}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <span className="text-sm text-gray-700">
+                                                    {getAssignedEngineerName(job.assignedEngineer)}
+                                                </span>
+                                            )}
+                                        </td>
+
+                                        {/* Parts Status */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            {(() => {
+                                                const partsRequest = (job.partsRequests && job.partsRequests.length > 0)
+                                                    ? job.partsRequests[0]
+                                                    : (request as any); // Fallback to prop-based request if available
+
+                                                if (!partsRequest) {
+                                                    return <span className="text-gray-400 text-xs">-</span>;
+                                                }
+
+                                                const status = partsRequest.status || 'PENDING';
+                                                let badgeClass = "bg-gray-100 text-gray-700 border-gray-300";
+
+                                                switch (status) {
+                                                    case 'PENDING':
+                                                        badgeClass = "bg-orange-100 text-orange-700 border-orange-200";
+                                                        break;
+                                                    case 'APPROVED':
+                                                    case 'PARTIALLY_APPROVED':
+                                                    case 'COMPLETED': // Assuming completed means issued
+                                                        badgeClass = "bg-green-100 text-green-700 border-green-200";
+                                                        break;
+                                                    case 'REJECTED':
+                                                        badgeClass = "bg-red-100 text-red-700 border-red-200";
+                                                        break;
+                                                    default:
+                                                        break;
+                                                }
+
+                                                return (
+                                                    <span className={`px-2 py-1 rounded text-xs font-medium border ${badgeClass}`}>
+                                                        {status === 'COMPLETED' ? 'ISSUED' : status}
+                                                    </span>
+                                                );
+                                            })()}
                                         </td>
 
                                         {/* Estimated Cost & Time */}
@@ -366,7 +428,9 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         <ArrowRight size={16} />
                                                     </button>
                                                 )}
-                                                {isServiceManager && job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && (
+
+                                                {/* Manage Approve/Reject Visibility: Only if PENDING */}
+                                                {isServiceManager && job.passedToManager && (job as any).managerReviewStatus === 'PENDING' && (
                                                     <>
                                                         {onApprove && (
                                                             <button
@@ -394,6 +458,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         )}
                                                     </>
                                                 )}
+
                                                 {isServiceManager && onEdit && (
                                                     <button
                                                         onClick={(e) => {
@@ -406,29 +471,40 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         <Edit size={16} />
                                                     </button>
                                                 )}
-                                                {isServiceManager && job.status === "JOB_CARD_ACTIVE" && onAssignEngineer && (
+
+                                                {(isServiceManager || isServiceAdvisor) && job.status === "COMPLETED" && onCreateInvoice && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            onAssignEngineer(job.id);
-                                                        }}
-                                                        className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition"
-                                                        title="Assign Engineer"
-                                                    >
-                                                        <UserPlus size={16} />
-                                                    </button>
-                                                )}
-                                                {isServiceManager && getNextStatus && getNextStatus(job.status).length > 0 && onUpdateStatus && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            onUpdateStatus(job.id, job.status);
+                                                            if (confirm(`Create invoice for job card ${job.jobCardNumber || job.id}?`)) {
+                                                                onCreateInvoice(job);
+                                                            }
                                                         }}
                                                         className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition"
-                                                        title="Update Status"
+                                                        title="Create Invoice"
                                                     >
-                                                        <RefreshCw size={16} />
+                                                        <FileText size={16} />
                                                     </button>
+                                                )}
+
+                                                {/* Status Update Dropdown */}
+                                                {isServiceManager && getNextStatus && getNextStatus(job.status).length > 0 && onDirectUpdateStatus && (
+                                                    <div onClick={e => e.stopPropagation()} className="inline-block relative">
+                                                        <select
+                                                            onChange={(e) => onDirectUpdateStatus(job.id, e.target.value as JobCardStatus)}
+                                                            className="p-1 px-2 text-xs border border-purple-200 rounded focus:ring-purple-500 focus:border-purple-500 bg-purple-50 text-purple-700 font-medium cursor-pointer"
+                                                            value=""
+                                                            style={{ paddingRight: '20px', appearance: 'none' }}
+                                                        >
+                                                            <option value="" disabled>Update Status</option>
+                                                            {getNextStatus(job.status).map(status => (
+                                                                <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
+                                                            ))}
+                                                        </select>
+                                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-purple-700">
+                                                            <RefreshCw size={12} />
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </div>
                                         </td>

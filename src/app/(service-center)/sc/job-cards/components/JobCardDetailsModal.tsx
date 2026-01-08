@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { X, Package, User, CheckCircle, XCircle } from 'lucide-react';
+import { X, Package, User, CheckCircle, XCircle, ShieldCheck, FileText } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
@@ -16,6 +16,7 @@ interface JobCardDetailsModalProps {
     onReject?: (jobId: string) => void;
     onSendToManager?: (jobId: string) => void;
     onCreateQuotation?: (job: JobCard) => void;
+    onCreateInvoice?: (job: JobCard) => void;
 }
 
 const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
@@ -31,6 +32,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
     onReject,
     onSendToManager,
     onCreateQuotation,
+    onCreateInvoice,
 }) => {
     if (!open || !job) return null;
 
@@ -212,8 +214,12 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 Create Quotation
                             </button>
                         )}
-                        {job.status === "COMPLETED" && (
-                            <button className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base">
+                        {job.status === "COMPLETED" && onCreateInvoice && (
+                            <button
+                                onClick={() => onCreateInvoice(job)}
+                                className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <FileText size={18} />
                                 Generate Invoice
                             </button>
                         )}

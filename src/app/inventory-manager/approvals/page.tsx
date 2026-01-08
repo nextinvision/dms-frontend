@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { partsIssueService, type PartsIssue } from "@/features/inventory/services/parts-issue.service"; // Updated import
+import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { useRole } from "@/shared/hooks";
 import { useToast } from "@/contexts/ToastContext";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
@@ -12,50 +12,32 @@ import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types
 import { ApprovalForm } from "./ApprovalForm";
 import { getInitialApprovalFormData, type ApprovalFormData } from "./form.schema";
 
-// Helper function to extract user name from user object or string
-const extractUserName = (user: any): string => {
-  if (!user) return "Unknown";
-  if (typeof user === "string") return user;
-  if (typeof user === "object") {
-    // Handle user object with name property
-    if (user.name) return user.name;
-    if (user.email) return user.email;
-    if (user.id) return user.id;
-  }
-  return String(user);
-};
-
-// Helper to map API PartsIssue to Frontend JobCardPartsRequest
-const mapPartsIssueToRequest = (issue: PartsIssue): JobCardPartsRequest => {
-  const isApproved = issue.status === 'APPROVED' || issue.status === 'ISSUED';
-  const isIssued = issue.status === 'ISSUED';
-  const items = issue.items || []; // Safety check for undefined items
+// Helper to map Backend PartsRequest to Frontend JobCardPartsRequest
+const mapPartsRequestToFrontend = (req: any): JobCardPartsRequest => {
+  const status = req.status;
+  const isScApproved = status === 'APPROVED' || status === 'COMPLETED' || status === 'PARTIALLY_APPROVED';
+  const isIssued = status === 'COMPLETED';
 
   return {
-    id: issue.id,
-    jobCardId: issue.jobCardId,
-    // vehicleId/Number/customerName might need to be fetched separately or populated by backend.
-    // Assuming backend populates them or we leave them undefined for now if not available in PartsIssue.
-    // If PartsIssue has 'jobCard' relation, we might get them.
-    // For now, map what we have.
-    vehicleNumber: "N/A", // Placeholder
-    customerName: "N/A", // Placeholder
-    requestedBy: extractUserName(issue.requestedBy),
-    requestedAt: issue.requestedAt,
-    status: issue.status === 'ISSUED' ? 'approved' : issue.status === 'REJECTED' ? 'rejected' : 'pending', // Simplify status mapping
-    parts: items.map(i => ({
-      partId: i.partId,
-      partName: `Part ${i.partId}`, // Placeholder if name not in item
-      quantity: i.quantity,
-      isWarranty: i.isWarranty,
-      serialNumber: i.serialNumber
+    id: req.id,
+    jobCardId: req.jobCard?.jobCardNumber || req.jobCardId, // Use jobCardNumber if available
+    vehicleNumber: req.jobCard?.vehicle?.registration || req.jobCard?.vehicle?.vehicleMake || "N/A",
+    customerName: req.jobCard?.customer?.name || "N/A",
+    requestedBy: req.jobCard?.assignedEngineer?.name || "Service Engineer", // Assuming engineer requested
+    requestedAt: req.createdAt,
+    status: status === 'COMPLETED' ? 'APPROVED' : status === 'REJECTED' ? 'REJECTED' : 'PENDING',
+    parts: (req.items || []).map((item: any) => ({
+      partId: item.id,
+      partName: item.partName || `Part #${item.partNumber}`,
+      quantity: item.requestedQty || item.quantity,
+      isWarranty: item.isWarranty,
+      serialNumber: item.partNumber
     })),
-    scManagerApproved: isApproved,
-    scManagerApprovedBy: issue.approvedBy ? extractUserName(issue.approvedBy) : undefined,
-    scManagerApprovedAt: issue.approvedAt,
+    scManagerApproved: isScApproved,
+    scManagerApprovedBy: isScApproved ? "SC Manager" : undefined, // Placeholder as we don't strictly track who clicked approve yet in this view
+    scManagerApprovedAt: isScApproved ? req.updatedAt : undefined, // Approximation
     inventoryManagerAssigned: isIssued,
-    // inventoryManagerAssignedBy: ... // Not directly in PartsIssue type of frontend service
-    assignedEngineer: isIssued ? "Assigned Engineer" : undefined // Placeholder
+    assignedEngineer: isIssued ? (req.jobCard?.assignedEngineer?.name || "Engineer") : undefined
   };
 };
 
@@ -63,10 +45,10 @@ export default function ApprovalsPage() {
   const { userInfo, userRole } = useRole();
   const pathname = usePathname();
   const { showSuccess, showError, showWarning } = useToast();
-  // Since this is the inventory-manager/approvals page, any user accessing it should be able to assign parts
-  // The page route itself restricts access, so we can trust that users here have the right permissions
+
   const isInventoryManager = userRole === "inventory_manager" || pathname?.startsWith("/inventory-manager") || false;
   const isScManager = userRole === "sc_manager";
+
   const [newRequests, setNewRequests] = useState<JobCardPartsRequest[]>([]);
   const [scApprovedRequests, setScApprovedRequests] = useState<JobCardPartsRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,31 +58,25 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     fetchRequests();
-  }, []);
+  }, [userInfo?.serviceCenterId]);
 
   const fetchRequests = async () => {
     try {
       setIsLoading(true);
-      const allIssues = await partsIssueService.getAll();
-      const allRequests = allIssues.map(mapPartsIssueToRequest);
+      // Fetch parts requests via JobCardService
+      // This fetches 'PENDING' and 'APPROVED' requests
+      const allRequestsData = await jobCardService.getPendingPartsRequests(userInfo?.serviceCenterId?.toString());
 
-      // New requests - pending SC Manager approval (not yet approved by SC Manager)
-      // Exclude rejected requests
+      const allRequests = allRequestsData.map(mapPartsRequestToFrontend);
+
+      // New requests - pending SC Manager approval
       const newReqs = allRequests.filter(
-        (r) =>
-          r.status !== "rejected" &&
-          !r.scManagerApproved &&
-          !r.inventoryManagerAssigned
+        (r) => !r.scManagerApproved && r.status !== 'REJECTED' && r.status !== 'APPROVED'
       );
 
-      // SC Manager approved requests - pending Inventory Manager approval
-      // Show all requests where SC Manager has approved but Inventory Manager hasn't assigned yet
-      // Exclude rejected requests
+      // SC Manager approved requests - pending Inventory Manager assignment
       const scApproved = allRequests.filter(
-        (r) =>
-          r.status !== "rejected" &&
-          r.scManagerApproved === true &&
-          !r.inventoryManagerAssigned
+        (r) => r.scManagerApproved && !r.inventoryManagerAssigned && r.status !== 'REJECTED'
       );
 
       setNewRequests(newReqs);
@@ -119,13 +95,13 @@ export default function ApprovalsPage() {
     }
     try {
       setIsProcessing(true);
-      // Use approve endpoint
-      await partsIssueService.approve(id, []); // Assuming empty items approves all or handled by backend
+      // Approve: PENDING -> APPROVED
+      await jobCardService.updatePartsRequestStatus(id, 'APPROVED', "Approved via Approvals Page");
 
       setSelectedRequest(null);
       setApprovalFormData(getInitialApprovalFormData());
       await fetchRequests();
-      showSuccess("Request approved successfully! It will now appear in 'SC Manager Approved - Ready to Assign' section for Inventory Manager.");
+      showSuccess("Request approved successfully! It is now ready for Inventory assignment.");
     } catch (error) {
       console.error("Failed to approve:", error);
       showError(error instanceof Error ? error.message : "Failed to approve request");
@@ -135,9 +111,6 @@ export default function ApprovalsPage() {
   };
 
   const handleInventoryManagerApprove = async (id: string) => {
-    // Since this is the inventory-manager/approvals page, users here should have permission
-    // Allow if user is inventory manager OR if they're on the inventory manager page (route-based access)
-    // Only block if we're absolutely sure they don't have permission
     if (userRole &&
       userRole !== "inventory_manager" &&
       userRole !== "admin" &&
@@ -145,20 +118,17 @@ export default function ApprovalsPage() {
       showError("Only Inventory Manager can approve and assign parts.");
       return;
     }
-    if (!approvalFormData.assignedEngineer?.trim()) {
-      showWarning("Please enter the engineer name to assign parts to.");
-      return;
-    }
 
+    // Note: 'Assign Parts' here means 'Issue/Dispatch' which completes the request
     try {
       setIsProcessing(true);
-      // Use dispatch endpoint to signify assignment/issue
-      await partsIssueService.dispatch(id, { engineer: approvalFormData.assignedEngineer, notes: approvalFormData.notes });
+      // Complete: APPROVED -> COMPLETED
+      await jobCardService.updatePartsRequestStatus(id, 'COMPLETED', approvalFormData.notes || "Issued via Approvals Page");
 
       setSelectedRequest(null);
       setApprovalFormData(getInitialApprovalFormData());
       await fetchRequests();
-      showSuccess("Parts assigned successfully! Stock has been decreased.");
+      showSuccess("Parts assigned/issued successfully!");
     } catch (error) {
       console.error("Failed to assign parts:", error);
       showError(error instanceof Error ? error.message : "Failed to assign parts");
@@ -170,15 +140,12 @@ export default function ApprovalsPage() {
   const handleReject = async (id: string) => {
     try {
       setIsProcessing(true);
-      // Reject not natively supported in Service generic interface yet, implementing stub or using custom endpoint if available
-      // Assuming NO reject endpoint in PartsIssueService for now based on file view.
-      console.warn("Reject not fully implemented in backend API. Stubbing success.");
+      await jobCardService.updatePartsRequestStatus(id, 'REJECTED', "Rejected via Approvals Page");
 
-      // Update local state to mimic rejection if needed, or just refresh
       setSelectedRequest(null);
       setApprovalFormData(getInitialApprovalFormData());
       await fetchRequests();
-      showSuccess("Request rejected successfully (Stub).");
+      showSuccess("Request rejected successfully.");
     } catch (error) {
       console.error("Failed to reject:", error);
       showError("Failed to reject request");
@@ -218,7 +185,7 @@ export default function ApprovalsPage() {
             </div>
             <div className="flex flex-col gap-2 items-end">
               {imApproved ? (
-                <Badge variant="success">Assigned to Engineer</Badge>
+                <Badge variant="success">Parts Issued</Badge>
               ) : scApproved ? (
                 <Badge variant="info">SC Manager Approved</Badge>
               ) : (
@@ -248,7 +215,7 @@ export default function ApprovalsPage() {
                 }`}
             >
               <CheckCircle size={16} />
-              Inventory Manager {imApproved ? "✓ Approved" : "Pending"}
+              Inventory Manager {imApproved ? "✓ Issued" : "Pending"}
             </button>
           </div>
 
@@ -307,7 +274,7 @@ export default function ApprovalsPage() {
           {isSelected && !imApproved && (
             <>
               {!scApproved ? (
-                // SC Manager Approval Section - Only visible to SC Manager
+                // SC Manager Approval Section
                 isScManager ? (
                   <ApprovalForm
                     formData={approvalFormData}
@@ -320,6 +287,7 @@ export default function ApprovalsPage() {
                       setApprovalFormData(getInitialApprovalFormData());
                     }}
                     isProcessing={isProcessing}
+                    parts={request.parts}
                   />
                 ) : (
                   <div className="border-t pt-4 mt-4 text-center py-4 text-gray-500">
@@ -337,7 +305,7 @@ export default function ApprovalsPage() {
                   </div>
                 )
               ) : (
-                // Inventory Manager Approval Section - Only visible to Inventory Manager
+                // Inventory Manager Approval Section
                 isInventoryManager ? (
                   <ApprovalForm
                     formData={approvalFormData}
@@ -350,6 +318,7 @@ export default function ApprovalsPage() {
                       setApprovalFormData(getInitialApprovalFormData());
                     }}
                     isProcessing={isProcessing}
+                    parts={request.parts}
                   />
                 ) : (
                   <div className="border-t pt-4 mt-4 text-center py-4 text-gray-500">
@@ -373,7 +342,19 @@ export default function ApprovalsPage() {
           {!isSelected && !imApproved && (
             <div className="flex gap-3">
               <Button
-                onClick={() => setSelectedRequest(request.id)}
+                onClick={() => {
+                  setSelectedRequest(request.id);
+                  const initialQuantities = request.parts.reduce((acc, part) => ({
+                    ...acc,
+                    [part.partId]: part.quantity
+                  }), {});
+
+                  setApprovalFormData((prev) => ({
+                    ...prev,
+                    partQuantities: initialQuantities,
+                    assignedEngineer: request.requestedBy,
+                  }));
+                }}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white"
               >
                 {scApproved ? "Assign Parts" : "Review Request"}
@@ -385,7 +366,7 @@ export default function ApprovalsPage() {
     );
   };
 
-  const vehiclePlaceholder = (r: JobCardPartsRequest) => r.vehicleId || "N/A";
+  const vehiclePlaceholder = (r: JobCardPartsRequest) => r.vehicleNumber || "N/A";
 
   if (isLoading) {
     return (
@@ -432,7 +413,7 @@ export default function ApprovalsPage() {
           )}
         </div>
 
-        {/* SC Manager Approved Requests - Pending Inventory Manager Approval */}
+        {/* SC Manager Approved Requests - Pending Inventory Manager Assignment */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <User className="text-blue-600" size={20} />

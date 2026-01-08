@@ -113,6 +113,7 @@ export default function JobCards() {
 
     handleJobCardCreated,
     handleAssignEngineer,
+    assignEngineer, // Added this
     handleStatusUpdate,
     handleManagerQuoteAction,
     handlePartRequestSubmit,
@@ -370,6 +371,7 @@ export default function JobCards() {
   }
 
 
+
   return (
     <div className="bg-[#f9f9fb] min-h-screen">
       <div className={`pt-4 pb-6 md:pt-6 md:pb-10 overflow-x-hidden ${view === "kanban" ? "px-0" : "px-4 sm:px-6"}`}>
@@ -533,6 +535,11 @@ export default function JobCards() {
             onCreateQuotation={(job) => {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
             }}
+            onCreateInvoice={(job) => {
+              if (handleCreateInvoice) {
+                handleCreateInvoice(job);
+              }
+            }}
             onPassToManager={handleSubmitToManager}
           />
         )}
@@ -547,6 +554,7 @@ export default function JobCards() {
             onJobClick={(job) => router.push(`/sc/job-cards/${job.id}`)}
             isServiceAdvisor={isServiceAdvisor}
             isServiceManager={isServiceManager}
+            engineers={engineers}
             onView={(jobId) => router.push(`/sc/job-cards/${jobId}`)}
             onEdit={(jobId) => router.push(`/sc/job-cards/${jobId}/edit`)}
             onEditDraft={handleEditDraft}
@@ -554,10 +562,22 @@ export default function JobCards() {
               setAssigningJobId(jobId);
               setShowAssignEngineerModal(true);
             }}
+            onDirectAssignEngineer={(jobId, engineerId) => {
+              const eng = engineers.find((e) => e.id.toString() === engineerId.toString());
+              const name = eng ? eng.name : "this engineer";
+              if (window.confirm(`Are you sure you want to assign ${name} to this job card?`)) {
+                assignEngineer(jobId, engineerId);
+              }
+            }}
             onUpdateStatus={(jobId, initialStatus) => {
               setUpdatingStatusJobId(jobId);
               setNewStatus(getNextStatus(initialStatus)[0]);
               setShowStatusUpdateModal(true);
+            }}
+            onDirectUpdateStatus={(jobId, status) => {
+              if (window.confirm(`Are you sure you want to update the status to ${status}?`)) {
+                updateStatus(jobId, status);
+              }
             }}
             getNextStatus={getNextStatus}
             hasQuotation={(jobId) => {
@@ -566,6 +586,11 @@ export default function JobCards() {
             }}
             onCreateQuotation={(job) => {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
+            }}
+            onCreateInvoice={(job) => {
+              if (handleCreateInvoice) {
+                handleCreateInvoice(job);
+              }
             }}
             onPassToManager={(jobId) => handleSubmitToManager(jobId)}
             onApprove={(jobId) => handleManagerReview(jobId, "APPROVED", "Approved from Table")}
@@ -623,6 +648,12 @@ export default function JobCards() {
         onCreateQuotation={(job) => {
           setShowDetails(false);
           router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
+        }}
+        onCreateInvoice={(job) => {
+          setShowDetails(false);
+          if (handleCreateInvoice) {
+            handleCreateInvoice(job);
+          }
         }}
       />
       <Modal

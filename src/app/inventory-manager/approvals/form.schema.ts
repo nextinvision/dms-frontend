@@ -6,12 +6,14 @@
 export interface ApprovalFormData {
   notes: string;
   assignedEngineer?: string;
+  partQuantities: Record<string, number>;
 }
 
 export function getInitialApprovalFormData(): ApprovalFormData {
   return {
     notes: "",
     assignedEngineer: "",
+    partQuantities: {},
   };
 }
 

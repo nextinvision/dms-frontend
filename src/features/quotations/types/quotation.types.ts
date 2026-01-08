@@ -3,7 +3,6 @@ export interface QuotationItem {
   serialNumber: number;
   partName: string;
   partNumber?: string;
-  hsnSacCode?: string;
   quantity: number;
   rate: number;
   gstPercent: number;
@@ -53,15 +52,15 @@ export interface Quotation {
   customNotes?: string;
   noteTemplateId?: string;
   status:
-    | "draft"
-    | "sent_to_customer"
-    | "customer_approved"
-    | "customer_rejected"
-    | "sent_to_manager"
-    | "manager_approved"
-    | "manager_rejected"
-    | "no_response_lead"
-    | "manager_quote";
+  | "draft"
+  | "sent_to_customer"
+  | "customer_approved"
+  | "customer_rejected"
+  | "sent_to_manager"
+  | "manager_approved"
+  | "manager_rejected"
+  | "no_response_lead"
+  | "manager_quote";
   passedToManager: boolean;
   passedToManagerAt?: string;
   managerId?: string;

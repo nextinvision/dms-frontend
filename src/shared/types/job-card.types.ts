@@ -73,6 +73,7 @@ export interface JobCardPart2Item {
   serialNumber?: string; // Serial number for warranty parts
   isWarranty?: boolean; // Flag to indicate if this is a warranty part
   inventoryPartId?: string; // For linking to inventory part
+  warrantyTagNumber?: string; // Warranty Tag Number (RQL...)
 }
 
 /**
@@ -223,6 +224,7 @@ export interface JobCard {
   part3?: JobCardPart3; // Part Requisition & Issue Details
   quotation?: any;
 
+  partsRequests?: PartsRequest[];
 }
 
 export interface KanbanColumn {

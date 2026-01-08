@@ -184,7 +184,6 @@ export default function InvoicePDF({ invoice, onClose, showActions = true, onSen
               <thead>
                 <tr className="bg-gray-100">
                   <th className="border border-gray-800 px-3 py-2 text-left">Sr. No.</th>
-                  <th className="border border-gray-800 px-3 py-2 text-left">HSN/SAC</th>
                   <th className="border border-gray-800 px-3 py-2 text-left">Description</th>
                   <th className="border border-gray-800 px-3 py-2 text-center">Qty</th>
                   <th className="border border-gray-800 px-3 py-2 text-right">Rate</th>
@@ -206,7 +205,6 @@ export default function InvoicePDF({ invoice, onClose, showActions = true, onSen
                   items.map((item, index) => (
                     <tr key={index}>
                       <td className="border border-gray-800 px-3 py-2">{index + 1}</td>
-                      <td className="border border-gray-800 px-3 py-2">{item.hsnSacCode || "-"}</td>
                       <td className="border border-gray-800 px-3 py-2">{item.name}</td>
                       <td className="border border-gray-800 px-3 py-2 text-center">{item.quantity}</td>
                       <td className="border border-gray-800 px-3 py-2 text-right">

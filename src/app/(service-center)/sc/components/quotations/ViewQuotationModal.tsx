@@ -395,6 +395,11 @@ export function ViewQuotationModal({
                                                 </td>
                                                 <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
                                                     {item.partName}
+                                                    {item.partWarrantyTag && (
+                                                        <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
+                                                            Warranty
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
                                                     {item.partNumber || "-"}
@@ -545,42 +550,21 @@ export function ViewQuotationModal({
                                 {quotation.sentToCustomerAt && ` (${new Date(quotation.sentToCustomerAt).toLocaleString()})`}
                             </span>
                         </div>
-                        {quotation.customerApproved !== undefined && (
-                            <div className="flex items-center gap-2">
-                                {quotation.customerApproved ? (
-                                    <UserCheck className="text-green-600" size={16} />
-                                ) : (
-                                    <UserX className="text-red-600" size={16} />
-                                )}
-                                <span className="text-sm text-gray-700">
-                                    Customer: {quotation.customerApproved ? "Approved" : "Rejected"}
-                                    {quotation.customerApprovedAt && ` (${new Date(quotation.customerApprovedAt).toLocaleString()})`}
-                                    {quotation.customerRejectedAt && ` (${new Date(quotation.customerRejectedAt).toLocaleString()})`}
-                                </span>
-                            </div>
-                        )}
-                        {quotation.sentToManager && (
-                            <div className="flex items-center gap-2">
-                                <ArrowRight className="text-blue-600" size={16} />
-                                <span className="text-sm text-gray-700">
-                                    Sent to Manager: {quotation.sentToManagerAt && new Date(quotation.sentToManagerAt).toLocaleString()}
-                                </span>
-                            </div>
-                        )}
-                        {quotation.managerApproved !== undefined && (
-                            <div className="flex items-center gap-2">
-                                {quotation.managerApproved ? (
-                                    <ShieldCheck className="text-green-600" size={16} />
-                                ) : (
-                                    <ShieldX className="text-red-600" size={16} />
-                                )}
-                                <span className="text-sm text-gray-700">
-                                    Manager: {quotation.managerApproved ? "Approved" : "Rejected"}
-                                    {quotation.managerApprovedAt && ` (${new Date(quotation.managerApprovedAt).toLocaleString()})`}
-                                    {quotation.managerRejectedAt && ` (${new Date(quotation.managerRejectedAt).toLocaleString()})`}
-                                </span>
-                            </div>
-                        )}
+                        <div className="flex items-center gap-2">
+                            {quotation.customerApproved ? (
+                                <UserCheck className="text-green-600" size={16} />
+                            ) : quotation.customerRejected ? (
+                                <UserX className="text-red-600" size={16} />
+                            ) : (
+                                <Clock className="text-gray-400" size={16} />
+                            )}
+                            <span className="text-sm text-gray-700">
+                                Customer: {quotation.customerApproved ? "Approved" : quotation.customerRejected ? "Rejected" : "N/A"}
+                                {quotation.customerApprovedAt && ` (${new Date(quotation.customerApprovedAt).toLocaleString()})`}
+                                {quotation.customerRejectedAt && ` (${new Date(quotation.customerRejectedAt).toLocaleString()})`}
+                            </span>
+                        </div>
+
                     </div>
                 </div>
 

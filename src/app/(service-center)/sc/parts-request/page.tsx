@@ -12,7 +12,10 @@ import {
   User,
   Calendar,
   Loader2,
+  Trash2,
 } from "lucide-react";
+import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
+import { useToast } from "@/core/contexts/ToastContext";
 import { useRole } from "@/shared/hooks";
 import { partsIssueService } from "@/features/inventory/services/parts-issue.service";
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
@@ -77,6 +80,29 @@ export default function PartsRequest() {
     isWarranty: false,
     inventoryPartId: undefined,
   });
+
+  const { showSuccess, showError } = useToast();
+
+  const [confirmModalState, setConfirmModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => { },
+  });
+
+  const openConfirmation = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModalState({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+    });
+  };
 
   const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
 
@@ -280,12 +306,12 @@ export default function PartsRequest() {
 
   const handleAddItem = () => {
     if (!newItemForm.partName.trim()) {
-      alert("Please enter a part name.");
+      showError("Please enter a part name.");
       return;
     }
 
     if (newItemForm.isWarranty && !newItemForm.serialNumber?.trim()) {
-      alert("Please enter the part serial number for warranty parts.");
+      showError("Please enter the part serial number for warranty parts.");
       return;
     }
 
@@ -305,6 +331,7 @@ export default function PartsRequest() {
       serialNumber: newItemForm.isWarranty ? newItemForm.serialNumber : undefined,
       isWarranty: newItemForm.isWarranty,
       inventoryPartId: newItemForm.inventoryPartId,
+      warrantyTagNumber: newItemForm.partWarrantyTag,
     };
 
     setPart2ItemsList([...part2ItemsList, newItem]);
@@ -331,14 +358,50 @@ export default function PartsRequest() {
     setPart2ItemsList(renumbered);
   };
 
+  const handleDeleteRequest = (requestId: string) => {
+    openConfirmation(
+      "Cancel Request",
+      "Are you sure you want to cancel this parts request?",
+      async () => {
+        try {
+          setLoading(true);
+          await jobCardService.deletePartsRequest(requestId);
+
+          // Refresh job cards to update UI
+          const fetchedJobCards = await jobCardService.getAll();
+          setJobCards(fetchedJobCards);
+
+          // Update selected job card ref if it exists
+          if (selectedJobCard) {
+            const updatedSelected = fetchedJobCards.find(j => j.id === selectedJobCard.id);
+            if (updatedSelected) {
+              setSelectedJobCard(updatedSelected);
+            }
+          }
+
+          showSuccess("Parts request cancelled successfully.");
+        } catch (error) {
+          console.error("Failed to cancel parts request:", error);
+          showError("Failed to cancel parts request. Please try again.");
+        } finally {
+          setLoading(false);
+          // Close modal implicitly handled by ConfirmModal onConfirm wrapper usually, but here manually close if needed
+          // But our ConfirmModal usually handles it or we set isOpen false.
+          // The helper `openConfirmation` doesn't auto-close, let's update it or rely on the component.
+          setConfirmModalState(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    );
+  };
+
   const handlePartRequestSubmit = async () => {
     if (!selectedJobCard) {
-      alert("Please select a job card first.");
+      showError("Please select a job card first.");
       return;
     }
 
     if (part2ItemsList.length === 0) {
-      alert("Please add at least one item to the list before submitting.");
+      showError("Please add at least one item to the list before submitting.");
       return;
     }
 
@@ -350,7 +413,9 @@ export default function PartsRequest() {
         partNumber: item.partCode || undefined,
         quantity: item.qty,
         isWarranty: item.isWarranty || false,
-        inventoryPartId: item.inventoryPartId // Use captured inventory ID
+        inventoryPartId: item.inventoryPartId, // Use captured inventory ID
+        warrantyTagNumber: item.warrantyTagNumber,
+        serialNumber: item.serialNumber,
       }));
 
       await jobCardService.createPartsRequest(selectedJobCard.id, items);
@@ -395,10 +460,10 @@ export default function PartsRequest() {
       setShowPartDropdown(false);
       setPartSearchResults([]);
 
-      alert(`Part request submitted successfully for Job Card: ${selectedJobCard.jobCardNumber || selectedJobCard.id}`);
+      showSuccess(`Part request submitted successfully for Job Card: ${selectedJobCard.jobCardNumber || selectedJobCard.id}`);
     } catch (error) {
       console.error("Failed to submit parts request:", error);
-      alert("Failed to submit parts request. Please try again.");
+      showError("Failed to submit parts request. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -425,13 +490,19 @@ export default function PartsRequest() {
     // 1. Check embedded partsRequests (new flow via jobCardService)
     const requests = (jobCard as any).partsRequests;
     if (Array.isArray(requests) && requests.length > 0) {
-      // Use the latest request (assuming index 0 is latest or we just take the first one found)
-      // Ideally we might want to show all, but for now let's show the most relevant active one
+      // Use the latest request
       const activeRequest = requests.find((r: any) => r.status !== 'COMPLETED' && r.status !== 'REJECTED') || requests[0];
+
+      const status = activeRequest.status;
+      // Infer flags based on status if not explicitly present
+      const scManagerApproved = activeRequest.scManagerApproved ?? (status === 'APPROVED' || status === 'COMPLETED' || status === 'PARTIALLY_APPROVED');
+      const inventoryManagerAssigned = activeRequest.inventoryManagerAssigned ?? (status === 'COMPLETED');
 
       return {
         ...activeRequest,
         status: activeRequest.status,
+        scManagerApproved,
+        inventoryManagerAssigned,
         items: activeRequest.items?.map((i: any) => ({
           ...i,
           partName: i.partName || "Unknown Part",
@@ -444,7 +515,17 @@ export default function PartsRequest() {
 
     // 2. Fallback to partsRequestsData (legacy flow via partsIssueService)
     const request = partsRequestsData[jobCard.id] || partsRequestsData[jobCard.jobCardNumber || ""];
-    if (request) return request;
+    if (request) {
+      const status = request.status;
+      const scManagerApproved = request.scManagerApproved ?? (status === 'APPROVED' || status === 'COMPLETED' || status === 'PARTIALLY_APPROVED');
+      const inventoryManagerAssigned = request.inventoryManagerAssigned ?? (status === 'COMPLETED');
+
+      return {
+        ...request,
+        scManagerApproved,
+        inventoryManagerAssigned
+      };
+    };
 
     return null;
   };
@@ -522,7 +603,7 @@ export default function PartsRequest() {
                             </div>
                             {request && (
                               <div className="ml-2">
-                                {request.status === "approved" ? (
+                                {request.status === "APPROVED" ? (
                                   <CheckCircle size={20} className="text-green-500" />
                                 ) : (
                                   <Clock size={20} className="text-yellow-500" />
@@ -546,11 +627,11 @@ export default function PartsRequest() {
                               {job.status}
                             </span>
                             {request && (
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${request.status === "approved"
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${request.status === "APPROVED"
                                 ? "bg-green-100 text-green-700"
                                 : "bg-gray-100 text-gray-700"
                                 }`}>
-                                {request.status === "approved" ? "Parts Approved" : "Request Pending"}
+                                {request.status === "APPROVED" ? "Parts Approved" : "Request Pending"}
                               </span>
                             )}
                           </div>
@@ -800,13 +881,20 @@ export default function PartsRequest() {
                                   <td className="px-3 py-2 text-gray-700">{item.qty}</td>
                                   <td className="px-3 py-2 text-gray-700">₹{item.amount.toLocaleString("en-IN")}</td>
                                   <td className="px-3 py-2">
-                                    {item.isWarranty ? (
-                                      <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700 font-semibold">
-                                        Yes
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-600">No</span>
-                                    )}
+                                    <div className="flex flex-col">
+                                      {item.isWarranty ? (
+                                        <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700 font-semibold w-fit">
+                                          Yes
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-600 w-fit">No</span>
+                                      )}
+                                      {item.warrantyTagNumber && (
+                                        <span className="text-[10px] text-gray-500 mt-1">
+                                          Tag: {item.warrantyTagNumber}
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="px-3 py-2">
                                     <button
@@ -860,7 +948,17 @@ export default function PartsRequest() {
 
                     return (
                       <div className="mt-6 pt-6 border-t border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3">Parts Request Status</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-sm font-semibold text-gray-800">Parts Request Status</h4>
+                          {request.status === 'PENDING' && request.id && (
+                            <button
+                              onClick={() => handleDeleteRequest(request.id)}
+                              className="text-red-600 hover:text-red-700 text-xs flex items-center gap-1 bg-red-50 px-2 py-1 rounded transition border border-red-100"
+                            >
+                              <Trash2 size={14} /> Cancel Request
+                            </button>
+                          )}
+                        </div>
 
                         {/* Render table for structured requested parts (Preferred) */}
                         {hasStructuredItems ? (
@@ -1009,6 +1107,14 @@ export default function PartsRequest() {
           </div >
         </div >
       </div >
+
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        onClose={() => setConfirmModalState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModalState.onConfirm}
+        title={confirmModalState.title}
+        message={confirmModalState.message}
+      />
     </div >
   );
 }

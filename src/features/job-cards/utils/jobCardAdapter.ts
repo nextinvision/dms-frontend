@@ -381,24 +381,52 @@ export const jobCardAdapter = {
             otherPartSerialNumber: jobCard.part1?.otherPartSerialNumber || jobCard.part1Data?.otherPartSerialNumber || "",
 
             // Part 2
-            part2Items: jobCard.part2 || [],
-            requestedParts: jobCard.requestedParts || (jobCard.partsRequests?.length ? jobCard.partsRequests.flatMap((pr: any) => pr.items || []).map((item: any, i: number) => ({
-                srNo: i + 1,
-                partName: item.part?.name || item.partName || "Unknown Part",
-                partCode: item.part?.partNumber || item.partId,
-                qty: item.quantity || 1,
-                amount: 0,
-                itemType: "part",
-                partWarrantyTag: item.isWarranty || false,
-                serialNumber: item.serialNumber
-            })) : (jobCard.partRequests?.length ? jobCard.partRequests.map((pr: any, i: number) => ({
-                srNo: i + 1,
-                partName: pr.partName || "Unknown Part",
-                partCode: pr.partNumber || pr.partId,
-                qty: pr.quantity || 1,
-                amount: 0,
-                itemType: "part"
-            })) : [])),
+            part2Items: (() => {
+                const existing = jobCard.part2 || [];
+                const completedRequests = (jobCard.partsRequests || []).filter((pr: any) => pr.status === 'COMPLETED');
+                const completedItems = completedRequests.flatMap((pr: any) => pr.items || []).map((item: any) => ({
+                    srNo: 0,
+                    partName: item.part?.name || item.partName || "Unknown Part",
+                    partCode: item.part?.partNumber || item.partNumber || item.partId,
+                    qty: item.quantity || item.requestedQty || 1,
+                    amount: 0,
+                    technician: "",
+                    labourCode: "Auto Select With Part",
+                    itemType: "part",
+                    partWarrantyTag: item.isWarranty || false,
+                }));
+
+                // Combine and dedupe based on code and name
+                const combined = [...existing];
+                completedItems.forEach((ci: any) => {
+                    const exists = combined.some(e => e.partCode === ci.partCode && e.partName === ci.partName);
+                    if (!exists) {
+                        combined.push(ci);
+                    }
+                });
+                return combined.map((item, i) => ({ ...item, srNo: i + 1 }));
+            })(),
+            requestedParts: jobCard.requestedParts || (jobCard.partsRequests?.length ? jobCard.partsRequests
+                .filter((pr: any) => pr.status !== 'COMPLETED')
+                .flatMap((pr: any) => (pr.items || []).map((item: any) => ({ ...item, requestId: pr.id }))) // Pass requestId
+                .map((item: any, i: number) => ({
+                    srNo: i + 1,
+                    partName: item.part?.name || item.partName || "Unknown Part",
+                    partCode: item.part?.partNumber || item.partId,
+                    qty: item.quantity || 1,
+                    amount: 0,
+                    itemType: "part",
+                    partWarrantyTag: item.isWarranty || false,
+                    serialNumber: item.serialNumber,
+                    requestId: item.requestId // Ensure it's passed
+                })) : (jobCard.partRequests?.length ? jobCard.partRequests.map((pr: any, i: number) => ({
+                    srNo: i + 1,
+                    partName: pr.partName || "Unknown Part",
+                    partCode: pr.partNumber || pr.partId,
+                    qty: pr.quantity || 1,
+                    amount: 0,
+                    itemType: "part"
+                })) : [])),
 
             // Part 2A Case details
             issueDescription: jobCard.part2A?.issueDescription || jobCard.part2AData?.issueDescription || "",

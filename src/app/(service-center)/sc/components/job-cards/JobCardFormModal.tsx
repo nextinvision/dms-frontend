@@ -368,6 +368,7 @@ export default function JobCardFormModal({
       const quotationData = (() => {
         // Calculate totals
         const itemsWithCalculatedRates = (form.part2Items || []).map((item, index) => {
+          const isWarranty = item.partWarrantyTag;
           const gstRate = (item.gstPercent || 18) / 100;
           const preGstRate = item.rate || (item.amount / (1 + gstRate)) || 0;
           const linePreGstTotal = preGstRate * (item.qty || 1);
@@ -378,9 +379,10 @@ export default function JobCardFormModal({
             partName: item.partName || "Service Item",
             partNumber: item.partCode || undefined,
             quantity: item.qty || 1,
-            rate: preGstRate,
+            rate: isWarranty ? 0 : preGstRate,
             gstPercent: item.gstPercent || 18,
-            amount: lineAmountInclGst,
+            amount: isWarranty ? 0 : lineAmountInclGst,
+            partWarrantyTag: isWarranty,
           };
         });
 
@@ -424,6 +426,25 @@ export default function JobCardFormModal({
       try {
         const createdQuotation = await quotationsService.create(quotationData as any);
         console.log("Quotation created successfully:", createdQuotation);
+
+        // Auto-approve quotation if Job Card is already approved
+        if (hydratedCard?.managerReviewStatus === 'APPROVED') {
+          try {
+            await quotationsService.managerReview(createdQuotation.id, { status: 'APPROVED', notes: 'Auto-approved based on Job Card Approval' });
+            console.log("Quotation auto-approved based on Job Card status.");
+          } catch (autoApproveError) {
+            console.error("Failed to auto-approve quotation:", autoApproveError);
+          }
+        } else if (hydratedCard?.status === "CREATED") {
+          // If not manager approved (and thus not auto-approved), and currently CREATED,
+          // move to AWAITING_QUOTATION_APPROVAL to act as "Draft" until customer approves.
+          try {
+            await jobCardService.updateStatus(jobCardId!, "AWAITING_QUOTATION_APPROVAL");
+            console.log("Job Card status updated to AWAITING_QUOTATION_APPROVAL");
+          } catch (statusError) {
+            console.error("Failed to update job card status:", statusError);
+          }
+        }
 
         // Close modal and navigate to quotations page
         onClose();
@@ -602,29 +623,43 @@ export default function JobCardFormModal({
         <div className="flex gap-3">
 
           {!isTechnician && (
-            <button
-              type="button"
-              onClick={handleCreateQuotation}
-              disabled={isSubmitting || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
+            <>
+              <button
+                type="button"
+                onClick={handleCreateQuotation}
+                disabled={isSubmitting || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
 
-                ? "bg-gray-100 text-gray-400 border border-gray-200"
-                : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
-                }`}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="animate-spin" size={20} />
-                  Creating...
-                </>
-              ) : (
-                <>
+                  ? "bg-gray-100 text-gray-400 border border-gray-200"
+                  : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
+                  }`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="animate-spin" size={20} />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <FileText size={20} />
+                    {!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
+                  </>
+
+                )}
+              </button>
+
+              {hydratedCard?.status === "COMPLETED" && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/sc/invoices?createFromJobCard=${jobCardId}`)}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-purple-200 bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   <FileText size={20} />
-                  {!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
-                </>
-
+                  Generate Invoice
+                </button>
               )}
-            </button>
+            </>
           )}
 
           {isTechnician && hydratedCard?.status === "ASSIGNED" && (
@@ -715,8 +750,6 @@ export default function JobCardFormModal({
 
 
           {isServiceManager && hydratedCard?.passedToManager && (
-            hydratedCard?.status === "CREATED" ||
-            hydratedCard?.status === "AWAITING_QUOTATION_APPROVAL" ||
             (hydratedCard as any).managerReviewStatus === "PENDING"
           ) && (
               <>
