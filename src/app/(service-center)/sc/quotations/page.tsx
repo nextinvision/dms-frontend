@@ -2127,6 +2127,13 @@ Please keep this slip safe for vehicle collection.`;
               // Since we can't test backend, we trust based on user request "converted to actual job card"
               // If not, we might need to update status manually
               const updatedJobCard = await jobCardService.convertToActual(jobCardId);
+
+              // Enforce status to CREATED as per user requirement
+              if (updatedJobCard.status !== "CREATED") {
+                await jobCardRepository.update(jobCardId, { status: "CREATED" } as any);
+                updatedJobCard.status = "CREATED";
+              }
+
               jobCard = updatedJobCard;
             } catch (e) {
               console.error("Error converting job card", e);
@@ -2458,7 +2465,7 @@ Please keep this slip safe for vehicle collection.`;
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className="flex flex-col">
                           <div className="text-sm font-bold text-slate-800">
-                            {quotation.vehicle ? `${quotation.vehicle.make} ${quotation.vehicle.model}` : "Not Specified"}
+                            {quotation.vehicle ? `${quotation.vehicle.make || quotation.vehicle.vehicleMake || ""} ${quotation.vehicle.model || quotation.vehicle.vehicleModel || ""}`.trim() || "Vehicle details unavailable" : "Not Specified"}
                           </div>
                           <div className="text-xs font-semibold text-blue-600 mt-1 bg-blue-50 w-fit px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-wider">
                             {quotation.vehicle?.registration || "N/A"}

@@ -3,6 +3,7 @@ import { useRole } from "@/shared/hooks";
 import { getServiceCenterContext, filterByServiceCenter, shouldFilterByServiceCenter } from "@/shared/lib/serviceCenter";
 import { useJobCards } from "@/features/job-cards/hooks/useJobCards";
 import type { JobCard, JobCardStatus, JobCardFilterType, KanbanColumn, JobCardViewType } from "@/shared/types/job-card.types";
+import { getVehicleDisplayString, isEngineerAssignedToJob } from "@/features/job-cards/utils/job-card-helpers";
 
 export function useJobCardView() {
     const [view, setView] = useState<JobCardViewType>("table"); // Default to table view
@@ -19,6 +20,13 @@ export function useJobCardView() {
     useEffect(() => {
         setIsClient(true);
     }, []);
+
+    // Set default view for service technician
+    useEffect(() => {
+        if (userRole === "service_engineer") {
+            setView("list");
+        }
+    }, [userRole]);
 
     // Sync Query Data to Local State
     useEffect(() => {
@@ -43,30 +51,10 @@ export function useJobCardView() {
 
         // Technician only sees job cards assigned to them
         if (isTechnician) {
-            const engineerName = (userInfo?.name || "Service Engineer").toLowerCase();
+            const engineerName = (userInfo?.name || "Service Engineer");
             const engineerId = userInfo?.id ? String(userInfo.id) : null;
 
-            filtered = filtered.filter(
-                (job) => {
-                    const assigned = job.assignedEngineer;
-                    if (!assigned) return false;
-
-                    // Case 1: assignedEngineer is a String (ID or Name)
-                    if (typeof assigned === 'string') {
-                        if (engineerId && assigned === engineerId) return true;
-                        if (assigned.toLowerCase().includes(engineerName)) return true;
-                        if (assigned === "Service Engineer") return true;
-                    }
-                    // Case 2: assignedEngineer is an Object (User/Engineer entity)
-                    else if (typeof assigned === 'object') {
-                        const assignedObj = assigned as any;
-                        if (engineerId && assignedObj.id && String(assignedObj.id) === engineerId) return true;
-                        if (assignedObj.name && String(assignedObj.name).toLowerCase().includes(engineerName)) return true;
-                    }
-
-                    return false;
-                }
-            );
+            filtered = filtered.filter((job) => isEngineerAssignedToJob(job, engineerId, engineerName));
         }
 
         return filtered;
@@ -85,17 +73,7 @@ export function useJobCardView() {
             // Search filter
             if (searchQuery) {
                 const query = searchQuery.toLowerCase();
-
-                // Helper to get vehicle string
-                const getVehicleString = (vehicle: any): string => {
-                    if (typeof vehicle === 'string') return vehicle;
-                    if (typeof vehicle === 'object' && vehicle !== null) {
-                        return `${vehicle.vehicleModel || ''} ${vehicle.registration || ''}`.trim();
-                    }
-                    return '';
-                };
-
-                const vehicleStr = getVehicleString(job.vehicle);
+                const vehicleStr = getVehicleDisplayString(job.vehicle);
 
                 return (
                     (job.id && job.id.toLowerCase().includes(query)) ||

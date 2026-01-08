@@ -1,6 +1,13 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/core/contexts/ToastContext";
+import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
+import { Modal } from "@/components/ui/Modal/Modal";
+import { Button } from "@/components/ui/Button";
+import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList, Package, UserPlus } from "lucide-react";
+import { staffService } from "@/features/workshop/services/staff.service";
+import type { Engineer } from "@/shared/types/workshop.types";
 const safeStorage = {
   getItem: <T,>(key: string, defaultValue: T): T => {
     if (typeof window === "undefined") return defaultValue;
@@ -30,7 +37,7 @@ const safeStorage = {
   }
 };
 import type { Quotation } from "@/shared/types";
-import type { JobCard } from "@/shared/types/job-card.types";
+import type { JobCard, PartsRequest } from "@/shared/types/job-card.types";
 import { getServiceCenterContext, filterByServiceCenter, shouldFilterByServiceCenter } from "@/shared/lib/serviceCenter";
 
 // Service Intake Request types (matching appointments page)
@@ -110,7 +117,9 @@ interface ServiceIntakeRequest {
 }
 
 export default function Approvals() {
+  const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [partsRequests, setPartsRequests] = useState<PartsRequest[]>([]);
   const [serviceIntakeRequests, setServiceIntakeRequests] = useState<ServiceIntakeRequest[]>([]);
   const [jobCardApprovals, setJobCardApprovals] = useState<JobCard[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<ServiceIntakeRequest | null>(null);
@@ -122,6 +131,130 @@ export default function Approvals() {
   // Service center context for filtering
   const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
   const shouldFilter = shouldFilterByServiceCenter(serviceCenterContext);
+  const { showSuccess, showError, showInfo } = useToast();
+
+  // Modal States
+  const [confirmModalState, setConfirmModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => { },
+  });
+
+  const [rejectionModalState, setRejectionModalState] = useState<{
+    isOpen: boolean;
+    targetId: string | null;
+    type: 'QUOTATION' | 'JOB_CARD' | 'PARTS_REQUEST' | 'SERVICE_INTAKE' | null;
+  }>({
+    isOpen: false,
+    targetId: null,
+    type: null,
+  });
+  const [rejectionReason, setRejectionReason] = useState("");
+
+  const openConfirmation = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModalState({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+    });
+  };
+
+  const openRejection = (id: string, type: 'QUOTATION' | 'JOB_CARD' | 'PARTS_REQUEST' | 'SERVICE_INTAKE') => {
+    setRejectionModalState({
+      isOpen: true,
+      targetId: id,
+      type,
+    });
+    setRejectionReason("");
+  };
+
+  const handleRejectionSubmit = async () => {
+    if (!rejectionReason.trim()) {
+      showError("Please provide a reason for rejection.");
+      return;
+    }
+    const { targetId, type } = rejectionModalState;
+    if (!targetId || !type) return;
+
+    try {
+      if (type === 'QUOTATION') {
+        await quotationsService.managerReview(targetId, { status: "REJECTED", notes: rejectionReason });
+        refreshQuotations();
+        showInfo("Quotation rejected.");
+      } else if (type === 'JOB_CARD') {
+        await jobCardService.managerReview(targetId, { status: "REJECTED", notes: rejectionReason });
+        refreshJobCards();
+        showInfo("Job card rejected.");
+      } else if (type === 'PARTS_REQUEST') {
+        await jobCardService.updatePartsRequestStatus(targetId, "REJECTED", rejectionReason);
+        refreshPartsRequests();
+        showInfo("Parts Request rejected.");
+      } else if (type === 'SERVICE_INTAKE') {
+        processServiceIntakeRejection(targetId, rejectionReason);
+      }
+      setRejectionModalState({ isOpen: false, targetId: null, type: null });
+      setRejectionReason("");
+    } catch (error) {
+      console.error("Rejection failed", error);
+      showError("Failed to reject request.");
+    }
+  };
+
+  // Helper functions to refresh data
+  const refreshQuotations = async () => {
+    const queryParams: any = { status: 'SENT_TO_MANAGER' };
+    if (shouldFilter && serviceCenterContext.serviceCenterId) {
+      queryParams.serviceCenterId = serviceCenterContext.serviceCenterId;
+    }
+    const finalQuotations = await quotationsService.getAll(queryParams);
+    setQuotations(finalQuotations);
+  };
+
+  const refreshJobCards = async () => {
+    const queryParams: any = {
+      passedToManager: 'true',
+      managerReviewStatus: 'PENDING'
+    };
+    if (shouldFilter && serviceCenterContext.serviceCenterId) {
+      queryParams.serviceCenterId = serviceCenterContext.serviceCenterId;
+    }
+    const pendingJobCards = await jobCardService.getAll(queryParams);
+    setJobCardApprovals(pendingJobCards);
+  };
+
+  const refreshPartsRequests = async () => {
+    const pendingParts = await jobCardService.getPendingPartsRequests(
+      shouldFilter && serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined
+    );
+    setPartsRequests(pendingParts);
+  };
+
+  const processServiceIntakeRejection = (requestId: string, reason: string) => {
+    const allRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
+    const updatedRequests = allRequests.map((r) =>
+      r.id === requestId
+        ? {
+          ...r,
+          status: "rejected" as const,
+          rejectedAt: new Date().toISOString(),
+          rejectedBy: "Service Manager",
+          rejectionReason: reason,
+        }
+        : r
+    );
+    safeStorage.setItem("serviceIntakeRequests", updatedRequests);
+    setServiceIntakeRequests(updatedRequests.filter((r) => r.status === "pending"));
+    setShowRequestModal(false);
+    setSelectedRequest(null);
+    showInfo("Service intake request rejected!");
+  };
 
   // Load quotations and service intake requests from localStorage
   useEffect(() => {
@@ -129,15 +262,12 @@ export default function Approvals() {
       // Load quotations
       // Load quotations from API
       try {
-        // Use a more inclusive filter or Specific status as per backend Enum
-        const pendingQuotations = await quotationsService.getAll({ status: 'SENT_TO_MANAGER' });
-
-        // Filter by service center if needed (though backend might already handle this if we pass serviceCenterId)
-        let finalQuotations = pendingQuotations;
+        const queryParams: any = { status: 'SENT_TO_MANAGER' };
         if (shouldFilter && serviceCenterContext.serviceCenterId) {
-          // Backend filtering via param is preferred, but filtering here is safe too
-          finalQuotations = filterByServiceCenter(pendingQuotations, serviceCenterContext);
+          queryParams.serviceCenterId = serviceCenterContext.serviceCenterId;
         }
+
+        const finalQuotations = await quotationsService.getAll(queryParams);
         setQuotations(finalQuotations);
       } catch (error) {
         console.error("Failed to load quotations:", error);
@@ -166,39 +296,34 @@ export default function Approvals() {
 
       setServiceIntakeRequests(pendingRequests);
 
-      // Load job cards submitted to manager
-      let storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
-
-      // Check if we have any pending job card approvals
-      const hasPendingApprovals = storedJobCards.some(jc => jc.submittedToManager === true && jc.status === "CREATED");
-
       // Fetch real pending job cards from API
       try {
-        const pendingJobCards = await jobCardService.getAll({
+        const queryParams: any = {
           passedToManager: 'true',
           managerReviewStatus: 'PENDING'
-        });
+        };
+
+        if (shouldFilter && serviceCenterContext.serviceCenterId) {
+          queryParams.serviceCenterId = serviceCenterContext.serviceCenterId;
+        }
+
+        const pendingJobCards = await jobCardService.getAll(queryParams);
         setJobCardApprovals(pendingJobCards);
       } catch (error) {
         console.error("Failed to fetch pending job cards:", error);
-        // Fallback to empty if API fails (or keep mock logic if preferred, but usually we want real data)
-        // For now, let's just use empty or the mock data if fetch fails
         setJobCardApprovals([]);
       }
 
-      // Reload from localStorage to ensure we have the latest data
-      storedJobCards = safeStorage.getItem<JobCard[]>("jobCards", []);
-
-      let pendingJobCards = storedJobCards.filter(
-        (jc) => jc.submittedToManager === true && jc.status === "CREATED"
-      );
-
-      // Filter by service center if needed
-      if (shouldFilter) {
-        pendingJobCards = filterByServiceCenter(pendingJobCards, serviceCenterContext);
+      // Load pending parts requests
+      try {
+        const pendingParts = await jobCardService.getPendingPartsRequests(
+          shouldFilter && serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined
+        );
+        setPartsRequests(pendingParts);
+      } catch (error) {
+        console.error("Failed to fetch pending parts requests:", error);
+        setPartsRequests([]);
       }
-
-      setJobCardApprovals(pendingJobCards);
     };
 
     loadData();
@@ -209,8 +334,8 @@ export default function Approvals() {
     };
 
     window.addEventListener("storage", handleStorageChange);
-    // Also check periodically for same-tab updates
-    const interval = setInterval(loadData, 1000);
+    // Also check periodically for same-tab updates (30 seconds)
+    const interval = setInterval(loadData, 30000);
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
@@ -276,139 +401,187 @@ export default function Approvals() {
     });
   }, [jobCardApprovals, searchQuery]);
 
+  const filteredPartsRequests = useMemo(() => {
+    if (!searchQuery.trim()) return partsRequests;
+
+    const query = searchQuery.toLowerCase();
+    return partsRequests.filter((req) => {
+      const customerName = req.jobCard?.customerName?.toLowerCase() || "";
+      const vehicle = `${req.jobCard?.vehicleMake || ""} ${req.jobCard?.vehicleModel || ""} ${req.jobCard?.registration || ""}`.toLowerCase();
+      const jobCardNumber = req.jobCard?.jobCardNumber?.toLowerCase() || "";
+      const items = req.items.map(i => i.partName.toLowerCase()).join(" ");
+
+      return customerName.includes(query) ||
+        vehicle.includes(query) ||
+        jobCardNumber.includes(query) ||
+        items.includes(query);
+    });
+  }, [partsRequests, searchQuery]);
+
   const handleApproveQuotation = async (quotationId: string) => {
-    if (!confirm("Are you sure you want to approve this quotation?")) return;
-
-    try {
-      await quotationsService.managerReview(quotationId, { status: "APPROVED", notes: "Approved by manager" });
-
-      // Refresh list
-      const pendingQuotations = await quotationsService.getAll({ status: 'SENT_TO_MANAGER' });
-      const finalQuotations = shouldFilter ? filterByServiceCenter(pendingQuotations, serviceCenterContext) : pendingQuotations;
-      setQuotations(finalQuotations);
-
-      alert("Quotation approved by manager!");
-    } catch (error) {
-      console.error("Failed to approve quotation", error);
-      alert("Failed to approve quotation");
-    }
+    openConfirmation(
+      "Approve Quotation",
+      "Are you sure you want to approve this quotation?",
+      async () => {
+        try {
+          await quotationsService.managerReview(quotationId, { status: "APPROVED", notes: "Approved by manager" });
+          await refreshQuotations();
+          showSuccess("Quotation approved by manager!");
+        } catch (error) {
+          console.error("Failed to approve quotation", error);
+          showError("Failed to approve quotation");
+        }
+      }
+    );
   };
 
-  const handleRejectQuotation = async (quotationId: string) => {
-    const reason = prompt("Please provide a reason for rejection:");
-    if (!reason) return;
-
-    try {
-      await quotationsService.managerReview(quotationId, { status: "REJECTED", notes: reason });
-
-      // Refresh list
-      const pendingQuotations = await quotationsService.getAll({ status: 'SENT_TO_MANAGER' });
-      const finalQuotations = shouldFilter ? filterByServiceCenter(pendingQuotations, serviceCenterContext) : pendingQuotations;
-      setQuotations(finalQuotations);
-
-      alert("Quotation rejected!");
-    } catch (error) {
-      console.error("Failed to reject quotation", error);
-      alert("Failed to reject quotation");
-    }
+  const handleRejectQuotation = (quotationId: string) => {
+    openRejection(quotationId, 'QUOTATION');
   };
 
   const handleApproveServiceIntake = (requestId: string): void => {
-    if (!confirm("Approve this service intake request?")) {
-      return;
-    }
-
-    const allRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
-    const updatedRequests = allRequests.map((r) =>
-      r.id === requestId
-        ? {
-          ...r,
-          status: "approved" as const,
-          approvedAt: new Date().toISOString(),
-          approvedBy: "Service Manager",
-        }
-        : r
+    openConfirmation(
+      "Approve Request",
+      "Approve this service intake request?",
+      () => {
+        const allRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
+        const updatedRequests = allRequests.map((r) =>
+          r.id === requestId
+            ? {
+              ...r,
+              status: "approved" as const,
+              approvedAt: new Date().toISOString(),
+              approvedBy: "Service Manager",
+            }
+            : r
+        );
+        safeStorage.setItem("serviceIntakeRequests", updatedRequests);
+        setServiceIntakeRequests(updatedRequests.filter((r) => r.status === "pending"));
+        setShowRequestModal(false);
+        setSelectedRequest(null);
+        showSuccess("Service intake request approved!");
+      }
     );
-    safeStorage.setItem("serviceIntakeRequests", updatedRequests);
-    setServiceIntakeRequests(updatedRequests.filter((r) => r.status === "pending"));
-    setShowRequestModal(false);
-    setSelectedRequest(null);
-    alert("Service intake request approved!");
   };
 
   const handleRejectServiceIntake = (requestId: string): void => {
-    const reason = prompt("Please provide a reason for rejection:");
-    if (!reason) {
-      return;
-    }
+    openRejection(requestId, 'SERVICE_INTAKE');
+  };
 
-    const allRequests = safeStorage.getItem<ServiceIntakeRequest[]>("serviceIntakeRequests", []);
-    const updatedRequests = allRequests.map((r) =>
-      r.id === requestId
-        ? {
-          ...r,
-          status: "rejected" as const,
-          rejectedAt: new Date().toISOString(),
-          rejectedBy: "Service Manager",
-          rejectionReason: reason,
+  const handleApproveJobCard = async (jobCardId: string) => {
+    openConfirmation(
+      "Approve Job Card",
+      "Approve this job card? This will allow technician assignment and parts monitoring.",
+      async () => {
+        try {
+          await jobCardService.managerReview(jobCardId, { status: "APPROVED", notes: "Approved via Web Portal" });
+          await refreshJobCards();
+          setShowJobCardModal(false);
+          setSelectedJobCard(null);
+          showSuccess("Job card approved! You can now assign a technician.");
+        } catch (error) {
+          console.error("Approval failed", error);
+          showError("Failed to approve job card. Please try again.");
         }
-        : r
+      }
     );
-    safeStorage.setItem("serviceIntakeRequests", updatedRequests);
-    setServiceIntakeRequests(updatedRequests.filter((r) => r.status === "pending"));
-    setShowRequestModal(false);
-    setSelectedRequest(null);
-    alert("Service intake request rejected!");
   };
 
-  const handleApproveJobCard = async (jobCardId: string) => { // Removed : void return type for async
-    if (!confirm("Approve this job card? This will allow technician assignment and parts monitoring.")) {
-      return;
+  const handleRejectJobCard = async (jobCardId: string) => {
+    openRejection(jobCardId, 'JOB_CARD');
+  };
+
+  // Engineers State
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [approvePartsModalState, setApprovePartsModalState] = useState<{
+    isOpen: boolean;
+    requestId: string | null;
+    selectedEngineerId: string;
+    currentEngineerName: string;
+    jobCardId: string;
+  }>({
+    isOpen: false,
+    requestId: null,
+    selectedEngineerId: "",
+    currentEngineerName: "",
+    jobCardId: "",
+  });
+
+  // Fetch engineers on mount
+  useEffect(() => {
+    const fetchEngineers = async () => {
+      try {
+        const data = await staffService.getEngineers(serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined);
+        setEngineers(data);
+      } catch (error) {
+        console.error("Failed to fetch engineers:", error);
+      }
+    };
+    if (serviceCenterContext.serviceCenterId) {
+      fetchEngineers();
+    }
+  }, [serviceCenterContext.serviceCenterId]);
+
+  const handleApprovePartsRequest = async (requestId: string) => {
+    const request = partsRequests.find(r => r.id === requestId);
+    if (!request || !request.jobCard) return;
+
+    let assignedEngineerId = "";
+    let assignedEngineerName = "Unassigned";
+
+    const { assignedEngineer } = request.jobCard;
+
+    if (assignedEngineer) {
+      if (typeof assignedEngineer === 'string') {
+        assignedEngineerId = assignedEngineer;
+        const engineer = engineers.find(e => e.id === assignedEngineer);
+        if (engineer) assignedEngineerName = engineer.name;
+      } else {
+        assignedEngineerId = assignedEngineer.id;
+        assignedEngineerName = assignedEngineer.name;
+      }
     }
 
+    setApprovePartsModalState({
+      isOpen: true,
+      requestId,
+      selectedEngineerId: assignedEngineerId, // Pre-select assigned one
+      currentEngineerName: assignedEngineerName,
+      jobCardId: request.jobCard.id,
+    });
+  };
+
+  const handleConfirmPartsApproval = async () => {
+    const { requestId, selectedEngineerId, jobCardId } = approvePartsModalState;
+    if (!requestId) return;
+
     try {
-      await jobCardService.managerReview(jobCardId, { status: "APPROVED", notes: "Approved via Web Portal" });
-      alert("Job card approved! You can now assign a technician.");
+      // 1. If engineer changed/selected (and differs from original), update assignment
+      if (selectedEngineerId) {
+        // Optionally check if different, but re-assigning is safe
+        // Find engineer name
+        const engineer = engineers.find(e => e.id === selectedEngineerId);
+        if (engineer) {
+          await jobCardService.assignEngineer(jobCardId, selectedEngineerId, engineer.name);
+        }
+      }
 
-      // Refresh list
-      const pendingJobCards = await jobCardService.getAll({
-        passedToManager: 'true',
-        managerReviewStatus: 'PENDING'
-      });
-      setJobCardApprovals(pendingJobCards);
+      // 2. Approve Request
+      await jobCardService.updatePartsRequestStatus(requestId, "APPROVED");
 
-      setShowJobCardModal(false);
-      setSelectedJobCard(null);
+      await refreshPartsRequests();
+      await refreshJobCards(); // In case status changed
 
+      setApprovePartsModalState(prev => ({ ...prev, isOpen: false }));
+      showSuccess("Parts Request Approved & Engineer Confirmed!");
     } catch (error) {
-      console.error("Approval failed", error);
-      alert("Failed to approve job card. Please try again.");
+      console.error("Failed to approve parts request", error);
+      showError("Failed to approve parts request");
     }
   };
 
-  const handleRejectJobCard = async (jobCardId: string) => { // Removed : void return type
-    const reason = prompt("Please provide a reason for rejection:");
-    if (!reason) {
-      return;
-    }
-
-    try {
-      await jobCardService.managerReview(jobCardId, { status: "REJECTED", notes: reason });
-      alert(`Job card rejected. Reason: ${reason}`);
-
-      // Refresh list
-      const pendingJobCards = await jobCardService.getAll({
-        passedToManager: 'true',
-        managerReviewStatus: 'PENDING'
-      });
-      setJobCardApprovals(pendingJobCards);
-
-      setShowJobCardModal(false);
-      setSelectedJobCard(null);
-    } catch (error) {
-      console.error("Rejection failed", error);
-      alert("Failed to reject job card. Please try again.");
-    }
+  const handleRejectPartsRequest = async (requestId: string) => {
+    openRejection(requestId, 'PARTS_REQUEST');
   };
 
   return (
@@ -455,16 +628,41 @@ export default function Approvals() {
 
                         <div className="space-y-2 mb-4">
                           <p className="text-gray-700">
-                            <span className="font-semibold">Customer:</span> {jobCard.customerName}
+                            <span className="font-semibold">Customer:</span> {
+                              jobCard.customerName ||
+                              jobCard.part1?.fullName ||
+                              jobCard.part1Data?.fullName ||
+                              jobCard.customer?.name ||
+                              "N/A"
+                            }
                           </p>
                           <p className="text-gray-700">
-                            <span className="font-semibold">Vehicle:</span> {jobCard.vehicle} {jobCard.registration && `(${jobCard.registration})`}
+                            <span className="font-semibold">Vehicle:</span> {
+                              (typeof jobCard.vehicle === 'string' ? jobCard.vehicle : `${jobCard.vehicle?.vehicleMake || ''} ${jobCard.vehicle?.vehicleModel || ''}`) ||
+                              jobCard.vehicleMake && `${jobCard.vehicleMake} ${jobCard.vehicleModel || ''}` ||
+                              jobCard.part1?.vehicleModel && `${jobCard.part1.vehicleBrand || ''} ${jobCard.part1.vehicleModel}` ||
+                              jobCard.part1Data?.vehicleModel && `${jobCard.part1Data.vehicleBrand || ''} ${jobCard.part1Data.vehicleModel}` ||
+                              "N/A"
+                            }
+                            {` (${jobCard.registration ||
+                              jobCard.part1?.registrationNumber ||
+                              jobCard.part1Data?.registrationNumber ||
+                              (typeof jobCard.vehicle !== 'string' ? jobCard.vehicle?.registration : '') ||
+                              "No Reg"})`}
                           </p>
                           <p className="text-gray-700">
-                            <span className="font-semibold">Service Type:</span> {jobCard.serviceType}
+                            <span className="font-semibold">Service Type:</span> {
+                              jobCard.serviceType ||
+                              "General Service"
+                            }
                           </p>
                           <p className="text-gray-700">
-                            <span className="font-semibold">Description:</span> {jobCard.description || "N/A"}
+                            <span className="font-semibold">Description:</span> {
+                              jobCard.description ||
+                              jobCard.part1?.customerFeedback ||
+                              jobCard.part1Data?.customerFeedback ||
+                              "N/A"
+                            }
                           </p>
                           {jobCard.parts && jobCard.parts.length > 0 && (
                             <p className="text-gray-700">
@@ -485,10 +683,7 @@ export default function Approvals() {
 
                       <div className="flex flex-col gap-2">
                         <button
-                          onClick={() => {
-                            setSelectedJobCard(jobCard);
-                            setShowJobCardModal(true);
-                          }}
+                          onClick={() => router.push(`/sc/job-cards/${jobCard.id}`)}
                           className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 font-medium"
                         >
                           <Eye size={18} />
@@ -504,6 +699,141 @@ export default function Approvals() {
                         <button
                           onClick={() => handleRejectJobCard(jobCard.id)}
                           className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium"
+                        >
+                          <ShieldX size={18} />
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Parts Request Approvals Section */}
+          {filteredPartsRequests.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                Parts Request Approvals {filteredPartsRequests.length > 0 && `(${filteredPartsRequests.length})`}
+              </h2>
+              <div className="space-y-4">
+                {filteredPartsRequests.map((request) => (
+                  <div key={request.id} className="bg-white rounded-2xl shadow-md p-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-3">
+                          <Package className="text-orange-600" size={20} />
+                          <span className="font-semibold text-lg">Parts Request</span>
+                          {/* 
+                            Logic to show detailed status:
+                            - PENDING: Needs general approval
+                            - APPROVED: Approved by Inventory Manager, pending final action
+                            - PARTIALLY_APPROVED: Some items approved
+                          */}
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${request.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                            request.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                            {request.status === 'PENDING' ? 'Pending Approval' : request.status.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        <div className="space-y-4 mb-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Job Card:</span> {request.jobCard?.jobCardNumber || "N/A"}
+                            </p>
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Technician:</span> {
+                                (typeof request.jobCard?.assignedEngineer === 'string'
+                                  ? engineers.find(e => e.id === request.jobCard?.assignedEngineer)?.name
+                                  : request.jobCard?.assignedEngineer?.name) || "Unassigned"
+                              }
+                            </p>
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Customer:</span> {request.jobCard?.customerName || request.jobCard?.customer?.name || "N/A"}
+                            </p>
+                            <p className="text-gray-700">
+                              <span className="font-semibold">Vehicle:</span> {
+                                (() => {
+                                  const jc = request.jobCard;
+                                  if (!jc) return "N/A";
+
+                                  const makeModel =
+                                    (jc.vehicleObject && `${jc.vehicleObject.vehicleMake} ${jc.vehicleObject.vehicleModel}`) ||
+                                    (typeof jc.vehicle === 'string' ? jc.vehicle : (jc.vehicle?.vehicleMake && `${jc.vehicle.vehicleMake} ${jc.vehicle.vehicleModel}`)) ||
+                                    (jc.vehicleMake && `${jc.vehicleMake} ${jc.vehicleModel || ''}`) ||
+                                    "N/A";
+
+                                  const reg =
+                                    jc.vehicleObject?.registration ||
+                                    jc.registration ||
+                                    (typeof jc.vehicle !== 'string' ? jc.vehicle?.registration : '') ||
+                                    "No Reg";
+
+                                  return `${makeModel} (${reg})`;
+                                })()
+                              }
+                            </p>
+                          </div>
+
+                          <div className="mt-2 text-sm text-gray-500">
+                            Requested: {new Date(request.createdAt).toLocaleString("en-IN")}
+                          </div>
+
+                          <div className="mt-4 border rounded-lg overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Part Details</th>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested Qty</th>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Status</th>
+                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {request.items.map((item, idx) => (
+                                  <tr key={idx}>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      <div className="font-medium">{item.partName}</div>
+                                      <div className="text-xs text-gray-500">{item.partNumber || "N/A"}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                      {item.requestedQty}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                      {/* This would ideally check real-time stock */}
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                        Check Stock
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                      {item.isWarranty ? (
+                                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">Warranty</span>
+                                      ) : (
+                                        <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">Paid</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => handleApprovePartsRequest(request.id)}
+                          className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-medium justify-center"
+                        >
+                          <ShieldCheck size={18} />
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleRejectPartsRequest(request.id)}
+                          className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium justify-center"
                         >
                           <ShieldX size={18} />
                           Reject
@@ -537,7 +867,12 @@ export default function Approvals() {
 
                         <div className="space-y-2 mb-4">
                           <p className="text-gray-700">
-                            <span className="font-semibold">Customer:</span> {request.appointment.customerName}
+                            <span className="font-semibold">Customer:</span> {
+                              request.appointment?.customerName ||
+                              request.appointment?.customer?.name ||
+                              (request.appointment?.customer?.firstName ? `${request.appointment.customer.firstName} ${request.appointment.customer.lastName || ''}` : "") ||
+                              "N/A"
+                            }
                           </p>
                           <p className="text-gray-700">
                             <span className="font-semibold">Vehicle:</span> {request.appointment.vehicle}
@@ -546,10 +881,16 @@ export default function Approvals() {
                             <span className="font-semibold">Service Type:</span> {request.serviceIntakeForm.serviceType || request.appointment.serviceType}
                           </p>
                           <p className="text-gray-700">
-                            <span className="font-semibold">Complaint:</span> {request.serviceIntakeForm.customerComplaint || request.appointment.customerComplaint || "N/A"}
+                            <span className="font-semibold">Complaint:</span> {
+                              request.serviceIntakeForm.customerComplaint ||
+                              request.appointment.customerComplaint ||
+                              request.appointment.description ||
+                              request.appointment.title ||
+                              "N/A"
+                            }
                           </p>
                           <p className="text-sm text-gray-500">
-                            Submitted: {new Date(request.submittedAt).toLocaleString("en-IN")}
+                            Submitted: {request.submittedAt ? new Date(request.submittedAt).toLocaleString("en-IN") : "N/A"}
                             {request.submittedBy && ` by ${request.submittedBy}`}
                           </p>
                         </div>
@@ -595,7 +936,7 @@ export default function Approvals() {
                 Quotation Approvals {filteredQuotations.length > 0 && `(${filteredQuotations.length})`}
               </h2>
             )}
-            {filteredQuotations.length === 0 && filteredServiceIntakeRequests.length === 0 && filteredJobCardApprovals.length === 0 ? (
+            {filteredQuotations.length === 0 && filteredServiceIntakeRequests.length === 0 && filteredJobCardApprovals.length === 0 && filteredPartsRequests.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-md p-12 text-center">
                 <FileText className="mx-auto text-gray-400 mb-4" size={48} />
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">No Pending Approvals</h3>
@@ -665,7 +1006,7 @@ export default function Approvals() {
                         </div>
                       )}
                     </div>
-
+                    {/* Quotation Actions */}
                     <div className="flex flex-col gap-2">
                       <button
                         onClick={() => handleApproveQuotation(quotation.id)}
@@ -681,493 +1022,381 @@ export default function Approvals() {
                         <ShieldX size={18} />
                         Reject
                       </button>
-                      <button
-                        onClick={() => {
-                          // Open quotation view modal or navigate to quotations page
-                          window.location.href = `/sc/quotations?view=${quotation.id}`;
-                        }}
-                        className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 font-medium"
-                      >
-                        <Eye size={18} />
-                        View Details
-                      </button>
                     </div>
                   </div>
                 </div>
-              ))
-            ) : null}
+              ))) : null}
           </div>
+
+          <ConfirmModal
+            isOpen={confirmModalState.isOpen}
+            onClose={() => setConfirmModalState(prev => ({ ...prev, isOpen: false }))}
+            onConfirm={() => {
+              confirmModalState.onConfirm();
+              setConfirmModalState(prev => ({ ...prev, isOpen: false }));
+            }}
+            title={confirmModalState.title}
+            message={confirmModalState.message}
+            type="warning"
+            confirmText="Approve"
+          />
+
+          <Modal
+            isOpen={rejectionModalState.isOpen}
+            onClose={() => setRejectionModalState({ isOpen: false, targetId: null, type: null })}
+            title="Reject Request"
+            size="sm"
+          >
+            <div className="space-y-4">
+              <p className="text-gray-600">Please provide a reason for rejecting this request.</p>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Enter rejection reason..."
+                className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none resize-none"
+              />
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  onClick={() => setRejectionModalState({ isOpen: false, targetId: null, type: null })}
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleRejectionSubmit}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  disabled={!rejectionReason.trim()}
+                >
+                  Confirm Rejection
+                </Button>
+              </div>
+            </div>
+          </Modal>
+
+          {/* Parts Approval & Engineer Selection Modal */}
+          <Modal
+            isOpen={approvePartsModalState.isOpen}
+            onClose={() => setApprovePartsModalState(prev => ({ ...prev, isOpen: false }))}
+            title="Approve Parts & Confirm Engineer"
+            size="md"
+          >
+            <div className="space-y-6">
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
+                <p className="text-sm text-blue-800">
+                  <span className="font-semibold">Note:</span> Please verify the engineer receiving the parts.
+                  The currently assigned engineer is pre-selected. Changing the engineer here will update the job card assignment.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assigned Engineer <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <UserPlus className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                  <select
+                    value={approvePartsModalState.selectedEngineerId}
+                    onChange={(e) => setApprovePartsModalState(prev => ({ ...prev, selectedEngineerId: e.target.value }))}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none"
+                  >
+                    <option value="" disabled>Select Engineer</option>
+                    {engineers.map((engineer) => (
+                      <option key={engineer.id} value={engineer.id}>
+                        {engineer.name} {engineer.status !== 'Available' ? `(${engineer.status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <Button
+                  onClick={() => setApprovePartsModalState(prev => ({ ...prev, isOpen: false }))}
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmPartsApproval}
+                  className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+                  disabled={!approvePartsModalState.selectedEngineerId}
+                >
+                  <ShieldCheck size={18} />
+                  Approve & Issue
+                </Button>
+              </div>
+            </div>
+          </Modal>
+
         </div>
 
         {/* Service Intake Request Detail Modal */}
-        {showRequestModal && selectedRequest && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Service Intake Request Details</h2>
-                <button
-                  onClick={() => {
-                    setShowRequestModal(false);
-                    setSelectedRequest(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition p-2 rounded-lg hover:bg-gray-100"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Appointment Information */}
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <Calendar className="text-blue-600" size={20} />
-                    Appointment Information
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Customer Name</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.appointment.customerName}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Phone</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.appointment.phone}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Vehicle</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.appointment.vehicle}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Appointment Date</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.appointment.date} at {selectedRequest.appointment.time}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Vehicle Information */}
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <Car className="text-blue-600" size={20} />
-                    Vehicle Information
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Vehicle Brand</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.vehicleBrand || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Vehicle Model</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.vehicleModel || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Registration Number</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.registrationNumber || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">VIN/Chassis Number</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.vinChassisNumber || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Variant/Battery Capacity</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.variantBatteryCapacity || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Motor Number</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.motorNumber || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Charger Serial Number</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.chargerSerialNumber || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Date of Purchase</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.dateOfPurchase || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Warranty Status</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.warrantyStatus || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Odometer Reading</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.odometerReading || "N/A"}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Service Details */}
-                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <Wrench className="text-purple-600" size={20} />
-                    Service Details
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Service Type</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.serviceType || selectedRequest.appointment.serviceType || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Customer Complaint/Issue</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.customerComplaint || selectedRequest.appointment.customerComplaint || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Previous Service History</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.previousServiceHistory || selectedRequest.appointment.previousServiceHistory || "N/A"}</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Estimated Service Time</p>
-                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.estimatedServiceTime || selectedRequest.appointment.estimatedServiceTime || "N/A"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Estimated Cost</p>
-                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.estimatedCost || selectedRequest.appointment.estimatedCost || "N/A"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Estimated Delivery Date</p>
-                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.estimatedDeliveryDate || selectedRequest.appointment.estimatedDeliveryDate || "N/A"}</p>
-                      </div>
-                    </div>
-                    {selectedRequest.serviceIntakeForm.checkInNotes && (
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Check-in Notes</p>
-                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.checkInNotes}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Insurance Information */}
-                {(selectedRequest.serviceIntakeForm.insuranceStartDate || selectedRequest.serviceIntakeForm.insuranceEndDate || selectedRequest.serviceIntakeForm.insuranceCompanyName) && (
-                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Insurance Information</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Insurance Company</p>
-                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.insuranceCompanyName || "N/A"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Start Date</p>
-                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.insuranceStartDate || "N/A"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">End Date</p>
-                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.insuranceEndDate || "N/A"}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Operational Details */}
-                <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Operational Details</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Assigned Service Advisor</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.assignedServiceAdvisor || selectedRequest.appointment.assignedServiceAdvisor || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Assigned Technician</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.assignedTechnician || selectedRequest.appointment.assignedTechnician || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Pickup/Drop Required</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.pickupDropRequired || selectedRequest.appointment.pickupDropRequired ? "Yes" : "No"}</p>
-                    </div>
-                    {selectedRequest.serviceIntakeForm.pickupDropRequired && (
-                      <>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Pickup Address</p>
-                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.pickupAddress || selectedRequest.appointment.pickupAddress || "N/A"}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Drop Address</p>
-                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.dropAddress || selectedRequest.appointment.dropAddress || "N/A"}</p>
-                        </div>
-                      </>
-                    )}
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Preferred Communication</p>
-                      <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.preferredCommunicationMode || selectedRequest.appointment.preferredCommunicationMode || "N/A"}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Documentation Status */}
-                <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Documentation</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Customer ID Proof</p>
-                      <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.customerIdProof?.urls?.length > 0
-                          ? `${selectedRequest.serviceIntakeForm.customerIdProof.urls.length} file(s)`
-                          : "Not provided"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Vehicle RC Copy</p>
-                      <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.vehicleRCCopy?.urls?.length > 0
-                          ? `${selectedRequest.serviceIntakeForm.vehicleRCCopy.urls.length} file(s)`
-                          : "Not provided"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Warranty Card/Service Book</p>
-                      <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.warrantyCardServiceBook?.urls?.length > 0
-                          ? `${selectedRequest.serviceIntakeForm.warrantyCardServiceBook.urls.length} file(s)`
-                          : "Not provided"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Photos/Videos</p>
-                      <p className="font-medium text-gray-800">
-                        {selectedRequest.serviceIntakeForm.photosVideos?.urls?.length > 0
-                          ? `${selectedRequest.serviceIntakeForm.photosVideos.urls.length} file(s)`
-                          : "Not provided"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
+        {
+          showRequestModal && selectedRequest && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800">Service Intake Request Details</h2>
                   <button
                     onClick={() => {
                       setShowRequestModal(false);
                       setSelectedRequest(null);
                     }}
-                    className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
+                    className="text-gray-400 hover:text-gray-600 transition p-2 rounded-lg hover:bg-gray-100"
                   >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => handleRejectServiceIntake(selectedRequest.id)}
-                    className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-700 transition flex items-center justify-center gap-2"
-                  >
-                    <ShieldX size={18} />
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => handleApproveServiceIntake(selectedRequest.id)}
-                    className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition flex items-center justify-center gap-2"
-                  >
-                    <ShieldCheck size={18} />
-                    Approve
+                    <X size={24} />
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Job Card Approval Detail Modal */}
-        {showJobCardModal && selectedJobCard && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Job Card Approval Details</h2>
-                <button
-                  onClick={() => {
-                    setShowJobCardModal(false);
-                    setSelectedJobCard(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition p-2 rounded-lg hover:bg-gray-100"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Job Card Information */}
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <ClipboardList className="text-indigo-600" size={20} />
-                    Job Card Information
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Job Card Number</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.jobCardNumber || selectedJobCard.id}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Status</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.status}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Priority</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.priority}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Service Center</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.serviceCenterName || "N/A"}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Customer & Vehicle Information */}
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <User className="text-blue-600" size={20} />
-                    Customer & Vehicle Information
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Customer Name</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.customerName}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Customer Type</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.customerType || "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Vehicle</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.vehicle}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Registration</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.registration || "N/A"}</p>
-                    </div>
-                    {selectedJobCard.part1 && (
-                      <>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">VIN/Chassis Number</p>
-                          <p className="font-medium text-gray-800">{selectedJobCard.part1.vinChassisNumber || "N/A"}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Variant/Battery Capacity</p>
-                          <p className="font-medium text-gray-800">{selectedJobCard.part1.variantBatteryCapacity || "N/A"}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Warranty Status</p>
-                          <p className="font-medium text-gray-800">{selectedJobCard.part1.warrantyStatus || "N/A"}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">Customer Address</p>
-                          <p className="font-medium text-gray-800">{selectedJobCard.part1.customerAddress || "N/A"}</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Service Details */}
-                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <Wrench className="text-purple-600" size={20} />
-                    Service Details
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Service Type</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.serviceType}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Description</p>
-                      <p className="font-medium text-gray-800">{selectedJobCard.description || "N/A"}</p>
-                    </div>
-                    {selectedJobCard.part1 && (
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Customer Feedback</p>
-                        <p className="font-medium text-gray-800">{selectedJobCard.part1.customerFeedback || "N/A"}</p>
-                      </div>
-                    )}
+                <div className="space-y-6">
+                  {/* Appointment Information */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                      <Calendar className="text-blue-600" size={20} />
+                      Appointment Information
+                    </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <p className="text-sm text-gray-500 mb-1">Estimated Cost</p>
-                        <p className="font-medium text-gray-800">{selectedJobCard.estimatedCost || "N/A"}</p>
+                        <p className="text-sm text-gray-500 mb-1">Customer Name</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.appointment.customerName}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500 mb-1">Estimated Time</p>
-                        <p className="font-medium text-gray-800">{selectedJobCard.estimatedTime || "N/A"}</p>
+                        <p className="text-sm text-gray-500 mb-1">Phone</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.appointment.phone}</p>
                       </div>
-                      {selectedJobCard.part1 && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Vehicle</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.appointment.vehicle}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Appointment Date</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.appointment.date} at {selectedRequest.appointment.time}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Vehicle Information */}
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                      <Car className="text-blue-600" size={20} />
+                      Vehicle Information
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Vehicle Brand</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.vehicleBrand || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Vehicle Model</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.vehicleModel || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Registration Number</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.registrationNumber || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">VIN/Chassis Number</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.vinChassisNumber || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Variant/Battery Capacity</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.variantBatteryCapacity || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Motor Number</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.motorNumber || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Charger Serial Number</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.chargerSerialNumber || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Date of Purchase</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.dateOfPurchase || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Warranty Status</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.warrantyStatus || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Odometer Reading</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.odometerReading || "N/A"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Service Details */}
+                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                      <Wrench className="text-purple-600" size={20} />
+                      Service Details
+                    </h3>
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Service Type</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.serviceType || selectedRequest.appointment.serviceType || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Customer Complaint/Issue</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.customerComplaint || selectedRequest.appointment.customerComplaint || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Previous Service History</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.previousServiceHistory || selectedRequest.appointment.previousServiceHistory || "N/A"}</p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-500 mb-1">Estimated Service Time</p>
+                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.estimatedServiceTime || selectedRequest.appointment.estimatedServiceTime || "N/A"}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500 mb-1">Estimated Cost</p>
+                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.estimatedCost || selectedRequest.appointment.estimatedCost || "N/A"}</p>
+                        </div>
                         <div>
                           <p className="text-sm text-gray-500 mb-1">Estimated Delivery Date</p>
-                          <p className="font-medium text-gray-800">{selectedJobCard.part1.estimatedDeliveryDate || "N/A"}</p>
+                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.estimatedDeliveryDate || selectedRequest.appointment.estimatedDeliveryDate || "N/A"}</p>
+                        </div>
+                      </div>
+                      {selectedRequest.serviceIntakeForm.checkInNotes && (
+                        <div>
+                          <p className="text-sm text-gray-500 mb-1">Check-in Notes</p>
+                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.checkInNotes}</p>
                         </div>
                       )}
                     </div>
                   </div>
-                </div>
 
-                {/* Parts & Work Items */}
-                {selectedJobCard.part2 && selectedJobCard.part2.length > 0 && (
-                  <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Parts & Work Items</h3>
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
-                      <table className="w-full">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Sr No</th>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Part/Work Item</th>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Part Code</th>
-                            <th className="px-4 py-2 text-center text-xs font-semibold text-gray-700">Qty</th>
-                            <th className="px-4 py-2 text-right text-xs font-semibold text-gray-700">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {selectedJobCard.part2.map((item, idx) => (
-                            <tr key={idx}>
-                              <td className="px-4 py-2 text-sm text-gray-800">{item.srNo}</td>
-                              <td className="px-4 py-2 text-sm text-gray-800">{item.partName}</td>
-                              <td className="px-4 py-2 text-sm text-gray-800">{item.partCode || "N/A"}</td>
-                              <td className="px-4 py-2 text-sm text-center text-gray-800">{item.qty}</td>
-                              <td className="px-4 py-2 text-sm text-right text-gray-800">₹{item.amount.toLocaleString("en-IN")}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  {/* Insurance Information */}
+                  {(selectedRequest.serviceIntakeForm.insuranceStartDate || selectedRequest.serviceIntakeForm.insuranceEndDate || selectedRequest.serviceIntakeForm.insuranceCompanyName) && (
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Insurance Information</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-500 mb-1">Insurance Company</p>
+                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.insuranceCompanyName || "N/A"}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500 mb-1">Start Date</p>
+                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.insuranceStartDate || "N/A"}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500 mb-1">End Date</p>
+                          <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.insuranceEndDate || "N/A"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Operational Details */}
+                  <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Operational Details</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Assigned Service Advisor</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.assignedServiceAdvisor || selectedRequest.appointment.assignedServiceAdvisor || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Assigned Technician</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.assignedTechnician || selectedRequest.appointment.assignedTechnician || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Pickup/Drop Required</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.pickupDropRequired || selectedRequest.appointment.pickupDropRequired ? "Yes" : "No"}</p>
+                      </div>
+                      {selectedRequest.serviceIntakeForm.pickupDropRequired && (
+                        <>
+                          <div>
+                            <p className="text-sm text-gray-500 mb-1">Pickup Address</p>
+                            <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.pickupAddress || selectedRequest.appointment.pickupAddress || "N/A"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-500 mb-1">Drop Address</p>
+                            <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.dropAddress || selectedRequest.appointment.dropAddress || "N/A"}</p>
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Preferred Communication</p>
+                        <p className="font-medium text-gray-800">{selectedRequest.serviceIntakeForm.preferredCommunicationMode || selectedRequest.appointment.preferredCommunicationMode || "N/A"}</p>
+                      </div>
                     </div>
                   </div>
-                )}
 
-                {/* Required Parts (Legacy) */}
-                {selectedJobCard.parts && selectedJobCard.parts.length > 0 && (
+                  {/* Documentation Status */}
                   <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Required Parts</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedJobCard.parts.map((part, idx) => (
-                        <span key={idx} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
-                          {part}
-                        </span>
-                      ))}
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Documentation</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Customer ID Proof</p>
+                        <p className="font-medium text-gray-800">
+                          {selectedRequest.serviceIntakeForm.customerIdProof?.urls?.length > 0
+                            ? `${selectedRequest.serviceIntakeForm.customerIdProof.urls.length} file(s)`
+                            : "Not provided"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Vehicle RC Copy</p>
+                        <p className="font-medium text-gray-800">
+                          {selectedRequest.serviceIntakeForm.vehicleRCCopy?.urls?.length > 0
+                            ? `${selectedRequest.serviceIntakeForm.vehicleRCCopy.urls.length} file(s)`
+                            : "Not provided"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Warranty Card/Service Book</p>
+                        <p className="font-medium text-gray-800">
+                          {selectedRequest.serviceIntakeForm.warrantyCardServiceBook?.urls?.length > 0
+                            ? `${selectedRequest.serviceIntakeForm.warrantyCardServiceBook.urls.length} file(s)`
+                            : "Not provided"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Photos/Videos</p>
+                        <p className="font-medium text-gray-800">
+                          {selectedRequest.serviceIntakeForm.photosVideos?.urls?.length > 0
+                            ? `${selectedRequest.serviceIntakeForm.photosVideos.urls.length} file(s)`
+                            : "Not provided"}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                )}
 
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => {
-                      setShowJobCardModal(false);
-                      setSelectedJobCard(null);
-                    }}
-                    className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => handleRejectJobCard(selectedJobCard.id)}
-                    className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-700 transition flex items-center justify-center gap-2"
-                  >
-                    <ShieldX size={18} />
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => handleApproveJobCard(selectedJobCard.id)}
-                    className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition flex items-center justify-center gap-2"
-                  >
-                    <ShieldCheck size={18} />
-                    Approve
-                  </button>
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => {
+                        setShowRequestModal(false);
+                        setSelectedRequest(null);
+                      }}
+                      className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={() => handleRejectServiceIntake(selectedRequest.id)}
+                      className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-700 transition flex items-center justify-center gap-2"
+                    >
+                      <ShieldX size={18} />
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => handleApproveServiceIntake(selectedRequest.id)}
+                      className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition flex items-center justify-center gap-2"
+                    >
+                      <ShieldCheck size={18} />
+                      Approve
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+          )
+        }
+
+
+      </div >
+    </div >
   );
 }
 

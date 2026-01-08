@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { X, Package, User } from 'lucide-react';
+import { X, Package, User, CheckCircle, XCircle, ShieldCheck, FileText } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
+import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface JobCardDetailsModalProps {
     open: boolean;
@@ -11,6 +12,11 @@ interface JobCardDetailsModalProps {
     getNextStatus: (status: JobCardStatus) => JobCardStatus[];
     onAssignEngineer: (jobId: string) => void;
     onUpdateStatus: (jobId: string, initialStatus: JobCardStatus) => void;
+    onApprove?: (jobId: string) => void;
+    onReject?: (jobId: string) => void;
+    onSendToManager?: (jobId: string) => void;
+    onCreateQuotation?: (job: JobCard) => void;
+    onCreateInvoice?: (job: JobCard) => void;
 }
 
 const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
@@ -22,6 +28,11 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
     getNextStatus,
     onAssignEngineer,
     onUpdateStatus,
+    onApprove,
+    onReject,
+    onSendToManager,
+    onCreateQuotation,
+    onCreateInvoice,
 }) => {
     if (!open || !job) return null;
 
@@ -74,9 +85,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                         <div className="bg-green-50 p-3 md:p-4 rounded-xl">
                             <h3 className="font-semibold text-green-800 mb-1 md:mb-2 text-sm md:text-base">Vehicle Information</h3>
                             <p className="text-xs md:text-sm text-gray-700 break-words">
-                                {typeof job.vehicle === 'object' && job.vehicle !== null
-                                    ? `${(job.vehicle as any).vehicleModel || ''} ${(job.vehicle as any).registration ? `(${(job.vehicle as any).registration})` : ''}`
-                                    : job.vehicle}
+                                {getVehicleDisplayString(job.vehicle)}
                             </p>
                             <p className="text-xs text-gray-600 mt-1 break-words">{job.registration}</p>
                         </div>
@@ -139,9 +148,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                             <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
                                 <p className="text-xs md:text-sm text-gray-700 flex items-center gap-1 md:gap-2 break-words">
                                     <User size={14} className="text-gray-400 flex-shrink-0" />
-                                    {typeof job.assignedEngineer === 'object' && job.assignedEngineer !== null
-                                        ? (job.assignedEngineer as any).name || 'Unassigned'
-                                        : job.assignedEngineer}
+                                    {getAssignedEngineerName(job.assignedEngineer)}
                                 </p>
                             </div>
                         </div>
@@ -163,6 +170,33 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 Assign Engineer
                             </button>
                         )}
+                        {!job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && onSendToManager && (
+                            <button
+                                onClick={() => onSendToManager(job.id)}
+                                className="flex-1 bg-purple-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:bg-purple-700 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <ShieldCheck size={18} />
+                                Send to Manager
+                            </button>
+                        )}
+                        {job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && onApprove && (
+                            <button
+                                onClick={() => onApprove(job.id)}
+                                className="flex-1 bg-green-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:bg-green-700 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <CheckCircle size={18} />
+                                Approve
+                            </button>
+                        )}
+                        {job.passedToManager && (job.status === "CREATED" || job.status === "AWAITING_QUOTATION_APPROVAL") && onReject && (
+                            <button
+                                onClick={() => onReject(job.id)}
+                                className="flex-1 bg-red-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:bg-red-700 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <XCircle size={18} />
+                                Reject
+                            </button>
+                        )}
                         {getNextStatus(job.status).length > 0 && (
                             <button
                                 onClick={() => onUpdateStatus(job.id, job.status)}
@@ -171,8 +205,21 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 Update Status
                             </button>
                         )}
-                        {job.status === "COMPLETED" && (
-                            <button className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base">
+                        {job.managerReviewStatus === "APPROVED" && !job.quotationId && !job.quotation && onCreateQuotation && (
+                            <button
+                                onClick={() => onCreateQuotation(job)}
+                                className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <FileText size={18} />
+                                Create Quotation
+                            </button>
+                        )}
+                        {job.status === "COMPLETED" && onCreateInvoice && (
+                            <button
+                                onClick={() => onCreateInvoice(job)}
+                                className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base flex items-center justify-center gap-2"
+                            >
+                                <FileText size={18} />
                                 Generate Invoice
                             </button>
                         )}

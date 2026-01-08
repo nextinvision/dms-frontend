@@ -3,16 +3,62 @@ import { apiClient } from '@/core/api/client';
 
 export interface InventoryPart {
     id: string;
-    partId: string;
+    partId?: string;
+    serviceCenterId: string;
+    
+    // Basic Part Information
+    oemPartNumber?: string;
     partName: string;
-    partNumber?: string;
-    category?: string;
-    quantity: number;
-    minLevel?: number;
-    maxLevel?: number;
-    serviceCenterId?: string;
+    partNumber: string;
+    originType?: string;
+    category: string;
+    description?: string;
+    
+    // Stock Information
+    stockQuantity: number;
+    minStockLevel: number;
+    maxStockLevel: number;
+    unit?: string;
+    location?: string;
+    
+    // Part Details
+    brandName?: string;
+    variant?: string;
+    partType?: string;
+    color?: string;
+    
+    // Pricing - Purchase
+    costPrice: number | string;
+    pricePreGst?: number | string;
+    gstRateInput?: number | string;
+    gstInput?: number | string;
+    
+    // Pricing - Sale
+    unitPrice: number | string;
+    gstRate: number;
+    gstRateOutput?: number | string;
+    totalPrice?: number | string;
+    totalGst?: number | string;
+    
+    // Labour Information
+    labourName?: string;
+    labourCode?: string;
+    labourWorkTime?: string;
+    labourRate?: number | string;
+    labourGstRate?: number | string;
+    labourPrice?: number | string;
+    
+    // Flags
+    highValuePart?: boolean;
+    
+    // Timestamps
     createdAt?: string;
     updatedAt?: string;
+    
+    // Legacy fields for compatibility
+    quantity?: number;
+    minLevel?: number;
+    maxLevel?: number;
 }
 
 export interface StockAdjustment {

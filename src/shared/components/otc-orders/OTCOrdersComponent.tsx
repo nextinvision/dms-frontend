@@ -15,12 +15,13 @@ import {
 } from "lucide-react";
 import type { OTCPart, CartItem, CustomerInfo, InvoiceData } from "@/shared/types";
 import { useToastStore } from "@/store/toastStore";
-import { ToastContainer } from "@/shared/components/ui/Toast/ToastContainer";
 import { invoiceService } from "@/features/inventory/services/invoice.service";
 import { customerService } from "@/features/customers/services/customer.service";
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { apiClient } from "@/core/api/client";
 import { useAuthStore } from "@/store/authStore";
+import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
+import type { Part } from "@/features/inventory/types/inventory.types";
 
 export default function OTCOrdersComponent() {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -42,24 +43,60 @@ export default function OTCOrdersComponent() {
   const [isSearchingCustomer, setIsSearchingCustomer] = useState<boolean>(false);
   const [customerSearchResults, setCustomerSearchResults] = useState<any[]>([]);
   const [customerFound, setCustomerFound] = useState<boolean>(false);
-  const { showSuccess, showError, toasts, removeToast } = useToastStore();
+  const [availableParts, setAvailableParts] = useState<OTCPart[]>([]);
+  const [isLoadingParts, setIsLoadingParts] = useState<boolean>(true);
+  const { showSuccess, showError, showWarning } = useToastStore();
   const { userRole } = useAuthStore();
   const isInventoryManager = userRole === 'inventory_manager';
 
-  // Mock parts inventory for OTC
-  const availableParts: OTCPart[] = [
-    { id: 1, name: "Engine Oil 5W-30", hsnCode: "EO-001", price: 450, stock: 45, category: "Lubricants" },
-    { id: 2, name: "Brake Pads - Front", hsnCode: "BP-002", price: 1200, stock: 8, category: "Brakes" },
-    { id: 3, name: "Air Filter", hsnCode: "AF-003", price: 350, stock: 0, category: "Filters" },
-    { id: 4, name: "AC Gas R134a", hsnCode: "AC-004", price: 800, stock: 12, category: "AC Parts" },
-    { id: 5, name: "Spark Plugs Set", hsnCode: "SP-005", price: 600, stock: 25, category: "Engine" },
-    { id: 6, name: "Windshield Wiper", hsnCode: "WW-006", price: 250, stock: 30, category: "Accessories" },
-  ];
+  // Fetch parts from parts master
+  useEffect(() => {
+    const fetchParts = async () => {
+      try {
+        setIsLoadingParts(true);
+        const parts: Part[] = await partsMasterService.getAll();
+
+        // Map Part to OTCPart
+        const otcParts: OTCPart[] = parts.map((part, index) => {
+          // Generate a unique numeric ID from the string ID
+          // Use hash of the string ID to ensure uniqueness
+          let numericId = index + 1;
+          if (part.id) {
+            // Create a hash from the string ID
+            const hash = part.id.split('').reduce((acc, char) => {
+              return ((acc << 5) - acc) + char.charCodeAt(0) | 0;
+            }, 0);
+            numericId = Math.abs(hash) || index + 1;
+          }
+
+          return {
+            id: numericId,
+            name: part.partName,
+            hsnCode: part.oemPartNumber || part.partNumber || part.partId || `PART-${numericId}`,
+            price: part.unitPrice || part.price || 0,
+            stock: part.stockQuantity || 0,
+            category: part.category || "Uncategorized",
+          };
+        });
+
+        setAvailableParts(otcParts);
+      } catch (error) {
+        console.error("Failed to fetch parts:", error);
+        showError("Failed to load parts. Please try again.");
+        setAvailableParts([]);
+      } finally {
+        setIsLoadingParts(false);
+      }
+    };
+
+    fetchParts();
+  }, [showError]);
 
   const filteredParts = availableParts.filter(
     (part) =>
       part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      part.hsnCode.toLowerCase().includes(searchQuery.toLowerCase())
+      part.hsnCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      part.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const addToCart = (part: OTCPart): void => {
@@ -99,7 +136,7 @@ export default function OTCOrdersComponent() {
   const searchCustomerByPhone = useCallback(async (phone: string) => {
     // Clean phone number but preserve digits
     const cleanedPhone = phone.replace(/[\s-+().]/g, "").trim();
-    
+
     // Only search if phone has at least 3 digits
     if (cleanedPhone.length < 3) {
       setCustomerSearchResults([]);
@@ -111,10 +148,10 @@ export default function OTCOrdersComponent() {
     try {
       // Use cleaned phone for search
       const customers = await customerService.search(cleanedPhone, 'phone');
-      
+
       // Ensure customers is an array
       const customersArray = Array.isArray(customers) ? customers : [];
-      
+
       if (customersArray.length > 0) {
         // Customer found - auto-populate name
         const foundCustomer = customersArray[0];
@@ -154,12 +191,12 @@ export default function OTCOrdersComponent() {
   const handlePhoneChange = useCallback((phone: string) => {
     setCustomerInfo(prev => ({ ...prev, phone }));
     setCustomerFound(false);
-    
+
     // Clear previous timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-    
+
     // Debounce the search
     searchTimeoutRef.current = setTimeout(() => {
       searchCustomerByPhone(phone);
@@ -177,7 +214,7 @@ export default function OTCOrdersComponent() {
 
   const handleGenerateInvoice = useCallback((): void => {
     if (cart.length === 0) {
-      alert("Cart is empty!");
+      showWarning("Cart is empty!");
       return;
     }
     // Generate invoice data only when handler is called (not during render)
@@ -206,23 +243,23 @@ export default function OTCOrdersComponent() {
 
   const handleConfirmPayment = async (): Promise<void> => {
     if (!invoiceData) return;
-    
+
     setIsSaving(true);
-    
+
     let invoicePayload: any = null;
-    
+
     try {
       const context = getServiceCenterContext();
       if (!context.serviceCenterId) {
         throw new Error("Service Center ID not found. Please ensure you are assigned to a service center.");
       }
-      
+
       // Ensure serviceCenterId is a string
       const serviceCenterId = String(context.serviceCenterId);
 
       // Find or create customer
       let customerId: string | undefined;
-      
+
       // Clean phone number for search
       const cleanedPhone = invoiceData.customer.phone.replace(/[\s-+().]/g, "").trim();
       if (!cleanedPhone || cleanedPhone.length < 10) {
@@ -236,32 +273,32 @@ export default function OTCOrdersComponent() {
       let customerFound = false;
       let searchAttempted = false;
       let lastSearchError: any = null;
-      
+
       // First, try searching by phone number
       try {
         searchAttempted = true;
         const customers = await customerService.search(cleanedPhone, 'phone');
         const customersArray = Array.isArray(customers) ? customers : [];
-        
+
         if (customersArray.length > 0) {
           customerId = String(customersArray[0].id);
           customerFound = true;
           console.log("Customer found by phone:", customerId);
         } else {
           console.log("Customer search returned no results for phone:", cleanedPhone);
-          
+
           // If phone search fails and we have a customer name, try searching by name
           if (customerName && customerName.trim() && customerName !== 'Walk-in Customer') {
             try {
               console.log("Trying to search customer by name:", customerName);
               const nameCustomers = await customerService.search(customerName.trim(), 'name');
               const nameCustomersArray = Array.isArray(nameCustomers) ? nameCustomers : [];
-              
+
               // Try to find a match that also has the same phone (if available in results)
-              const matchingCustomer = nameCustomersArray.find((c: any) => 
+              const matchingCustomer = nameCustomersArray.find((c: any) =>
                 c.phone && c.phone.replace(/[\s-+().]/g, "").trim() === cleanedPhone
               ) || nameCustomersArray[0];
-              
+
               if (matchingCustomer) {
                 customerId = String(matchingCustomer.id);
                 customerFound = true;
@@ -298,7 +335,7 @@ export default function OTCOrdersComponent() {
         } catch (createError: any) {
           // Check if it's a permission error
           if (createError?.status === 403 || createError?.code === 'HTTP_403') {
-            const phoneDisplay = cleanedPhone.length >= 10 
+            const phoneDisplay = cleanedPhone.length >= 10
               ? `${cleanedPhone.substring(0, 3)}****${cleanedPhone.substring(cleanedPhone.length - 3)}`
               : cleanedPhone;
             throw new Error(
@@ -326,7 +363,7 @@ export default function OTCOrdersComponent() {
             const vehiclesResponse = await apiClient.get<{ data?: any[] } | any[]>('/vehicles', {
               params: { search: invoiceData.customer.vehicleNumber.trim() },
             });
-            
+
             // Handle response structure - backend returns { data: [], pagination: {} } or direct array
             let vehicles: any[] = [];
             if (Array.isArray(vehiclesResponse.data)) {
@@ -376,7 +413,7 @@ export default function OTCOrdersComponent() {
               // For other errors, log but try to create vehicle
               console.warn("Vehicle search failed, attempting to create vehicle:", searchError);
             }
-            
+
             // Try to create vehicle even if search fails (for all roles)
             try {
               const newVehicleResponse = await apiClient.post<any>('/vehicles', {
@@ -465,7 +502,7 @@ export default function OTCOrdersComponent() {
       };
 
       console.log("Creating invoice with payload:", JSON.stringify(invoicePayload, null, 2));
-      
+
       // Validate payload before sending
       if (!invoicePayload.serviceCenterId || !invoicePayload.customerId || !invoicePayload.vehicleId) {
         throw new Error("Invalid invoice payload: missing required IDs");
@@ -473,13 +510,13 @@ export default function OTCOrdersComponent() {
       if (!invoicePayload.items || invoicePayload.items.length === 0) {
         throw new Error("Invalid invoice payload: no items");
       }
-      
+
       const savedInvoice = await invoiceService.createInvoice(invoicePayload);
       console.log("Invoice saved successfully:", savedInvoice);
 
       // Show success toast
       showSuccess("Invoice saved successfully!");
-      
+
       // Reset everything
       setCart([]);
       setCustomerInfo({ phone: "", name: "", vehicleNumber: "", vin: "" });
@@ -500,7 +537,7 @@ export default function OTCOrdersComponent() {
         userRole: userRole,
         payload: invoicePayload,
       });
-      
+
       // Handle 403 Forbidden errors specifically
       if (error?.status === 403 || error?.code === 'HTTP_403' || error?.response?.status === 403) {
         const roleMessage = userRole ? `Your role: ${userRole}. ` : '';
@@ -547,50 +584,64 @@ export default function OTCOrdersComponent() {
 
             {/* Parts List */}
             <div className="bg-white rounded-2xl shadow-md p-6">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">Available Parts</h2>
-              <div className="space-y-3 max-h-[600px] overflow-y-auto">
-                {filteredParts.map((part) => (
-                  <div
-                    key={part.id}
-                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <Package className="text-gray-400" size={20} />
-                          <div>
-                            <p className="font-semibold text-gray-800">{part.name}</p>
-                            <p className="text-xs text-gray-500">
-                              HSN Code: {part.hsnCode} • {part.category}
-                            </p>
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                Available Parts {isLoadingParts && <span className="text-sm text-gray-500">(Loading...)</span>}
+              </h2>
+              {isLoadingParts ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="ml-3 text-gray-600">Loading parts...</span>
+                </div>
+              ) : filteredParts.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Package className="mx-auto mb-2" size={48} />
+                  <p className="text-sm">
+                    {searchQuery ? "No parts found matching your search." : "No parts available in inventory."}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                  {filteredParts.map((part) => (
+                    <div
+                      key={part.id}
+                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <Package className="text-gray-400" size={20} />
+                            <div>
+                              <p className="font-semibold text-gray-800">{part.name}</p>
+                              <p className="text-xs text-gray-500">
+                                HSN Code: {part.hsnCode} • {part.category}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="font-semibold text-gray-800">₹{part.price}</span>
+                            <span
+                              className={`${part.stock > 0 ? "text-green-600" : "text-red-600"
+                                }`}
+                            >
+                              Stock: {part.stock}
+                            </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="font-semibold text-gray-800">₹{part.price}</span>
-                          <span
-                            className={`${
-                              part.stock > 0 ? "text-green-600" : "text-red-600"
-                            }`}
-                          >
-                            Stock: {part.stock}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => addToCart(part)}
-                        disabled={part.stock === 0}
-                        className={`px-4 py-2 rounded-lg font-medium transition ${
-                          part.stock > 0
+                        <button
+                          onClick={() => addToCart(part)}
+                          disabled={part.stock === 0}
+                          className={`px-4 py-2 rounded-lg font-medium transition ${part.stock > 0
                             ? "bg-blue-600 text-white hover:bg-blue-700"
                             : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                        }`}
-                      >
-                        Add to Cart
-                      </button>
+                            }`}
+                        >
+                          Add to Cart
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -933,11 +984,10 @@ export default function OTCOrdersComponent() {
                       key={method}
                       onClick={() => handlePaymentMethodSelect(method)}
                       disabled={isSaving}
-                      className={`px-4 py-2 border rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                        selectedPaymentMethod === method
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "border-gray-300 hover:bg-blue-50 hover:border-blue-500"
-                      }`}
+                      className={`px-4 py-2 border rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed ${selectedPaymentMethod === method
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "border-gray-300 hover:bg-blue-50 hover:border-blue-500"
+                        }`}
                     >
                       {isSaving && selectedPaymentMethod === method ? (
                         <span className="flex items-center justify-center gap-2">
@@ -1019,9 +1069,6 @@ export default function OTCOrdersComponent() {
           </div>
         </div>
       )}
-
-      {/* Toast Container */}
-      <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
 }

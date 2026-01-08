@@ -37,6 +37,72 @@ export function jobCardToFormInitialValues(jobCard: JobCard): Partial<CreateJobC
     console.log("Has customer relation:", !!customer);
     console.log("Has vehicle relation:", !!vehicle);
     console.log("Has appointment relation:", !!appointment);
+
+    if (customer) {
+      console.log("Customer data:", {
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone,
+        whatsappNumber: customer.whatsappNumber,
+        alternateNumber: customer.alternateNumber,
+        email: customer.email,
+        address: customer.address,
+        cityState: customer.cityState,
+        pincode: customer.pincode,
+        customerType: customer.customerType,
+      });
+    }
+
+    if (vehicle) {
+      console.log("Vehicle data:", {
+        id: vehicle.id,
+        registration: vehicle.registration,
+        vehicleMake: vehicle.vehicleMake,
+        vehicleModel: vehicle.vehicleModel,
+        vehicleYear: vehicle.vehicleYear,
+        vin: vehicle.vin,
+        variant: vehicle.variant,
+        motorNumber: vehicle.motorNumber,
+        chargerSerialNumber: vehicle.chargerSerialNumber,
+        purchaseDate: vehicle.purchaseDate,
+        warrantyStatus: vehicle.warrantyStatus,
+        insuranceStartDate: vehicle.insuranceStartDate,
+        insuranceEndDate: vehicle.insuranceEndDate,
+        insuranceCompanyName: vehicle.insuranceCompanyName,
+        vehicleColor: vehicle.vehicleColor,
+      });
+    }
+
+    if (appointment) {
+      console.log("Appointment data:", {
+        id: appointment.id,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        serviceType: appointment.serviceType,
+        customerComplaint: appointment.customerComplaint,
+        previousServiceHistory: appointment.previousServiceHistory,
+        estimatedServiceTime: appointment.estimatedServiceTime,
+        estimatedCost: appointment.estimatedCost,
+        odometerReading: appointment.odometerReading,
+        estimatedDeliveryDate: appointment.estimatedDeliveryDate,
+        pickupDropRequired: appointment.pickupDropRequired,
+        pickupAddress: appointment.pickupAddress,
+        pickupState: appointment.pickupState,
+        pickupCity: appointment.pickupCity,
+        pickupPincode: appointment.pickupPincode,
+        dropAddress: appointment.dropAddress,
+        dropState: appointment.dropState,
+        dropCity: appointment.dropCity,
+        dropPincode: appointment.dropPincode,
+        preferredCommunicationMode: appointment.preferredCommunicationMode,
+        arrivalMode: appointment.arrivalMode,
+        checkInNotes: appointment.checkInNotes,
+        checkInSlipNumber: appointment.checkInSlipNumber,
+        checkInDate: appointment.checkInDate,
+        checkInTime: appointment.checkInTime,
+      });
+    }
+
     console.groupEnd();
   }
 
@@ -100,7 +166,6 @@ export function jobCardToFormInitialValues(jobCard: JobCard): Partial<CreateJobC
     // Service details from appointment relation
     description: getValue("", appointment?.customerComplaint, jobCard.description), // ✅ Fixed: customerComplaint
     customerFeedback: getValue("", appointment?.customerComplaint), // ✅ Fixed: customerComplaint
-    technicianObservation: getValue("", appointment?.technicianObservation),
     previousServiceHistory: getValue("", appointment?.previousServiceHistory, jobCard.previousServiceHistory),
     odometerReading: getValue("", appointment?.odometerReading, jobCard.odometerReading),
     // ✅ Fixed: Format date properly

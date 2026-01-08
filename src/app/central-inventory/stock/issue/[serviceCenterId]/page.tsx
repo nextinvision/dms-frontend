@@ -7,6 +7,8 @@ import { useToast } from "@/contexts/ToastContext";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { PartsIssueForm } from "@/app/central-inventory/components/PartsIssueForm";
 import { findMatchingPartInStock } from "@/shared/utils/part-matching.utils";
+import { calculatePOItemIssuedQuantities, calculateRemainingQuantity } from "@/shared/utils/po-fulfillment.utils";
+import { findMatchingPOItem } from "@/shared/utils/po-item-matching.utils";
 import type {
   ServiceCenterInfo,
   CentralStock,
@@ -81,47 +83,14 @@ export default function StockIssuePage() {
               const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
               
               // Calculate already issued quantities per PO item
-              const itemIssuedQty = new Map<string, number>();
-              
-              relatedIssues.forEach(issue => {
-                issue.items.forEach((issueItem: any) => {
-                  // Match parts issue items to PO items
-                  const poItem = po.items.find(poItem => {
-                    return (
-                      (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
-                      (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
-                      (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
-                      (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
-                      (poItem.partName && issueItem.partName && 
-                       poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
-                      (poItem.partNumber && issueItem.partNumber && 
-                       poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
-                    );
-                  });
-                  
-                  if (poItem) {
-                    const currentIssued = itemIssuedQty.get(poItem.id) || 0;
-                    let issueQty = Number(issueItem.issuedQty) || 0;
-                    const dispatches = issueItem.dispatches;
-                    if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
-                      const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
-                        return sum + (Number(dispatch.quantity) || 0);
-                      }, 0);
-                      if (dispatchQty > issueQty) {
-                        issueQty = dispatchQty;
-                      }
-                    }
-                    itemIssuedQty.set(poItem.id, currentIssued + issueQty);
-                  }
-                });
-              });
+              const itemIssuedQty = calculatePOItemIssuedQuantities(po.items, relatedIssues);
               
               // Calculate remaining quantities and validate against stock
               const itemsWithRemaining = po.items
                 .map(item => {
                   const requestedQty = item.requestedQty || item.quantity || 0;
                   const issuedQty = itemIssuedQty.get(item.id) || 0;
-                  const remainingQty = Math.max(0, requestedQty - issuedQty);
+                  const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
                   
                   return {
                     partId: item.partId,

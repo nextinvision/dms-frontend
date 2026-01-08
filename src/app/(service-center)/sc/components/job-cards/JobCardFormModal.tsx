@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useRouter } from "next/navigation";
-import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight } from "lucide-react";
+import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight, Package, XCircle } from "lucide-react";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -26,6 +26,7 @@ import { useHydratedJobCard } from "@/shared/hooks/useHydratedJobCard";
 import { useRole } from "@/shared/hooks";
 import { CustomerVehicleSection } from "./sections/CustomerVehicleSection";
 import { Part2ItemsSection } from "./sections/Part2ItemsSection";
+import { RequestedPartsSection } from "./sections/RequestedPartsSection";
 import { CheckInSection } from "./sections/CheckInSection";
 import { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
 import { userRepository } from "@/core/repositories/user.repository";
@@ -60,6 +61,7 @@ export default function JobCardFormModal({
   const { userRole, userInfo } = useRole();
   const isServiceAdvisor = userRole === "service_advisor";
   const isServiceManager = userRole === "sc_manager";
+  const isTechnician = userRole === "service_engineer";
 
   // Generate a temporary ID for file uploads during creation
   const [tempId] = useState(() => generateTempEntityId());
@@ -366,6 +368,7 @@ export default function JobCardFormModal({
       const quotationData = (() => {
         // Calculate totals
         const itemsWithCalculatedRates = (form.part2Items || []).map((item, index) => {
+          const isWarranty = item.partWarrantyTag;
           const gstRate = (item.gstPercent || 18) / 100;
           const preGstRate = item.rate || (item.amount / (1 + gstRate)) || 0;
           const linePreGstTotal = preGstRate * (item.qty || 1);
@@ -376,9 +379,10 @@ export default function JobCardFormModal({
             partName: item.partName || "Service Item",
             partNumber: item.partCode || undefined,
             quantity: item.qty || 1,
-            rate: preGstRate,
+            rate: isWarranty ? 0 : preGstRate,
             gstPercent: item.gstPercent || 18,
-            amount: lineAmountInclGst,
+            amount: isWarranty ? 0 : lineAmountInclGst,
+            partWarrantyTag: isWarranty,
           };
         });
 
@@ -423,6 +427,25 @@ export default function JobCardFormModal({
         const createdQuotation = await quotationsService.create(quotationData as any);
         console.log("Quotation created successfully:", createdQuotation);
 
+        // Auto-approve quotation if Job Card is already approved
+        if (hydratedCard?.managerReviewStatus === 'APPROVED') {
+          try {
+            await quotationsService.managerReview(createdQuotation.id, { status: 'APPROVED', notes: 'Auto-approved based on Job Card Approval' });
+            console.log("Quotation auto-approved based on Job Card status.");
+          } catch (autoApproveError) {
+            console.error("Failed to auto-approve quotation:", autoApproveError);
+          }
+        } else if (hydratedCard?.status === "CREATED") {
+          // If not manager approved (and thus not auto-approved), and currently CREATED,
+          // move to AWAITING_QUOTATION_APPROVAL to act as "Draft" until customer approves.
+          try {
+            await jobCardService.updateStatus(jobCardId!, "AWAITING_QUOTATION_APPROVAL");
+            console.log("Job Card status updated to AWAITING_QUOTATION_APPROVAL");
+          } catch (statusError) {
+            console.error("Failed to update job card status:", statusError);
+          }
+        }
+
         // Close modal and navigate to quotations page
         onClose();
         router.push(`/sc/quotations?highlight=${createdQuotation.id || quotationNumber}`);
@@ -438,6 +461,30 @@ export default function JobCardFormModal({
     } catch (error) {
       console.error("Error creating quotation:", error);
       onError?.("Failed to create quotation. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleManagerDecision = async (status: "APPROVED" | "REJECTED", notes?: string) => {
+    if (!jobCardId) return;
+
+    if (status === "APPROVED" && !confirm("Approve this job card?")) return;
+
+    let finalNotes = notes;
+    if (status === "REJECTED" && !notes) {
+      finalNotes = prompt("Please provide a reason for rejection:") || undefined;
+      if (!finalNotes) return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await jobCardService.managerReview(jobCardId, { status, notes: finalNotes || "" });
+      alert(status === "APPROVED" ? "Job Card Approved!" : "Job Card Rejected!");
+      onClose();
+    } catch (error) {
+      console.error(error);
+      onError?.("Failed to update status");
     } finally {
       setIsSubmitting(false);
     }
@@ -551,6 +598,16 @@ export default function JobCardFormModal({
             onError={onError}
             jobCardId={jobCardId || tempId}
             userId={userInfo?.id}
+            onPassToManager={mode === "edit" && isServiceAdvisor ? handlePassToManager : undefined}
+            isPassedToManager={hydratedCard?.passedToManager}
+            isSubmitting={isSubmitting}
+            hasQuotation={!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+          />
+
+          <RequestedPartsSection
+            form={form}
+            updateField={updateFormField}
+            onError={onError}
           />
 
           {/* CheckInSection moved to Check-in Slip only - not shown in Job Card */}
@@ -564,53 +621,157 @@ export default function JobCardFormModal({
       {/* Footer Actions */}
       <div className="p-6 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
         <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleCreateQuotation}
-            disabled={isSubmitting || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
 
-              ? "bg-gray-100 text-gray-400 border border-gray-200"
-              : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
-              }`}
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                Creating...
-              </>
-            ) : (
-              <>
-                <FileText size={20} />
-                {!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
-              </>
+          {!isTechnician && (
+            <>
+              <button
+                type="button"
+                onClick={handleCreateQuotation}
+                disabled={isSubmitting || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
 
-            )}
-          </button>
+                  ? "bg-gray-100 text-gray-400 border border-gray-200"
+                  : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
+                  }`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="animate-spin" size={20} />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <FileText size={20} />
+                    {!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
+                  </>
 
-          {mode === "edit" && isServiceAdvisor && (
+                )}
+              </button>
+
+              {hydratedCard?.status === "COMPLETED" && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/sc/invoices?createFromJobCard=${jobCardId}`)}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-purple-200 bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FileText size={20} />
+                  Generate Invoice
+                </button>
+              )}
+            </>
+          )}
+
+          {isTechnician && hydratedCard?.status === "ASSIGNED" && (
             <button
               type="button"
-              onClick={handlePassToManager}
-              disabled={isSubmitting || hydratedCard?.passedToManager}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed ${hydratedCard?.passedToManager
-                ? "bg-gray-100 text-gray-400 border border-gray-200"
-                : "bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:opacity-90"
-                }`}
+              onClick={async () => {
+                if (!confirm("Start work on this job card?")) return;
+                try {
+                  setIsSubmitting(true);
+                  await jobCardService.update(jobCardId!, { status: "IN_PROGRESS" });
+                  router.push("/sc/job-cards");
+                } catch (e) {
+                  console.error(e);
+                  onError?.("Failed to start work");
+                } finally {
+                  setIsSubmitting(false);
+                }
+              }}
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all disabled:opacity-50"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="animate-spin" size={20} />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <ArrowRight size={20} />
-                  {hydratedCard?.passedToManager ? "Sent to Manager" : "Pass to Manager"}
-                </>
-              )}
+              {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <ArrowRight size={20} />}
+              Start Work
             </button>
           )}
+
+          {isTechnician && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (!jobCardId || !form.requestedParts || form.requestedParts.length === 0) {
+                  alert("No parts requested to save or Job ID missing.");
+                  return;
+                }
+                try {
+                  setIsSubmitting(true);
+
+                  const items = form.requestedParts.map(item => ({
+                    partName: item.partName,
+                    quantity: item.qty,
+                    isWarranty: item.partWarrantyTag,
+                    partNumber: item.partCode,
+                    inventoryPartId: undefined // Could be mapped if part selection provides ID
+                  }));
+
+                  await jobCardService.createPartsRequest(jobCardId, items);
+
+                  alert("Parts request sent successfully!");
+                  if (typeof window !== 'undefined') window.location.reload();
+                } catch (e) {
+                  console.error(e);
+                  alert("Failed to send parts request");
+                } finally {
+                  setIsSubmitting(false);
+                }
+              }}
+              disabled={isSubmitting || !form.requestedParts || form.requestedParts.length === 0}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-orange-600 text-white hover:bg-orange-700 shadow-lg shadow-orange-200 transition-all disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Package size={20} />}
+              Request Parts
+            </button>
+          )}
+
+          {isTechnician && hydratedCard?.status === "IN_PROGRESS" && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (!confirm("Mark this job card as completed?")) return;
+                try {
+                  setIsSubmitting(true);
+                  await jobCardService.update(jobCardId!, { status: "COMPLETED" });
+                  router.push("/sc/job-cards");
+                } catch (e) {
+                  console.error(e);
+                  onError?.("Failed to complete work");
+                } finally {
+                  setIsSubmitting(false);
+                }
+              }}
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-200 transition-all disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
+              Complete Work
+            </button>
+          )}
+
+
+          {isServiceManager && hydratedCard?.passedToManager && (
+            (hydratedCard as any).managerReviewStatus === "PENDING"
+          ) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleManagerDecision("APPROVED", "Approved via Form")}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-200 transition-all disabled:opacity-50"
+                >
+                  <CheckCircle size={20} /> Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleManagerDecision("REJECTED")}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 transition-all disabled:opacity-50"
+                >
+                  <XCircle size={20} /> Reject
+                </button>
+              </>
+            )}
+
         </div>
 
         <div className="flex gap-4">
@@ -621,24 +782,26 @@ export default function JobCardFormModal({
           >
             Cancel
           </button>
-          <button
-            type="submit"
-            form="jobCardForm"
-            disabled={isSubmitting}
-            className="flex items-center gap-2 px-10 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-200"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                Processing...
-              </>
-            ) : (
-              <>
-                <CheckCircle size={20} />
-                {mode === "edit" ? "Update Job Card" : "Create Job Card"}
-              </>
-            )}
-          </button>
+          {!isTechnician && (
+            <button
+              type="submit"
+              form="jobCardForm"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-10 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-200"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={20} />
+                  {mode === "edit" ? "Update Job Card" : "Create Job Card"}
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 

@@ -4,7 +4,8 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import { PlusCircle, Trash2, FileText, Calendar, Building2 } from "lucide-react";
+import { PlusCircle, Trash2, FileText, Calendar, Building2, Upload, Download, FileSpreadsheet, X } from "lucide-react";
+import * as XLSX from "xlsx";
 import { partsEntryService, type PartsEntry } from "@/features/inventory/services/partsEntry.service";
 import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
 import type { Part } from "@/shared/types/inventory.types";
@@ -19,12 +20,15 @@ interface PartsEntryItem {
 }
 
 export default function PartsEntryPage() {
+  const [activeTab, setActiveTab] = useState<"manual" | "bulk">("manual");
   const [formData, setFormData] = useState<PartsEntryFormData>(getInitialFormData());
   const [parts, setParts] = useState<PartsEntryItem[]>([]);
   const [availableParts, setAvailableParts] = useState<Part[]>([]);
   const [recentEntries, setRecentEntries] = useState<PartsEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [currentPart, setCurrentPart] = useState<PartsEntryItemFormData>(getInitialItemFormData());
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
 
   useEffect(() => {
 
@@ -114,12 +118,192 @@ export default function PartsEntryPage() {
       setFormData(getInitialFormData());
       setParts([]);
       setCurrentPart(getInitialItemFormData());
+      setUploadFile(null);
+      setUploadErrors([]);
       fetchRecentEntries();
       fetchAvailableParts(); // Refresh to show updated stock
     } catch (error) {
       console.error("Failed to save parts entry:", error);
       alert("Failed to save parts entry. Please try again.");
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+      "text/csv",
+    ];
+    const validExtensions = [".xlsx", ".xls", ".csv"];
+
+    const fileExtension = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (!validExtensions.includes(fileExtension) && !validTypes.includes(file.type)) {
+      alert("Please upload a valid Excel file (.xlsx, .xls) or CSV file.");
+      return;
+    }
+
+    setUploadFile(file);
+    setUploadErrors([]);
+  };
+
+  const handleBulkUpload = async () => {
+    if (!uploadFile) return;
+
+    try {
+      const fileData = await uploadFile.arrayBuffer();
+      const workbook = XLSX.read(fileData, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData: any[] = XLSX.utils.sheet_to_json(firstSheet);
+
+      const errors: string[] = [];
+      const uploadedParts: PartsEntryItem[] = [];
+      let vendorName = "";
+
+      // Helper function to get value from row (case-insensitive)
+      const getValue = (row: any, keys: string[]): string => {
+        for (const key of keys) {
+          const found = Object.keys(row).find(
+            (k) => k.toLowerCase().trim() === key.toLowerCase().trim()
+          );
+          if (found && row[found] !== undefined && row[found] !== null && row[found] !== "") {
+            return String(row[found]).trim();
+          }
+        }
+        return "";
+      };
+
+      // Helper function to parse number
+      const parseNumber = (val: any): number => {
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const cleaned = val.replace(/[₹,\s]/g, '').trim();
+          return parseFloat(cleaned) || 0;
+        }
+        return 0;
+      };
+
+      // Extract vendor name from first non-empty row (if present)
+      for (const row of jsonData) {
+        vendorName = getValue(row, ["Vendor Name", "VendorName", "vendor_name", "Vendor", "vendor"]);
+        if (vendorName) {
+          break; // Use the first non-empty vendor name found
+        }
+      }
+      
+      // Auto-fill vendor field if found in file and form field is empty
+      if (vendorName && !formData.vendor) {
+        setFormData({ ...formData, vendor: vendorName });
+      }
+
+      // Process each row
+      jsonData.forEach((row: any, index: number) => {
+        const rowNum = index + 2; // +2 because Excel rows start at 1 and we have header
+
+        // Try to find part by ID or Name
+        const partId = getValue(row, ["Part ID", "PartId", "part_id", "PartId"]);
+        const partName = getValue(row, ["Part Name", "PartName", "part_name", "Name"]);
+        const quantity = parseNumber(getValue(row, ["Quantity", "quantity", "Qty", "qty"]));
+        const unitPrice = parseNumber(getValue(row, ["Unit Price", "UnitPrice", "unit_price", "Price", "price"]));
+
+        // Validate required fields
+        if (!partId && !partName) {
+          errors.push(`Row ${rowNum}: Part ID or Part Name is required`);
+          return;
+        }
+
+        if (!quantity || quantity <= 0) {
+          errors.push(`Row ${rowNum}: Valid quantity is required`);
+          return;
+        }
+
+        if (!unitPrice || unitPrice <= 0) {
+          errors.push(`Row ${rowNum}: Valid unit price is required`);
+          return;
+        }
+
+        // Find the part in available parts
+        let part: Part | undefined;
+        if (partId) {
+          part = availableParts.find((p) => p.id === partId || p.partId === partId);
+        }
+        if (!part && partName) {
+          part = availableParts.find((p) => 
+            p.partName.toLowerCase() === partName.toLowerCase() ||
+            p.partName.toLowerCase().includes(partName.toLowerCase())
+          );
+        }
+
+        if (!part) {
+          errors.push(`Row ${rowNum}: Part not found - ${partName || partId}`);
+          return;
+        }
+
+        // Check if part already added
+        if (uploadedParts.find((p) => p.partId === part!.id)) {
+          errors.push(`Row ${rowNum}: Part "${part.partName}" is already in the list`);
+          return;
+        }
+
+        uploadedParts.push({
+          partId: part.id,
+          partName: part.partName,
+          quantity: quantity,
+          unitPrice: unitPrice,
+        });
+      });
+
+      setUploadErrors(errors);
+
+      if (uploadedParts.length > 0) {
+        // Add uploaded parts to the existing list (or replace if list is empty)
+        if (parts.length === 0) {
+          setParts(uploadedParts);
+        } else {
+          // Merge with existing parts, avoiding duplicates
+          const mergedParts = [...parts];
+          uploadedParts.forEach((newPart) => {
+            if (!mergedParts.find((p) => p.partId === newPart.partId)) {
+              mergedParts.push(newPart);
+            }
+          });
+          setParts(mergedParts);
+        }
+        
+        if (errors.length === 0) {
+          alert(`Successfully imported ${uploadedParts.length} part(s)!`);
+          setUploadFile(null);
+        } else {
+          alert(`Imported ${uploadedParts.length} part(s) with ${errors.length} error(s). Please check the errors below.`);
+        }
+      } else {
+        alert("No valid parts found in the file. Please check the format and try again.");
+      }
+    } catch (error) {
+      console.error("Failed to process file:", error);
+      alert("Failed to process file. Please check the format and try again.");
+      setUploadErrors(["Failed to process file"]);
+    }
+  };
+
+  const downloadTemplate = () => {
+    const templateData = [
+      {
+        "Vendor Name": "Sample Vendor",
+        "Part ID": "PART001",
+        "Part Name": "Sample Part Name",
+        "Quantity": 10,
+        "Unit Price": 100.50,
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Parts Entry");
+    XLSX.writeFile(wb, "parts_entry_template.xlsx");
   };
 
   return (
@@ -143,9 +327,36 @@ export default function PartsEntryPage() {
 
             <Card className="mt-6">
               <CardHeader>
-                <h2 className="text-lg font-semibold">Add Parts</h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">Add Parts</h2>
+                  {/* Tabs */}
+                  <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                    <button
+                      onClick={() => setActiveTab("manual")}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                        activeTab === "manual"
+                          ? "bg-white text-indigo-600 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      Manual Entry
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("bulk")}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                        activeTab === "bulk"
+                          ? "bg-white text-indigo-600 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      Bulk Upload
+                    </button>
+                  </div>
+                </div>
               </CardHeader>
               <CardBody>
+                {activeTab === "manual" ? (
+                  <>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Select Part</label>
                   <select
@@ -214,6 +425,112 @@ export default function PartsEntryPage() {
                     </div>
                   ))}
                 </div>
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-blue-900 mb-2">Excel/CSV File Format</h4>
+                      <p className="text-sm text-blue-800 mb-2">
+                        Your file should have the following columns:
+                      </p>
+                      <ul className="text-xs text-blue-700 list-disc list-inside space-y-1">
+                        <li><strong>Vendor Name</strong> (optional) - Will auto-fill the vendor field if provided</li>
+                        <li><strong>Part ID</strong> or <strong>Part Name</strong> (required) - Must match existing parts in the system</li>
+                        <li><strong>Quantity</strong> (required) - Number of parts</li>
+                        <li><strong>Unit Price</strong> (required) - Price per unit</li>
+                      </ul>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={downloadTemplate}
+                        variant="outline"
+                        className="flex-1"
+                      >
+                        <Download size={18} className="mr-2" />
+                        Download Template
+                      </Button>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Excel/CSV File (.xlsx, .xls, .csv)
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          onChange={handleFileUpload}
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        {uploadFile && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <FileSpreadsheet size={18} />
+                            <span className="truncate max-w-[200px]">{uploadFile.name}</span>
+                            <button
+                              onClick={() => setUploadFile(null)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <X size={18} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {uploadErrors.length > 0 && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-red-900">Upload Errors:</span>
+                          <span className="text-sm text-red-600">{uploadErrors.length} error(s)</span>
+                        </div>
+                        <div className="mt-2 max-h-40 overflow-y-auto">
+                          <ul className="text-xs text-red-600 list-disc list-inside space-y-1">
+                            {uploadErrors.slice(0, 10).map((error, idx) => (
+                              <li key={idx}>{error}</li>
+                            ))}
+                            {uploadErrors.length > 10 && (
+                              <li>... and {uploadErrors.length - 10} more errors</li>
+                            )}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={handleBulkUpload}
+                      disabled={!uploadFile}
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <Upload size={18} className="mr-2" />
+                      Import Parts
+                    </Button>
+
+                    {parts.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <h4 className="font-semibold text-gray-900 mb-2">Imported Parts ({parts.length})</h4>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {parts.map((part, index) => (
+                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex-1">
+                                <p className="font-medium">{part.partName}</p>
+                                <p className="text-sm text-gray-600">
+                                  ID: {part.partId} | Qty: {part.quantity} | Price: ₹{part.unitPrice} | Total: ₹{part.quantity * part.unitPrice}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => removePart(index)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardBody>
             </Card>
           </div>

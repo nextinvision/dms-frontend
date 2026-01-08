@@ -104,10 +104,10 @@ export default function CentralInventoryDashboard() {
     },
   ];
 
-  const getStatusBadge = (status: PurchaseOrder["status"]) => {
+  const getStatusBadge = (status: PurchaseOrder["status"], dispatchStatus?: string) => {
     const variants: Record<PurchaseOrder["status"], { color: string; label: string }> = {
       pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
-      approved: { color: "bg-green-100 text-green-800", label: "Approved" },
+      approved: { color: "bg-green-100 text-green-800", label: dispatchStatus === "dispatched" ? "Dispatched" : "Approved" },
       rejected: { color: "bg-red-100 text-red-800", label: "Rejected" },
       partially_fulfilled: { color: "bg-blue-100 text-blue-800", label: "Partially Fulfilled" },
       fulfilled: { color: "bg-gray-100 text-gray-800", label: "Fulfilled" },
@@ -234,32 +234,53 @@ export default function CentralInventoryDashboard() {
                 <p className="text-gray-500 text-center py-4">No purchase orders yet</p>
               ) : (
                 <div className="space-y-4">
-                  {recentPurchaseOrders.map((po) => (
-                    <div
-                      key={po.id}
-                      className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <Link
-                            href={`/central-inventory/purchase-orders/${po.id}`}
-                            className="font-semibold text-blue-600 hover:text-blue-700"
-                          >
-                            {po.poNumber}
-                          </Link>
-                          <p className="text-sm text-gray-600 mt-1">{po.serviceCenterName}</p>
+                  {recentPurchaseOrders.map((po) => {
+                    const poWithDispatch = po as any;
+                    const trackingNumber = poWithDispatch.trackingNumber;
+                    const transporter = poWithDispatch.transporter;
+                    const dispatchStatus = poWithDispatch.dispatchStatus;
+                    
+                    return (
+                      <div
+                        key={po.id}
+                        className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <Link
+                              href={`/central-inventory/purchase-orders/${po.id}`}
+                              className="font-semibold text-blue-600 hover:text-blue-700"
+                            >
+                              {po.poNumber}
+                            </Link>
+                            <p className="text-sm text-gray-600 mt-1">{po.serviceCenterName}</p>
+                          </div>
+                          {getStatusBadge(po.status, dispatchStatus)}
                         </div>
-                        {getStatusBadge(po.status)}
+                        <div className="flex items-center justify-between text-sm text-gray-500 mt-2">
+                          <span>{po.items.length} item(s)</span>
+                          <span className="font-medium">₹{po.totalAmount.toLocaleString()}</span>
+                        </div>
+                        {(trackingNumber || transporter) && (
+                          <div className="mt-2 pt-2 border-t border-gray-100">
+                            {trackingNumber && (
+                              <div className="text-xs text-gray-600">
+                                <span className="font-medium">Tracking:</span> {trackingNumber}
+                              </div>
+                            )}
+                            {transporter && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                <span className="font-medium">Transporter:</span> {transporter}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-400 mt-2">
+                          {new Date(po.requestedAt).toLocaleDateString()}
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-sm text-gray-500 mt-2">
-                        <span>{po.items.length} item(s)</span>
-                        <span className="font-medium">₹{po.totalAmount.toLocaleString()}</span>
-                      </div>
-                      <div className="text-xs text-gray-400 mt-2">
-                        {new Date(po.requestedAt).toLocaleDateString()}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardBody>

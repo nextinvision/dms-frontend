@@ -113,6 +113,10 @@ export default function SCDashboard() {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
+      // Clear cache to ensure fresh data
+      const { apiClient } = await import('@/core/api');
+      apiClient.clearCache();
+
       const today = new Date();
       const todayStr = today.toISOString().split("T")[0];
 
@@ -126,6 +130,25 @@ export default function SCDashboard() {
       const monthStartStr = monthStart.toISOString().split("T")[0];
 
       // Fetch all data in parallel
+      // Define permission sets based on backend controllers (VERIFIED)
+      const canViewJobCards = ["admin", "sc_manager", "service_advisor", "service_engineer"].includes(userRole);
+
+      const canViewQuotations = ["admin", "sc_manager", "service_advisor", "service_engineer"].includes(userRole);
+
+      const canViewInvoices = ["admin", "sc_manager", "service_advisor", "service_engineer"].includes(userRole);
+
+      // Leads: admin, sc_manager, service_advisor, call_center
+      const canViewLeads = ["admin", "sc_manager", "service_advisor", "call_center"].includes(userRole);
+
+      // Inventory: admin, sc_manager, inventory_manager, service_engineer, service_advisor, call_center
+      // BUT Dashboard calls getAll({ lowStock: true }), and GET /inventory is open to all these roles.
+      // However, specific filtering logic might vary. Let's assume standard access.
+      const canViewInventory = ["admin", "sc_manager", "inventory_manager", "service_engineer", "service_advisor", "call_center"].includes(userRole);
+
+      // Appointments: admin, sc_manager, service_advisor, service_engineer, call_center
+      const canViewAppointments = ["admin", "sc_manager", "service_advisor", "service_engineer", "call_center"].includes(userRole);
+
+      // Fetch data conditionally to avoid 403 errors
       const [
         jobCards,
         quotations,
@@ -134,12 +157,12 @@ export default function SCDashboard() {
         inventory,
         leads,
       ] = await Promise.all([
-        jobCardService.getAll().catch(() => []),
-        quotationsService.getAll().catch(() => []),
-        appointmentsService.getAll().catch(() => []),
-        invoicesService.getAll().catch(() => []),
-        inventoryService.getAll({ lowStock: true }).catch(() => []),
-        leadsService.getAll().catch(() => []),
+        canViewJobCards ? jobCardService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewQuotations ? quotationsService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewAppointments ? appointmentsService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewInvoices ? invoicesService.getAll().catch(() => []) : Promise.resolve([]),
+        canViewInventory ? inventoryService.getAll({ lowStock: true }).catch(() => []) : Promise.resolve([]),
+        canViewLeads ? leadsService.getAll().catch(() => []) : Promise.resolve([]),
       ]);
 
       // Calculate Job Card stats
@@ -171,12 +194,14 @@ export default function SCDashboard() {
       ).length;
 
       // Calculate Appointment stats
-      const todayAppointments = appointments.filter((apt: any) =>
-        apt.date === todayStr
-      ).length;
+      const todayAppointments = appointments.filter((apt: any) => {
+        if (!apt.appointmentDate) return false;
+        const aptDate = new Date(apt.appointmentDate).toISOString().split("T")[0];
+        return aptDate === todayStr;
+      }).length;
 
       const pendingAppointments = appointments.filter((apt: any) =>
-        apt.status === "Pending" || apt.status === "Confirmed"
+        apt.status === "PENDING" || apt.status === "CONFIRMED" || apt.status === "SCHEDULED"
       ).length;
 
       // Calculate Revenue stats
@@ -686,9 +711,20 @@ export default function SCDashboard() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <div className="pt-20 px-4 sm:px-6 lg:px-8 pb-10">
-        <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Service Center Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500">Assigned center: {serviceCenter}</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Service Center Dashboard</h1>
+            <p className="mt-1 text-sm text-gray-500">Assigned center: {serviceCenter}</p>
+          </div>
+          <button
+            onClick={fetchDashboardData}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh dashboard data"
+          >
+            <ArrowRightLeft size={18} className={isLoading ? "animate-spin" : ""} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
         </div>
 
         {/* Revenue Summary Section */}

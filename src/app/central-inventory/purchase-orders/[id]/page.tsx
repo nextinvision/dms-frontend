@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Edit,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -27,6 +28,8 @@ import { useToast } from "@/contexts/ToastContext";
 import { centralInventoryRepository } from "@/core/repositories/central-inventory.repository";
 import { useRole } from "@/shared/hooks/useRole";
 import { validateItemsAgainstStock } from "@/shared/utils/part-matching.utils";
+import { calculatePOItemIssuedQuantities, calculateRemainingQuantity } from "@/shared/utils/po-fulfillment.utils";
+import { findMatchingPOItem } from "@/shared/utils/po-item-matching.utils";
 import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
 
 export default function PurchaseOrderDetailPage() {
@@ -52,6 +55,11 @@ export default function PurchaseOrderDetailPage() {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [partDetails, setPartDetails] = useState<Record<string, any>>({});
   const [itemIssuedQty, setItemIssuedQty] = useState<Map<string, number>>(new Map());
+  const [showEditTrackingModal, setShowEditTrackingModal] = useState(false);
+  const [editingTrackingId, setEditingTrackingId] = useState("");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [transporter, setTransporter] = useState("");
+  const [expectedDelivery, setExpectedDelivery] = useState("");
 
   useEffect(() => {
     const fetchPurchaseOrder = async () => {
@@ -62,48 +70,14 @@ export default function PurchaseOrderDetailPage() {
           return;
         }
         setPurchaseOrder(po);
-        
+
         // Calculate issued quantities for each item
         const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
         const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
-        
-        const issuedQtyMap = new Map<string, number>();
-        
-        relatedIssues.forEach(issue => {
-          issue.items.forEach((issueItem: any) => {
-            // Match parts issue items to PO items
-            const poItem = po.items.find((poItem: any) => {
-              return (
-                (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
-                (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
-                (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
-                (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
-                (poItem.partName && issueItem.partName && 
-                 poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
-                (poItem.partNumber && issueItem.partNumber && 
-                 poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
-              );
-            });
-            
-            if (poItem) {
-              const currentIssued = issuedQtyMap.get(poItem.id) || 0;
-              let issueQty = Number(issueItem.issuedQty) || 0;
-              const dispatches = issueItem.dispatches;
-              if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
-                const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
-                  return sum + (Number(dispatch.quantity) || 0);
-                }, 0);
-                if (dispatchQty > issueQty) {
-                  issueQty = dispatchQty;
-                }
-              }
-              issuedQtyMap.set(poItem.id, currentIssued + issueQty);
-            }
-          });
-        });
-        
+
+        const issuedQtyMap = calculatePOItemIssuedQuantities(po.items, relatedIssues);
         setItemIssuedQty(issuedQtyMap);
-        
+
         // If issueRemaining is true, automatically trigger issue parts flow
         if (issueRemaining && isCIM && po.status === "approved") {
           // Trigger the issue parts button click after a short delay
@@ -178,7 +152,7 @@ export default function PurchaseOrderDetailPage() {
     try {
       const partsIssue = await centralInventoryRepository.issuePurchaseOrder(poId, approvedItems);
       showSuccess(`Parts Issue created successfully! Issue Number: ${partsIssue.issueNumber}. This Parts Issue is now pending admin approval before parts can be dispatched.`);
-      
+
       // Navigate to parts issue detail page
       setTimeout(() => {
         router.push(`/central-inventory/parts-issue-requests`);
@@ -222,6 +196,34 @@ export default function PurchaseOrderDetailPage() {
     };
     const variant = variants[status] || variants.pending;
     return <Badge className={variant.color}>{variant.label}</Badge>;
+  };
+
+  const handleUpdateTrackingDetails = async () => {
+    if (!editingTrackingId) {
+      showError("No parts issue selected");
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      await centralInventoryRepository.updatePartsIssueTransportDetails(editingTrackingId, {
+        trackingNumber: trackingNumber || undefined,
+        transporter: transporter || undefined,
+        expectedDelivery: expectedDelivery || undefined,
+      });
+
+      showSuccess("Tracking details updated successfully");
+      setShowEditTrackingModal(false);
+      
+      // Refresh purchase order data
+      const updatedPO = await centralInventoryRepository.getPurchaseOrderById(poId);
+      setPurchaseOrder(updatedPO);
+    } catch (error: any) {
+      console.error("Failed to update tracking details:", error);
+      showError(error?.message || "Failed to update tracking details");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const getPriorityBadge = (priority: PurchaseOrder["priority"]) => {
@@ -289,57 +291,24 @@ export default function PurchaseOrderDetailPage() {
                     try {
                       // Fetch all central inventory stock to validate parts
                       const allStock = await centralInventoryRepository.getAllStock();
-                      
+
                       // Use the already-calculated itemIssuedQty from state, or recalculate if needed
                       let currentIssuedQty = itemIssuedQty;
                       if (currentIssuedQty.size === 0) {
                         // Recalculate if state is empty
                         const allPartsIssues = await centralInventoryRepository.getAllPartsIssues();
                         const relatedIssues = allPartsIssues.filter(issue => issue.purchaseOrderId === poId);
-                        const calculatedIssuedQty = new Map<string, number>();
-                        
-                        relatedIssues.forEach(issue => {
-                          issue.items.forEach((issueItem: any) => {
-                            // Match parts issue items to PO items
-                            const poItem = purchaseOrder.items.find((poItem: any) => {
-                              return (
-                                (poItem.centralInventoryPartId && issueItem.partId && poItem.centralInventoryPartId === issueItem.partId) ||
-                                (poItem.partId && issueItem.partId && poItem.partId === issueItem.partId) ||
-                                (poItem.partId && issueItem.fromStock && poItem.partId === issueItem.fromStock) ||
-                                (poItem.centralInventoryPartId && issueItem.fromStock && poItem.centralInventoryPartId === issueItem.fromStock) ||
-                                (poItem.partName && issueItem.partName && 
-                                 poItem.partName.toLowerCase().trim() === issueItem.partName.toLowerCase().trim()) ||
-                                (poItem.partNumber && issueItem.partNumber && 
-                                 poItem.partNumber.toLowerCase().trim() === issueItem.partNumber.toLowerCase().trim())
-                              );
-                            });
-                            
-                            if (poItem) {
-                              const currentIssued = calculatedIssuedQty.get(poItem.id) || 0;
-                              // Use issuedQty from parts issue item, or sum from dispatch records
-                              let issueQty = Number(issueItem.issuedQty) || 0;
-                              const dispatches = issueItem.dispatches;
-                              if (dispatches && Array.isArray(dispatches) && dispatches.length > 0) {
-                                const dispatchQty = dispatches.reduce((sum: number, dispatch: any) => {
-                                  return sum + (Number(dispatch.quantity) || 0);
-                                }, 0);
-                                if (dispatchQty > issueQty) {
-                                  issueQty = dispatchQty;
-                                }
-                              }
-                              calculatedIssuedQty.set(poItem.id, currentIssued + issueQty);
-                            }
-                          });
-                        });
+                        // Use utility function to calculate issued quantities
+                        const calculatedIssuedQty = calculatePOItemIssuedQuantities(purchaseOrder.items, relatedIssues);
                         currentIssuedQty = calculatedIssuedQty;
                       }
-                      
+
                       // Calculate remaining quantities for each PO item using the issued quantities
                       const itemsWithRemaining = purchaseOrder.items.map(item => {
                         const requestedQty = Number(item.requestedQty || item.quantity || 0);
                         const issuedQty = Number(currentIssuedQty.get(item.id) || 0);
-                        const remainingQty = Math.max(0, requestedQty - issuedQty);
-                        
+                        const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
+
                         return {
                           partId: item.partId,
                           partName: item.partName,
@@ -350,18 +319,18 @@ export default function PurchaseOrderDetailPage() {
                           issuedQty: issuedQty,
                         };
                       }).filter(item => item.quantity > 0); // Only include items with remaining quantity
-                      
+
                       if (itemsWithRemaining.length === 0) {
                         showError("All parts from this purchase order have already been issued.");
                         return;
                       }
-                      
+
                       // Validate items using utility function
                       const { validItems, invalidItems } = validateItemsAgainstStock(
                         itemsWithRemaining,
                         allStock
                       );
-                      
+
                       // If all items are valid, redirect with autofilled data (only remaining quantities)
                       if (invalidItems.length === 0) {
                         const itemsParam = encodeURIComponent(JSON.stringify(
@@ -376,10 +345,10 @@ export default function PurchaseOrderDetailPage() {
                         router.push(`/central-inventory/stock/issue/${purchaseOrder.serviceCenterId}?poId=${poId}&items=${itemsParam}`);
                       } else {
                         // Some parts don't exist - redirect without autofill
-                        const invalidPartNames = invalidItems.map(i => 
+                        const invalidPartNames = invalidItems.map(i =>
                           `${i.partName || 'Unknown'}${i.partNumber ? ` (${i.partNumber})` : ''}`
                         ).join(', ');
-                        
+
                         if (confirm(
                           `The following parts are not found in Central Inventory (both part number and part name must match):\n\n${invalidPartNames}\n\n` +
                           `You will be redirected to the issue page where you can manually select the correct parts.\n\n` +
@@ -547,6 +516,81 @@ export default function PurchaseOrderDetailPage() {
               </CardBody>
             </Card>
 
+            {/* Dispatch Information */}
+            {((purchaseOrder as any).dispatchStatus === 'dispatched' || (purchaseOrder as any).dispatchStatus === 'approved') && (
+              <Card>
+                <CardHeader className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold text-gray-800">Dispatch Information</h2>
+                  {(isCIM || isAdmin) && (
+                    <Button
+                      onClick={() => {
+                        const poWithDispatch = purchaseOrder as any;
+                        setEditingTrackingId(poWithDispatch.partsIssues?.[0]?.id || '');
+                        setTrackingNumber(poWithDispatch.trackingNumber || '');
+                        setTransporter(poWithDispatch.transporter || '');
+                        setExpectedDelivery(poWithDispatch.expectedDelivery || '');
+                        setShowEditTrackingModal(true);
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit Tracking Details
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardBody>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {(purchaseOrder as any).trackingNumber && (
+                      <div className="flex items-start gap-3">
+                        <Package className="w-5 h-5 text-blue-500 mt-1" />
+                        <div>
+                          <p className="text-sm text-gray-500">Tracking Number</p>
+                          <p className="font-medium">{(purchaseOrder as any).trackingNumber}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(purchaseOrder as any).transporter && (
+                      <div className="flex items-start gap-3">
+                        <Truck className="w-5 h-5 text-green-500 mt-1" />
+                        <div>
+                          <p className="text-sm text-gray-500">Transporter</p>
+                          <p className="font-medium">{(purchaseOrder as any).transporter}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(purchaseOrder as any).expectedDelivery && (
+                      <div className="flex items-start gap-3">
+                        <Calendar className="w-5 h-5 text-orange-500 mt-1" />
+                        <div>
+                          <p className="text-sm text-gray-500">Expected Delivery</p>
+                          <p className="font-medium">
+                            {new Date((purchaseOrder as any).expectedDelivery).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {(purchaseOrder as any).partsIssues && (purchaseOrder as any).partsIssues.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <p className="text-sm text-gray-500 mb-2">Related Parts Issues:</p>
+                      <div className="space-y-2">
+                        {(purchaseOrder as any).partsIssues.map((issue: any) => (
+                          <div key={issue.id} className="p-2 bg-gray-50 rounded text-sm">
+                            <span className="font-medium">{issue.issueNumber}</span> - {issue.status}
+                            {issue.dispatchedDate && (
+                              <span className="text-gray-500 ml-2">
+                                (Dispatched: {new Date(issue.dispatchedDate).toLocaleDateString()})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
+            )}
+
             {/* Items */}
             <Card>
               <CardHeader>
@@ -595,12 +639,12 @@ export default function PurchaseOrderDetailPage() {
                         const isExpanded = expandedItems.has(item.id);
                         const requestedQty = item.requestedQty || item.quantity || 0;
                         const issuedQty = itemIssuedQty.get(item.id) || 0;
-                        const remainingQty = Math.max(0, requestedQty - issuedQty);
+                        const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
                         const colSpan = purchaseOrder.status === "approved" ? 9 : 7;
-                        
+
                         return (
                           <React.Fragment key={item.id}>
-                            <tr 
+                            <tr
                               className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
                               onClick={() => {
                                 const newExpanded = new Set(expandedItems);
@@ -667,8 +711,8 @@ export default function PurchaseOrderDetailPage() {
                                     item.status === "approved"
                                       ? "bg-green-100 text-green-800"
                                       : item.status === "rejected"
-                                      ? "bg-red-100 text-red-800"
-                                      : "bg-yellow-100 text-yellow-800"
+                                        ? "bg-red-100 text-red-800"
+                                        : "bg-yellow-100 text-yellow-800"
                                   }
                                 >
                                   {item.status}
@@ -732,8 +776,8 @@ export default function PurchaseOrderDetailPage() {
                                         <p className="text-gray-500 font-medium mb-1">Urgency</p>
                                         <Badge className={
                                           item.urgency === 'urgent' ? 'bg-red-100 text-red-800' :
-                                          item.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
-                                          'bg-blue-100 text-blue-800'
+                                            item.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
+                                              'bg-blue-100 text-blue-800'
                                         }>
                                           {item.urgency.toUpperCase()}
                                         </Badge>
@@ -808,7 +852,7 @@ export default function PurchaseOrderDetailPage() {
         onClose={() => setShowApproveModal(false)}
         onConfirm={handleApprove}
         title="Approve Purchase Order"
-        message={isCIM 
+        message={isCIM
           ? "Are you sure you want to approve this purchase order? After approval, you can issue parts (admin approval will be required for the Parts Issue)."
           : "Are you sure you want to approve this purchase order? After approval, Central Inventory Manager will be able to issue parts (admin approval required for Parts Issue)."
         }
@@ -825,7 +869,7 @@ export default function PurchaseOrderDetailPage() {
             <CardHeader>
               <h3 className="text-xl font-semibold text-gray-800">Issue Parts from Purchase Order</h3>
               <p className="text-sm text-gray-600 mt-1">
-                Adjust quantities if needed (you can issue partial quantities). 
+                Adjust quantities if needed (you can issue partial quantities).
                 <span className="font-semibold text-yellow-700 block mt-1">⚠️ Note: This will create a Parts Issue that requires admin approval before parts are dispatched.</span>
               </p>
             </CardHeader>
@@ -936,6 +980,81 @@ export default function PurchaseOrderDetailPage() {
                   >
                     {isProcessing ? "Processing..." : "Reject Order"}
                   </button>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Tracking Details Modal */}
+      {showEditTrackingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-2xl mx-4">
+            <CardHeader>
+              <h3 className="text-xl font-semibold text-gray-800">Edit Tracking Details</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Update tracking information for the dispatched parts issue
+              </p>
+            </CardHeader>
+            <CardBody>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tracking Number
+                  </label>
+                  <input
+                    type="text"
+                    value={trackingNumber}
+                    onChange={(e) => setTrackingNumber(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter tracking number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Transporter
+                  </label>
+                  <input
+                    type="text"
+                    value={transporter}
+                    onChange={(e) => setTransporter(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter transporter name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Expected Delivery Date
+                  </label>
+                  <input
+                    type="date"
+                    value={expectedDelivery ? new Date(expectedDelivery).toISOString().split('T')[0] : ''}
+                    onChange={(e) => setExpectedDelivery(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex gap-3 justify-end pt-4">
+                  <Button
+                    onClick={() => {
+                      setShowEditTrackingModal(false);
+                      setTrackingNumber("");
+                      setTransporter("");
+                      setExpectedDelivery("");
+                      setEditingTrackingId("");
+                    }}
+                    disabled={isProcessing}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleUpdateTrackingDetails}
+                    disabled={isProcessing}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {isProcessing ? "Updating..." : "Update Tracking Details"}
+                  </Button>
                 </div>
               </div>
             </CardBody>

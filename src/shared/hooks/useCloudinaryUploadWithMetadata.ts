@@ -182,6 +182,120 @@ export function useCloudinaryUploadWithMetadata() {
         []
     );
 
+    /**
+     * Upload multiple files to Cloudinary ONLY (without saving to database)
+     * Used when you want to defer database saves until later (e.g., after form submission)
+     */
+    const uploadMultipleToCloudinaryOnly = useCallback(
+        async (
+            files: File[],
+            folder: string,
+            cloudinaryOptions?: Omit<CloudinaryUploadOptions, 'folder'>
+        ): Promise<CloudinaryUploadResult[]> => {
+            setState({
+                isUploading: true,
+                progress: 0,
+                error: null,
+            });
+
+            setMultiFileProgress(new Map());
+
+            try {
+                const uploadResults = await uploadMultipleToCloudinary(
+                    files,
+                    folder,
+                    cloudinaryOptions || {},
+                    (fileIndex, progress) => {
+                        setMultiFileProgress((prev) => {
+                            const next = new Map(prev);
+                            next.set(fileIndex, progress);
+
+                            const progressValues = Array.from(next.values()) as number[];
+                            const totalProgress =
+                                progressValues.reduce((sum: number, p: number) => sum + p, 0) /
+                                files.length;
+                            setState((prevState) => ({
+                                ...prevState,
+                                progress: totalProgress,
+                            }));
+
+                            return next;
+                        });
+                    }
+                );
+
+                setState({
+                    isUploading: false,
+                    progress: 100,
+                    error: null,
+                });
+
+                setMultiFileProgress(new Map());
+
+                return uploadResults;
+            } catch (error) {
+                const err = error instanceof Error ? error : new Error('Upload failed');
+                setState({
+                    isUploading: false,
+                    progress: 0,
+                    error: err,
+                });
+                setMultiFileProgress(new Map());
+                throw err;
+            }
+        },
+        []
+    );
+
+    /**
+     * Upload a single file to Cloudinary ONLY (without saving to database)
+     */
+    const uploadFileToCloudinaryOnly = useCallback(
+        async (
+            file: File,
+            folder: string,
+            cloudinaryOptions?: Omit<CloudinaryUploadOptions, 'folder'>
+        ): Promise<CloudinaryUploadResult> => {
+            setState({
+                isUploading: true,
+                progress: 0,
+                error: null,
+            });
+
+            try {
+                const uploadResult = await uploadWithRetry(
+                    file,
+                    folder,
+                    cloudinaryOptions || {},
+                    3,
+                    (progress) => {
+                        setState((prev) => ({
+                            ...prev,
+                            progress,
+                        }));
+                    }
+                );
+
+                setState({
+                    isUploading: false,
+                    progress: 100,
+                    error: null,
+                });
+
+                return uploadResult;
+            } catch (error) {
+                const err = error instanceof Error ? error : new Error('Upload failed');
+                setState({
+                    isUploading: false,
+                    progress: 0,
+                    error: err,
+                });
+                throw err;
+            }
+        },
+        []
+    );
+
     const reset = useCallback(() => {
         setState({
             isUploading: false,
@@ -194,6 +308,8 @@ export function useCloudinaryUploadWithMetadata() {
     return {
         uploadFileWithMetadata,
         uploadMultipleWithMetadata,
+        uploadMultipleToCloudinaryOnly,
+        uploadFileToCloudinaryOnly,
         isUploading: state.isUploading,
         progress: state.progress,
         multiFileProgress: Array.from(multiFileProgress.entries()).map(

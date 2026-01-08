@@ -8,7 +8,6 @@ import {
   CheckCircle,
   Search,
   Filter,
-  Eye,
   UserPlus,
   AlertTriangle,
   User,
@@ -18,6 +17,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import type { Engineer, WorkshopStats, EngineerStatus, Workload, Priority, JobCard, JobCardStatus } from "@/shared/types";
+import { useToast } from "@/shared/utils/toast.util";
 // import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 const safeStorage = {
@@ -53,6 +53,7 @@ const defaultEngineers: Engineer[] = [];
 
 
 export default function Workshop() {
+  const { showSuccess, showWarning } = useToast();
   const [selectedEngineer, setSelectedEngineer] = useState<Engineer | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -154,7 +155,7 @@ export default function Workshop() {
 
   const handleAssignEngineer = () => {
     if (!selectedJobForAction || !selectedEngineerForAssign) {
-      alert("Please select a job and engineer");
+      showWarning("Please select a job and engineer");
       return;
     }
     const engineerName = engineers.find((e) => e.id.toString() === selectedEngineerForAssign)?.name || null;
@@ -168,12 +169,12 @@ export default function Workshop() {
     setShowAssignModal(false);
     setSelectedJobForAction(null);
     setSelectedEngineerForAssign("");
-    alert("Engineer assigned successfully!");
+    showSuccess("Engineer assigned successfully!");
   };
 
   const handleCompleteJob = () => {
     if (!selectedJobForAction) {
-      alert("Please select a job to complete");
+      showWarning("Please select a job to complete");
       return;
     }
     const updatedJobs = jobCards.map((job) =>
@@ -207,7 +208,7 @@ export default function Workshop() {
 
     setShowCompleteModal(false);
     setSelectedJobForAction(null);
-    alert("Job marked as completed!");
+    showSuccess("Job marked as completed!");
   };
 
   const getStatusColor = (status: JobCardStatus): string => {
@@ -343,74 +344,107 @@ export default function Workshop() {
 
               <div className="space-y-4 max-h-[600px] overflow-y-auto">
                 {filteredActiveJobs.length > 0 ? (
-                  filteredActiveJobs.map((job) => (
-                    <div
-                      key={job.id}
-                      className="border border-gray-200 rounded-xl p-4 hover:shadow-lg hover:border-blue-300 transition-all duration-200 cursor-pointer group"
-                      onClick={() => {
-                        setSelectedJob(job);
-                        setShowDetails(true);
-                      }}
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
-                              {job.id}
-                            </span>
-                            {job.jobCardNumber && (
-                              <span className="text-xs text-gray-500">{job.jobCardNumber}</span>
+                  filteredActiveJobs.map((job) => {
+                    // Determine which fields have data
+                    const hasJobCardNumber = job.jobCardNumber && job.jobCardNumber.trim() !== "";
+                    const hasCustomerName = job.customerName && job.customerName.trim() !== "";
+                    const hasVehicle = job.vehicle && job.vehicle.trim() !== "";
+                    const hasRegistration = job.registration && job.registration.trim() !== "";
+                    const hasServiceType = job.serviceType && job.serviceType.trim() !== "";
+                    const hasAssignedEngineer = job.assignedEngineer && job.assignedEngineer.trim() !== "";
+                    const hasEstimatedTime = job.estimatedTime && job.estimatedTime.trim() !== "";
+                    const hasEstimatedCost = job.estimatedCost && job.estimatedCost.trim() !== "";
+                    const hasParts = job.parts && Array.isArray(job.parts) && job.parts.length > 0;
+
+                    return (
+                      <div
+                        key={job.id}
+                        className="border border-gray-200 rounded-xl p-4 hover:shadow-lg hover:border-blue-300 transition-all duration-200 cursor-pointer group"
+                        onClick={() => {
+                          setSelectedJob(job);
+                          setShowDetails(true);
+                        }}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
+                                {job.id}
+                              </span>
+                              {hasJobCardNumber && (
+                                <span className="text-xs text-gray-500">{job.jobCardNumber}</span>
+                              )}
+                              {job.status && (
+                                <span
+                                  className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(
+                                    job.status
+                                  )}`}
+                                >
+                                  {job.status}
+                                </span>
+                              )}
+                              {job.priority && (
+                                <span
+                                  className={`w-2 h-2 rounded-full ${getPriorityColor(job.priority)}`}
+                                  title={job.priority}
+                                ></span>
+                              )}
+                            </div>
+                            {hasCustomerName && (
+                              <p className="font-semibold text-gray-800 group-hover:text-blue-600 transition-colors">
+                                {job.customerName}
+                              </p>
                             )}
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(
-                                job.status
-                              )}`}
-                            >
-                              {job.status}
-                            </span>
-                            <span
-                              className={`w-2 h-2 rounded-full ${getPriorityColor(job.priority)}`}
-                              title={job.priority}
-                            ></span>
+                            {(hasVehicle || hasRegistration) && (
+                              <p className="text-sm text-gray-600 mt-1">
+                                {hasVehicle && hasRegistration
+                                  ? `${job.vehicle} • ${job.registration}`
+                                  : hasVehicle
+                                    ? job.vehicle
+                                    : job.registration}
+                              </p>
+                            )}
                           </div>
-                          <p className="font-semibold text-gray-800 group-hover:text-blue-600 transition-colors">
-                            {job.customerName}
-                          </p>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {job.vehicle} • {job.registration}
-                          </p>
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm mt-3 pt-3 border-t border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <Wrench size={14} className="text-gray-400 flex-shrink-0" />
-                          <span className="text-gray-700 truncate">{job.serviceType}</span>
-                        </div>
-                        {job.assignedEngineer && (
-                          <div className="flex items-center gap-2">
-                            <User size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="text-gray-700 truncate">{job.assignedEngineer}</span>
+                        {(hasServiceType || hasAssignedEngineer || hasEstimatedTime || hasEstimatedCost) && (
+                          <div className="grid grid-cols-2 gap-4 text-sm mt-3 pt-3 border-t border-gray-100">
+                            {hasServiceType && (
+                              <div className="flex items-center gap-2">
+                                <Wrench size={14} className="text-gray-400 flex-shrink-0" />
+                                <span className="text-gray-700 truncate">{job.serviceType}</span>
+                              </div>
+                            )}
+                            {hasAssignedEngineer && (
+                              <div className="flex items-center gap-2">
+                                <User size={14} className="text-gray-400 flex-shrink-0" />
+                                <span className="text-gray-700 truncate">{job.assignedEngineer}</span>
+                              </div>
+                            )}
+                            {hasEstimatedTime && (
+                              <div className="flex items-center gap-2">
+                                <Clock size={14} className="text-gray-400 flex-shrink-0" />
+                                <span className="text-gray-700">{job.estimatedTime}</span>
+                              </div>
+                            )}
+                            {hasEstimatedCost && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-600">Cost:</span>
+                                <span className="font-medium text-gray-800">{job.estimatedCost}</span>
+                              </div>
+                            )}
                           </div>
                         )}
-                        <div className="flex items-center gap-2">
-                          <Clock size={14} className="text-gray-400 flex-shrink-0" />
-                          <span className="text-gray-700">{job.estimatedTime}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-600">Cost:</span>
-                          <span className="font-medium text-gray-800">{job.estimatedCost}</span>
-                        </div>
-                      </div>
-                      {job.parts && job.parts.length > 0 && (
-                        <div className="mt-2 pt-2 border-t border-gray-100">
-                          <div className="flex items-center gap-1 text-xs text-gray-600">
-                            <Package size={12} className="text-gray-400" />
-                            <span>{job.parts.length} {job.parts.length === 1 ? "part" : "parts"}</span>
+                        {hasParts && (
+                          <div className="mt-2 pt-2 border-t border-gray-100">
+                            <div className="flex items-center gap-1 text-xs text-gray-600">
+                              <Package size={12} className="text-gray-400" />
+                              <span>{job.parts.length} {job.parts.length === 1 ? "part" : "parts"}</span>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
+                        )}
+                      </div>
+                    );
+                  })
                 ) : (
                   <div className="text-center py-12 text-gray-500">
                     <Wrench className="mx-auto text-gray-300 mb-3" size={48} />
@@ -541,7 +575,7 @@ export default function Workshop() {
                 <button
                   onClick={() => {
                     if (activeJobCards.length === 0) {
-                      alert("No active jobs available");
+                      showWarning("No active jobs available");
                       return;
                     }
                     setShowAssignModal(true);
@@ -554,7 +588,7 @@ export default function Workshop() {
                 <button
                   onClick={() => {
                     if (activeJobCards.length === 0) {
-                      alert("No active jobs available");
+                      showWarning("No active jobs available");
                       return;
                     }
                     setShowCompleteModal(true);

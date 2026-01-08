@@ -1,6 +1,5 @@
 "use client";
-import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Truck,
   MapPin,
@@ -16,14 +15,74 @@ import {
   FileText,
   PlusCircle,
   X,
+  Loader2,
 } from "lucide-react";
-import type { HomeService, HomeServiceStatus, HomeServiceStats, HomeServiceFilterType } from "@/shared/types";
+import type { HomeService, HomeServiceStatus, HomeServiceFilterType } from "@/shared/types";
+import { homeServiceService, HomeServiceResponse } from "@/features/home-service/services/home-service.service";
+import { apiClient } from "@/core/api/client";
+import { API_ENDPOINTS } from "@/config/api.config";
+
+// Helper to map backend status to frontend status
+const mapBackendStatusToFrontend = (status: string): HomeServiceStatus => {
+  const statusMap: Record<string, HomeServiceStatus> = {
+    SCHEDULED: "Scheduled",
+    IN_PROGRESS: "In Progress",
+    COMPLETED: "Completed",
+    CANCELLED: "Cancelled",
+  };
+  return statusMap[status] || "Scheduled";
+};
+
+// Helper to map backend response to frontend format
+const mapBackendToFrontend = (service: HomeServiceResponse): HomeService => {
+  return {
+    id: service.id,
+    serviceNumber: service.serviceNumber,
+    customerName: service.customerName,
+    phone: service.phone,
+    vehicle: service.vehicleModel,
+    registration: service.registration,
+    address: service.serviceAddress,
+    serviceType: service.serviceType,
+    scheduledDate: new Date(service.scheduledDate).toISOString().split('T')[0],
+    scheduledTime: service.scheduledTime,
+    engineer: service.assignedEngineer?.name || "Not Assigned",
+    status: mapBackendStatusToFrontend(service.status),
+    estimatedCost: `₹${service.estimatedCost.toLocaleString('en-IN')}`,
+    createdAt: new Date(service.createdAt).toLocaleString('en-IN', { 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    }),
+    startTime: service.startTime ? new Date(service.startTime).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }) : undefined,
+    completedAt: service.completedAt ? new Date(service.completedAt).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }) : undefined,
+  };
+};
 
 export default function HomeService() {
   const [filter, setFilter] = useState<HomeServiceFilterType>("all");
   const [selectedService, setSelectedService] = useState<HomeService | null>(null);
   const [showDetails, setShowDetails] = useState<boolean>(false);
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+  const [homeServices, setHomeServices] = useState<HomeService[]>([]);
+  const [stats, setStats] = useState({ scheduled: 0, inProgress: 0, completed: 0, total: 0 });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [engineers, setEngineers] = useState<Array<{ id: string; name: string }>>([]);
   const [scheduleForm, setScheduleForm] = useState({
     customerName: "",
     phone: "",
@@ -35,58 +94,74 @@ export default function HomeService() {
     scheduledTime: "",
     engineer: "",
     estimatedCost: "",
+    serviceCenterId: "", // Will be fetched from user context or localStorage
   });
 
-  // Mock home service data
-  const [homeServices, setHomeServices] = useState<HomeService[]>([
-    {
-      id: "HS-2025-001",
-      customerName: "Rajesh Kumar",
-      phone: "9876543210",
-      vehicle: "Honda City 2020",
-      registration: "PB10AB1234",
-      address: "123 Main Street, Sector 5, Pune",
-      serviceType: "Routine Maintenance",
-      scheduledDate: "2025-01-20",
-      scheduledTime: "10:00 AM",
-      engineer: "Engineer 1",
-      status: "Scheduled",
-      estimatedCost: "₹3,500",
-      createdAt: "2025-01-15 09:30",
-    },
-    {
-      id: "HS-2025-002",
-      customerName: "Priya Sharma",
-      phone: "9876543211",
-      vehicle: "Maruti Swift 2019",
-      registration: "MH01XY5678",
-      address: "456 Park Avenue, Bandra West, Mumbai",
-      serviceType: "AC Repair",
-      scheduledDate: "2025-01-18",
-      scheduledTime: "2:00 PM",
-      engineer: "Engineer 2",
-      status: "In Progress",
-      estimatedCost: "₹4,200",
-      startTime: "2025-01-18 14:15",
-      createdAt: "2025-01-15 11:15",
-    },
-    {
-      id: "HS-2025-003",
-      customerName: "Amit Patel",
-      phone: "9876543212",
-      vehicle: "Hyundai i20 2021",
-      registration: "DL05CD9012",
-      address: "789 MG Road, Connaught Place, Delhi",
-      serviceType: "Oil Change",
-      scheduledDate: "2025-01-19",
-      scheduledTime: "11:00 AM",
-      engineer: "Engineer 3",
-      status: "Completed",
-      estimatedCost: "₹1,500",
-      completedAt: "2025-01-19 11:45",
-      createdAt: "2025-01-15 14:20",
-    },
-  ]);
+  // Fetch engineers for dropdown
+  useEffect(() => {
+    const fetchEngineers = async () => {
+      try {
+        const serviceCenterId = localStorage.getItem('serviceCenterId') || '';
+        const params = serviceCenterId ? `?role=service_engineer&serviceCenterId=${serviceCenterId}` : '?role=service_engineer';
+        const response = await apiClient.get(`${API_ENDPOINTS.USERS}${params}`) as any;
+        const data = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+        setEngineers(data.map((user: any) => ({ id: user.id, name: user.name })));
+      } catch (error) {
+        console.error("Error fetching engineers:", error);
+      }
+    };
+    fetchEngineers();
+  }, []);
+
+  // Fetch data on mount
+  useEffect(() => {
+    fetchHomeServices();
+    fetchStats();
+  }, [filter]);
+
+  const fetchHomeServices = async () => {
+    try {
+      setIsLoading(true);
+      const serviceCenterId = localStorage.getItem('serviceCenterId') || '';
+      const params: any = {};
+      if (serviceCenterId) params.serviceCenterId = serviceCenterId;
+      if (filter !== 'all') {
+        const statusMap: Record<string, string> = {
+          scheduled: 'SCHEDULED',
+          in_progress: 'IN_PROGRESS',
+          completed: 'COMPLETED',
+        };
+        params.status = statusMap[filter];
+      }
+      
+      const response = await homeServiceService.getAll(params);
+      // Response is { data: HomeServiceResponse[], pagination: {...} }
+      const servicesData = response?.data || [];
+      const mappedServices = servicesData.map(mapBackendToFrontend);
+      setHomeServices(mappedServices);
+    } catch (error) {
+      console.error("Failed to fetch home services:", error);
+      setHomeServices([]); // Set empty array on error
+      alert("Failed to load home services. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const serviceCenterId = localStorage.getItem('serviceCenterId') || undefined;
+      const statsData = await homeServiceService.getStats(serviceCenterId);
+      setStats({
+        scheduled: statsData.scheduled,
+        inProgress: statsData.inProgress,
+        completed: statsData.completed,
+        total: statsData.total,
+      });
+    } catch (error) {
+      console.error("Failed to fetch stats:", error);
+    }
+  };
 
   const filteredServices = homeServices.filter((service) => {
     if (filter === "all") return true;
@@ -103,14 +178,7 @@ export default function HomeService() {
     return colors[status] || colors.Scheduled;
   };
 
-  const stats: HomeServiceStats = {
-    scheduled: homeServices.filter((s) => s.status === "Scheduled").length,
-    inProgress: homeServices.filter((s) => s.status === "In Progress").length,
-    completed: homeServices.filter((s) => s.status === "Completed").length,
-    total: homeServices.length,
-  };
-
-  const handleScheduleSubmit = () => {
+  const handleScheduleSubmit = async () => {
     // Validate form
     if (
       !scheduleForm.customerName ||
@@ -134,50 +202,61 @@ export default function HomeService() {
       return;
     }
 
-    // Generate new service ID
-    const newId = `HS-2025-${String(homeServices.length + 1).padStart(3, "0")}`;
+    try {
+      setIsSubmitting(true);
+      const serviceCenterId = localStorage.getItem('serviceCenterId');
+      if (!serviceCenterId) {
+        alert("Service Center ID not found. Please login again.");
+        return;
+      }
 
-    // Create new home service
-    const newService: HomeService = {
-      id: newId,
-      customerName: scheduleForm.customerName,
-      phone: scheduleForm.phone,
-      vehicle: scheduleForm.vehicle,
-      registration: scheduleForm.registration,
-      address: scheduleForm.address,
-      serviceType: scheduleForm.serviceType,
-      scheduledDate: scheduleForm.scheduledDate,
-      scheduledTime: scheduleForm.scheduledTime,
-      engineer: scheduleForm.engineer,
-      status: "Scheduled",
-      estimatedCost: scheduleForm.estimatedCost,
-      createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
-    };
+      // Engineer ID is already stored in scheduleForm.engineer from dropdown selection
+      const engineerId = scheduleForm.engineer;
 
-    // Add to services list
-    setHomeServices([...homeServices, newService]);
+      // Extract numeric cost from string
+      const costValue = parseFloat(scheduleForm.estimatedCost.replace(/[₹,]/g, ''));
 
-    // Store in localStorage (simulating API call)
-    const storedServices = safeStorage.getItem<unknown[]>("homeServices", []);
-    storedServices.push(newService);
-    safeStorage.setItem("homeServices", storedServices);
+      await homeServiceService.create({
+        serviceCenterId,
+        customerName: scheduleForm.customerName,
+        phone: scheduleForm.phone,
+        vehicleModel: scheduleForm.vehicle,
+        registration: scheduleForm.registration,
+        serviceAddress: scheduleForm.address,
+        serviceType: scheduleForm.serviceType,
+        scheduledDate: scheduleForm.scheduledDate,
+        scheduledTime: scheduleForm.scheduledTime,
+        estimatedCost: costValue,
+        assignedEngineerId: engineerId || undefined,
+      });
 
-    // Reset form and close modal
-    setScheduleForm({
-      customerName: "",
-      phone: "",
-      vehicle: "",
-      registration: "",
-      address: "",
-      serviceType: "",
-      scheduledDate: "",
-      scheduledTime: "",
-      engineer: "",
-      estimatedCost: "",
-    });
-    setShowScheduleModal(false);
+      alert("Home service scheduled successfully!");
 
-    alert(`Home service scheduled successfully! Service ID: ${newId}`);
+      // Reset form and close modal
+      setScheduleForm({
+        customerName: "",
+        phone: "",
+        vehicle: "",
+        registration: "",
+        address: "",
+        serviceType: "",
+        scheduledDate: "",
+        scheduledTime: "",
+        engineer: "",
+        estimatedCost: "",
+        serviceCenterId: "",
+      });
+      setShowScheduleModal(false);
+
+      // Refresh data
+      await fetchHomeServices();
+      await fetchStats();
+    } catch (error: any) {
+      console.error("Failed to create home service:", error);
+      alert(error?.message || "Failed to schedule home service. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -278,19 +357,28 @@ export default function HomeService() {
           </div>
         </div>
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="bg-white rounded-2xl shadow-md p-12 text-center">
+            <Loader2 className="mx-auto text-blue-600 mb-4 animate-spin" size={48} />
+            <p className="text-gray-600">Loading home services...</p>
+          </div>
+        )}
+
         {/* Services List */}
-        <div className="space-y-4">
-          {filteredServices.map((service) => (
-            <div
-              key={service.id}
-              className="bg-white rounded-2xl shadow-md p-6 hover:shadow-lg transition"
-            >
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
-                      {service.id}
-                    </span>
+        {!isLoading && (
+          <div className="space-y-4">
+            {filteredServices.map((service) => (
+              <div
+                key={service.id}
+                className="bg-white rounded-2xl shadow-md p-6 hover:shadow-lg transition"
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
+                        {service.serviceNumber || service.id}
+                      </span>
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
                         service.status
@@ -363,9 +451,10 @@ export default function HomeService() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        )}
 
-        {filteredServices.length === 0 && (
+        {!isLoading && filteredServices.length === 0 && (
           <div className="bg-white rounded-2xl shadow-md p-12 text-center">
             <Truck className="mx-auto text-gray-400 mb-4" size={64} />
             <h3 className="text-xl font-semibold text-gray-700 mb-2">No Home Services Found</h3>
@@ -376,8 +465,8 @@ export default function HomeService() {
 
       {/* Service Details Modal */}
       {showDetails && selectedService && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 relative z-[10000]">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-800">Home Service Details</h2>
               <button
@@ -392,7 +481,7 @@ export default function HomeService() {
               {/* Status */}
               <div className="flex items-center gap-3">
                 <span className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-semibold">
-                  {selectedService.id}
+                  {selectedService.serviceNumber || selectedService.id}
                 </span>
                 <span
                   className={`px-4 py-2 rounded-lg text-sm font-medium border ${getStatusColor(
@@ -659,23 +748,24 @@ export default function HomeService() {
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Assign Engineer <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={scheduleForm.engineer}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, engineer: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      required
-                    >
-                      <option value="">Select engineer</option>
-                      <option value="Engineer 1">Engineer 1</option>
-                      <option value="Engineer 2">Engineer 2</option>
-                      <option value="Engineer 3">Engineer 3</option>
-                      <option value="Engineer 4">Engineer 4</option>
-                    </select>
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Assign Engineer <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={scheduleForm.engineer}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, engineer: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        required
+                      >
+                        <option value="">Select engineer</option>
+                        {engineers.map((eng) => (
+                          <option key={eng.id} value={eng.id}>
+                            {eng.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                 </div>
               </div>
 
@@ -703,9 +793,17 @@ export default function HomeService() {
                 </button>
                 <button
                   onClick={handleScheduleSubmit}
-                  className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+                  disabled={isSubmitting}
+                  className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Schedule Service
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      Scheduling...
+                    </>
+                  ) : (
+                    "Schedule Service"
+                  )}
                 </button>
               </div>
             </div>

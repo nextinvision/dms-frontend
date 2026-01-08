@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { FileText, Wrench, Car, User, Calendar, Eye, Edit, Clock } from 'lucide-react';
+import { FileText, Wrench, Car, User, Calendar, Eye, Edit, Clock, Banknote } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { UserInfo } from '@/shared/types/auth.types';
 import { JobCardPartsRequest } from '@/shared/types/jobcard-inventory.types';
+import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface JobCardListProps {
     currentJobs: JobCard[];
@@ -24,7 +25,9 @@ interface JobCardListProps {
     getNextStatus?: (status: JobCardStatus) => JobCardStatus[];
     hasQuotation?: (jobId: string) => boolean;
     onPassToManager?: (job: JobCard) => void;
+    onCreateInvoice?: (job: JobCard) => void;
 }
+
 
 const JobCardList = React.memo<JobCardListProps>(({
     currentJobs,
@@ -46,6 +49,7 @@ const JobCardList = React.memo<JobCardListProps>(({
     getNextStatus,
     hasQuotation,
     onPassToManager,
+    onCreateInvoice,
 }) => {
     if (currentJobs.length === 0) {
         return (
@@ -57,17 +61,21 @@ const JobCardList = React.memo<JobCardListProps>(({
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-3 md:space-y-4">
+        <div className="p-4 md:p-6 space-y-3 md:space-y-4 overflow-x-auto">
             {currentJobs.map((job) => {
                 const jobCardId = job.id || job.jobCardNumber;
                 const request = partsRequestsData[jobCardId] || partsRequestsData[job.id] || partsRequestsData[job.jobCardNumber || ""];
-                const hasRequest = request && !request.inventoryManagerAssigned;
+                const reqStatus = request?.status;
+                const isScApproved = request?.scManagerApproved || reqStatus === 'APPROVED' || reqStatus === 'COMPLETED' || reqStatus === 'PARTIALLY_APPROVED';
+                const isPartsAssigned = request?.inventoryManagerAssigned || reqStatus === 'COMPLETED';
+                const isRejected = reqStatus === 'REJECTED';
+                const hasPendingRequest = request && !isScApproved && !isPartsAssigned && !isRejected;
 
                 return (
                     <div
                         key={job.id}
-                        className="bg-white rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 hover:shadow-lg transition flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-                        onClick={() => !isServiceManager && !isServiceAdvisor && onJobClick(job)}
+                        className="bg-white rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 hover:shadow-lg transition flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 cursor-pointer min-w-[800px]"
+                        onClick={() => onJobClick(job)}
                     >
                         <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3">
@@ -87,13 +95,23 @@ const JobCardList = React.memo<JobCardListProps>(({
                                     )}`}
                                     title={job.priority}
                                 ></span>
-                                {hasRequest && (
+                                {hasPendingRequest && (
                                     <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium border border-orange-200">
                                         Parts Request Pending
                                     </span>
                                 )}
-                                {request?.inventoryManagerAssigned && (
+                                {isRejected && (
+                                    <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium border border-red-200">
+                                        Parts Rejected
+                                    </span>
+                                )}
+                                {isScApproved && !isPartsAssigned && (
                                     <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium border border-green-200">
+                                        ✓ Parts Approved
+                                    </span>
+                                )}
+                                {isPartsAssigned && (
+                                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium border border-blue-200">
                                         ✓ Parts Assigned
                                     </span>
                                 )}
@@ -102,14 +120,22 @@ const JobCardList = React.memo<JobCardListProps>(({
                             <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 gap-3 md:gap-4 mb-3">
                                 <div className="flex items-center gap-2 text-gray-700">
                                     <User size={16} className="text-gray-400 flex-shrink-0" />
-                                    <span className="font-medium text-sm md:text-base truncate">{job.customerName}</span>
+                                    <div className="flex flex-col">
+                                        <span className="font-medium text-sm md:text-base truncate">{job.customerName}</span>
+                                        {job.customer?.phone && (
+                                            <span className="text-xs text-gray-500">{job.customer.phone}</span>
+                                        )}
+                                        {job.customer?.email && (
+                                            <span className="text-xs text-gray-400 truncate max-w-[200px]">{job.customer.email}</span>
+                                        )}
+                                    </div>
                                 </div>
+
+
                                 <div className="flex items-center gap-2 text-gray-700">
                                     <Car size={16} className="text-gray-400 flex-shrink-0" />
                                     <span className="text-sm md:text-base truncate">
-                                        {typeof job.vehicle === 'object' && job.vehicle !== null
-                                            ? `${(job.vehicle as any).vehicleModel || ''} ${(job.vehicle as any).registration ? `(${(job.vehicle as any).registration})` : ''}`
-                                            : job.vehicle}
+                                        {getVehicleDisplayString(job.vehicle)}
                                     </span>
                                     <span className="text-gray-500 text-xs md:text-sm hidden sm:inline">• {job.registration}</span>
                                 </div>
@@ -121,6 +147,14 @@ const JobCardList = React.memo<JobCardListProps>(({
                                     <Calendar size={16} className="text-gray-400 flex-shrink-0" />
                                     <span className="text-sm md:text-base truncate">{job.createdAt}</span>
                                 </div>
+                                <div className="flex items-center gap-2 text-gray-700">
+                                    <Banknote size={16} className="text-gray-400 flex-shrink-0" />
+                                    <span className="text-sm md:text-base truncate">{job.estimatedCost || "No Estimate"}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-gray-700">
+                                    <Clock size={16} className="text-gray-400 flex-shrink-0" />
+                                    <span className="text-sm md:text-base truncate">{job.estimatedTime || "No Time Est."}</span>
+                                </div>
                             </div>
 
                             <p className="text-gray-600 text-xs md:text-sm mb-2 line-clamp-2 break-words">{job.description}</p>
@@ -129,18 +163,10 @@ const JobCardList = React.memo<JobCardListProps>(({
                                 {job.assignedEngineer && (
                                     <span className="text-gray-500 truncate">
                                         Engineer: <span className="font-medium text-gray-700">
-                                            {typeof job.assignedEngineer === 'object' && job.assignedEngineer !== null
-                                                ? (job.assignedEngineer as any).name || 'Unassigned'
-                                                : job.assignedEngineer}
+                                            {getAssignedEngineerName(job.assignedEngineer)}
                                         </span>
                                     </span>
                                 )}
-                                <span className="text-gray-500">
-                                    Estimated: <span className="font-medium text-gray-700">{job.estimatedCost}</span>
-                                </span>
-                                <span className="text-gray-500">
-                                    Time: <span className="font-medium text-gray-700">{job.estimatedTime}</span>
-                                </span>
                             </div>
                         </div>
 
@@ -246,6 +272,21 @@ const JobCardList = React.memo<JobCardListProps>(({
                                 </button>
                             )}
 
+                            {(isServiceManager || isServiceAdvisor) && job.status === "COMPLETED" && onCreateInvoice && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm(`Create invoice for job card ${job.jobCardNumber || job.id}?`)) {
+                                            onCreateInvoice(job);
+                                        }
+                                    }}
+                                    className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-medium hover:opacity-90 transition w-full flex items-center justify-center gap-1 shadow-sm"
+                                >
+                                    <FileText size={14} />
+                                    Create Invoice
+                                </button>
+                            )}
+
                             {isTechnician && !isServiceManager && !isServiceAdvisor && onUpdateStatus && (
                                 <div className="space-y-2">
                                     {job.status === "ASSIGNED" && (
@@ -278,7 +319,7 @@ const JobCardList = React.memo<JobCardListProps>(({
                             )}
 
                             {isTechnician && !job.assignedEngineer && (
-                                <p className="text-xs text-blue-600 font-medium text-center bg-blue-50 py-1 rounded">Click to request parts</p>
+                                <p className="text-xs text-blue-600 font-medium text-center bg-blue-50 py-1 rounded">Click to view details</p>
                             )}
                         </div>
                     </div>

@@ -23,7 +23,7 @@ export const STATUS_CONFIG: Record<string, { bg: string; text: string }> = {
 };
 
 export const TOAST_DURATION = 3000;
-export const DEFAULT_MAX_APPOINTMENTS_PER_DAY = 20; // Default limit if not configured
+// DEFAULT_MAX_APPOINTMENTS_PER_DAY is exported from @/app/(service-center)/sc/components/appointment/types
 export const JOB_CARD_STORAGE_KEY = "jobCards";
 
 export const INITIAL_SERVICE_INTAKE_FORM: ServiceIntakeForm = {

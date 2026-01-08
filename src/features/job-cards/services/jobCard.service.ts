@@ -43,6 +43,11 @@ class JobCardService {
     return response.data;
   }
 
+  async createPartsRequest(jobCardId: string, items: any[]): Promise<any> {
+    const response = await apiClient.post(`${API_ENDPOINTS.JOB_CARDS}/${jobCardId}/parts-request`, { items });
+    return response.data;
+  }
+
   async createFromQuotation(quotationId: string, engineerId?: string): Promise<JobCard> {
     const response = await apiClient.post<JobCard>(`${API_ENDPOINTS.JOB_CARD(quotationId)}/from-quotation`, {
       engineerId,
@@ -89,6 +94,29 @@ class JobCardService {
       {}
     );
     return response.data;
+  }
+
+  // Parts Request Management
+  async getPendingPartsRequests(serviceCenterId?: string): Promise<import("@/shared/types/job-card.types").PartsRequest[]> {
+    const response = await apiClient.get<import("@/shared/types/job-card.types").PartsRequest[]>(`${API_ENDPOINTS.JOB_CARDS}/parts-requests/pending`, {
+      params: { serviceCenterId }
+    });
+    return response.data;
+  }
+
+  async updatePartsRequestStatus(
+    id: string,
+    status: import("@/shared/types/job-card.types").PartsRequestStatus,
+    notes?: string
+  ): Promise<import("@/shared/types/job-card.types").PartsRequest> {
+    const response = await apiClient.patch<import("@/shared/types/job-card.types").PartsRequest>(`${API_ENDPOINTS.JOB_CARDS}/parts-requests/${id}/status`, {
+      status,
+      notes
+    });
+    return response.data;
+  }
+  async deletePartsRequest(id: string): Promise<void> {
+    await apiClient.post(`${API_ENDPOINTS.JOB_CARDS}/parts-requests/${id}/delete`);
   }
 }
 

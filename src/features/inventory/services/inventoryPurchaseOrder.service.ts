@@ -19,6 +19,22 @@ export interface InventoryPurchaseOrder {
   requestedAt: string;
   approvedBy?: string;
   approvedAt?: string;
+  // Dispatch information
+  dispatchStatus?: 'approved' | 'dispatched' | 'pending';
+  trackingNumber?: string;
+  transporter?: string;
+  expectedDelivery?: string;
+  partsIssues?: Array<{
+    id: string;
+    issueNumber: string;
+    status: string;
+    transportDetails?: {
+      transporter?: string;
+      trackingNumber?: string;
+      expectedDelivery?: string;
+    };
+    dispatchedDate?: string;
+  }>;
 }
 
 class InventoryPurchaseOrderService {
@@ -131,15 +147,20 @@ class InventoryPurchaseOrderService {
    * Get all purchase orders for current service center
    */
   async getAll(): Promise<InventoryPurchaseOrder[]> {
-    const context = getServiceCenterContext();
-    
-    if (!context.serviceCenterId) {
+    try {
+      const context = getServiceCenterContext();
+      
+      if (!context.serviceCenterId) {
+        return [];
+      }
+
+      const orders = await purchaseOrderRepository.getByServiceCenter(context.serviceCenterId);
+      const inventoryParts = await inventoryRepository.getAll({ serviceCenterId: context.serviceCenterId });
+      return orders.map(order => this.mapToFrontendFormat(order, inventoryParts));
+    } catch (error) {
+      console.error("Error in inventoryPurchaseOrderService.getAll():", error);
       return [];
     }
-
-    const orders = await purchaseOrderRepository.getByServiceCenter(context.serviceCenterId);
-    const inventoryParts = await inventoryRepository.getAll({ serviceCenterId: context.serviceCenterId });
-    return orders.map(order => this.mapToFrontendFormat(order, inventoryParts));
   }
 
   /**
@@ -161,6 +182,38 @@ class InventoryPurchaseOrderService {
     // Ensure items is an array, even if undefined
     const items = Array.isArray(order.items) ? order.items : [];
 
+    // Map parts issues to get dispatch information
+    const partsIssues = order.partsIssues || [];
+    const dispatchedIssues = partsIssues.filter((issue: any) => 
+      issue.status === 'DISPATCHED' || issue.status === 'ADMIN_APPROVED'
+    );
+    
+    // Get the latest dispatch tracking information
+    let latestTrackingNumber: string | undefined;
+    let latestTransporter: string | undefined;
+    let latestExpectedDelivery: string | undefined;
+    let dispatchStatus: 'approved' | 'dispatched' | 'pending' = 'pending';
+
+    if (dispatchedIssues.length > 0) {
+      // Get the most recent dispatch
+      const latestIssue = dispatchedIssues[0];
+      if (latestIssue.transportDetails) {
+        const transportDetails = typeof latestIssue.transportDetails === 'string' 
+          ? JSON.parse(latestIssue.transportDetails) 
+          : latestIssue.transportDetails;
+        latestTrackingNumber = transportDetails?.trackingNumber;
+        latestTransporter = transportDetails?.transporter;
+        latestExpectedDelivery = transportDetails?.expectedDelivery;
+      }
+      
+      // Check if any issue is dispatched
+      if (dispatchedIssues.some((issue: any) => issue.status === 'DISPATCHED')) {
+        dispatchStatus = 'dispatched';
+      } else if (dispatchedIssues.some((issue: any) => issue.status === 'ADMIN_APPROVED')) {
+        dispatchStatus = 'approved';
+      }
+    }
+
     return {
       id: order.id,
       poNumber: order.poNumber,
@@ -180,6 +233,20 @@ class InventoryPurchaseOrderService {
       requestedAt: order.createdAt || new Date().toISOString(),
       approvedBy: order.approvedBy?.name,
       approvedAt: order.approvedAt,
+      // Dispatch information
+      dispatchStatus: dispatchStatus,
+      trackingNumber: latestTrackingNumber,
+      transporter: latestTransporter,
+      expectedDelivery: latestExpectedDelivery,
+      partsIssues: partsIssues.map((issue: any) => ({
+        id: issue.id,
+        issueNumber: issue.issueNumber,
+        status: issue.status,
+        transportDetails: typeof issue.transportDetails === 'string' 
+          ? JSON.parse(issue.transportDetails) 
+          : issue.transportDetails,
+        dispatchedDate: issue.dispatchedDate,
+      })),
     };
   }
 }

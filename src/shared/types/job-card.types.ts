@@ -72,6 +72,8 @@ export interface JobCardPart2Item {
   itemType?: "part" | "work_item"; // To distinguish between parts and work items
   serialNumber?: string; // Serial number for warranty parts
   isWarranty?: boolean; // Flag to indicate if this is a warranty part
+  inventoryPartId?: string; // For linking to inventory part
+  warrantyTagNumber?: string; // Warranty Tag Number (RQL...)
 }
 
 /**
@@ -123,7 +125,7 @@ export interface JobCard {
   customerName: string;
   vehicleId?: string;
   vehicleObject?: Vehicle; // Optional: populated when backend includes vehicle relation
-  vehicle: string; // Legacy field for backward compatibility
+  vehicle: string | { registration?: string; vehicleModel?: string;[key: string]: any }; // Legacy field for backward compatibility
   registration: string; // Legacy field for backward compatibility
   vehicleMake?: string; // Legacy field for backward compatibility
   vehicleModel?: string; // Legacy field for backward compatibility
@@ -132,7 +134,7 @@ export interface JobCard {
   description: string;
   status: JobCardStatus;
   priority: Priority;
-  assignedEngineer: string | null;
+  assignedEngineer: string | { id: string; name: string;[key: string]: any } | null;
   estimatedCost: string;
   estimatedTime: string;
   expectedCompletionDate?: string; // Expected date when the job should be completed
@@ -222,6 +224,7 @@ export interface JobCard {
   part3?: JobCardPart3; // Part Requisition & Issue Details
   quotation?: any;
 
+  partsRequests?: PartsRequest[];
 }
 
 export interface KanbanColumn {
@@ -234,4 +237,29 @@ export interface KanbanColumn {
 // Job cards support list, kanban, and table views
 export type JobCardViewType = "kanban" | "list" | "table";
 export type JobCardFilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft" | "pending_approval";
+
+// Parts Request Types
+export type PartsRequestStatus = 'PENDING' | 'APPROVED' | 'PARTIALLY_APPROVED' | 'REJECTED' | 'COMPLETED';
+
+export interface PartsRequestItem {
+  id: string;
+  requestId: string;
+  partName: string;
+  partNumber?: string;
+  requestedQty: number;
+  approvedQty: number;
+  isWarranty: boolean;
+  inventoryPartId?: string;
+}
+
+export interface PartsRequest {
+  id: string;
+  jobCardId: string;
+  jobCard?: JobCard;
+  status: PartsRequestStatus;
+  urgency: Priority;
+  createdAt: string;
+  updatedAt: string;
+  items: PartsRequestItem[];
+}
 

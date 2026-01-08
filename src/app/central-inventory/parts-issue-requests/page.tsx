@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
-import { CheckCircle, XCircle, Package, Building, Clock, RefreshCw, AlertCircle, ArrowRightCircle, FileText } from "lucide-react";
+import { CheckCircle, XCircle, Package, Building, Clock, RefreshCw, AlertCircle, ArrowRightCircle, FileText, Edit } from "lucide-react";
 import type { PartsIssue } from "@/shared/types/central-inventory.types";
 
 export default function PartsIssueRequestsPage() {
@@ -24,11 +24,20 @@ export default function PartsIssueRequestsPage() {
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [paymentReference, setPaymentReference] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showDispatchModal, setShowDispatchModal] = useState(false);
+  const [dispatchIssueId, setDispatchIssueId] = useState<string>("");
+  const [showEditTransportModal, setShowEditTransportModal] = useState(false);
+  const [editIssueId, setEditIssueId] = useState<string>("");
+  const [editTransportDetails, setEditTransportDetails] = useState({
+    transporter: "",
+    trackingNumber: "",
+    expectedDelivery: "",
+  });
 
   // Shared data fetching logic
   const fetchRequestsData = useCallback(async () => {
     const allIssues = await adminApprovalService.getAllIssues();
-    
+
     // Pending approval: PENDING_APPROVAL or CIM_APPROVED (waiting for admin)
     const pending = allIssues.filter(
       (issue) =>
@@ -36,18 +45,18 @@ export default function PartsIssueRequestsPage() {
         !issue.adminApproved &&
         !issue.adminRejected
     );
-    
+
     // Approved requests: ADMIN_APPROVED (ready to dispatch) or DISPATCHED (already issued)
     // Also check adminApproved flag to catch any issues
     const approved = allIssues.filter(
-      (issue) => 
-        issue.status === "admin_approved" || 
-        issue.status === "issued" || 
+      (issue) =>
+        issue.status === "admin_approved" ||
+        issue.status === "issued" ||
         issue.status === "dispatched" ||
         issue.status === "completed" ||
         (issue.adminApproved && issue.status !== "admin_rejected")
     );
-    
+
     // Rejected requests
     const rejected = allIssues.filter(
       (issue) => issue.status === "admin_rejected" || issue.status === "rejected"
@@ -129,14 +138,22 @@ export default function PartsIssueRequestsPage() {
     }
   };
 
-  const handleIssueParts = async (id: string) => {
+  const handleIssueParts = (id: string) => {
+    // Show dispatch confirmation modal
+    setDispatchIssueId(id);
+    setShowDispatchModal(true);
+  };
+
+  const handleConfirmDispatch = async () => {
+    if (!dispatchIssueId) return;
+
     try {
       setIsProcessing(true);
-      
+
       // Get the issue details first
       const allIssues = await adminApprovalService.getAllIssues();
-      const issue = allIssues.find(i => i.id === id);
-      
+      const issue = allIssues.find(i => i.id === dispatchIssueId);
+
       if (!issue) {
         showError("Parts issue not found");
         return;
@@ -173,34 +190,92 @@ export default function PartsIssueRequestsPage() {
         return;
       }
 
-      console.log('Dispatching items:', JSON.stringify(dispatchItems, null, 2));
-
-      // Call the dispatch API endpoint using apiClient
-      // Note: transportDetails is optional, but we can include it
-      const response = await apiClient.patch<any>(`/parts-issues/${id}/dispatch`, {
+      // Call the dispatch API endpoint without transport details
+      // Transport details can be added later after dispatch using the Edit button
+      const response = await apiClient.patch<any>(`/parts-issues/${dispatchIssueId}/dispatch`, {
         items: dispatchItems
-        // transportDetails is optional - backend will handle it
       });
-      
+
       const dispatchedIssue = response.data || response;
-      
+
       // Refresh the list
       await fetchRequests();
-      
+
+      // Close modal
+      setShowDispatchModal(false);
+      setDispatchIssueId("");
+
       // Show success message with sub-PO numbers if available
       const subPoNumbers = dispatchedIssue.items?.map((item: any) => item.subPoNumber).filter(Boolean).join(', ') || '';
       if (subPoNumbers) {
-        showSuccess(`Parts dispatched successfully! Sub-PO numbers: ${subPoNumbers}`);
+        showSuccess(`Parts dispatched successfully! Sub-PO numbers: ${subPoNumbers}. You can add transport details later using the Edit button.`);
       } else {
-        showSuccess("Parts dispatched successfully! Sub-PO numbers have been generated.");
+        showSuccess(`Parts dispatched successfully! Sub-PO numbers have been generated. You can add transport details later using the Edit button.`);
       }
-      
+
       // Optionally show invoice modal
       // setIssuedPartsIssue(dispatchedIssue);
       // setShowInvoiceModal(true);
     } catch (error) {
       console.error("Failed to issue parts:", error);
       showError(error instanceof Error ? error.message : "Failed to issue parts");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleEditTransportDetails = (issue: PartsIssue) => {
+    setEditIssueId(issue.id);
+    const existingDetails = issue.transportDetails || {};
+    setEditTransportDetails({
+      transporter: existingDetails.transporter || "",
+      trackingNumber: existingDetails.trackingNumber || "",
+      expectedDelivery: existingDetails.expectedDelivery 
+        ? new Date(existingDetails.expectedDelivery).toISOString().slice(0, 16)
+        : "",
+    });
+    setShowEditTransportModal(true);
+  };
+
+  const handleUpdateTransportDetails = async () => {
+    if (!editIssueId) return;
+
+    try {
+      setIsProcessing(true);
+
+      // Prepare transport details
+      const transportData: any = {};
+      if (editTransportDetails.transporter) {
+        transportData.transporter = editTransportDetails.transporter;
+      }
+      if (editTransportDetails.trackingNumber) {
+        transportData.trackingNumber = editTransportDetails.trackingNumber;
+      }
+      if (editTransportDetails.expectedDelivery) {
+        transportData.expectedDelivery = new Date(editTransportDetails.expectedDelivery).toISOString();
+      }
+
+      // Call the update transport details API
+      await apiClient.patch<any>(`/parts-issues/${editIssueId}/update-transport-details`, {
+        transportDetails: transportData
+      });
+
+      // Refresh the list
+      await fetchRequests();
+
+      // Close modal
+      setShowEditTransportModal(false);
+      setEditIssueId("");
+      setEditTransportDetails({
+        transporter: "",
+        trackingNumber: "",
+        expectedDelivery: "",
+      });
+
+      showSuccess("Transport details updated successfully!");
+    } catch (error) {
+      console.error("Failed to update transport details:", error);
+      showError(error instanceof Error ? error.message : "Failed to update transport details");
     } finally {
       setIsProcessing(false);
     }
@@ -222,7 +297,7 @@ export default function PartsIssueRequestsPage() {
 
     setIsProcessing(true);
     try {
-      const invoice = await invoiceService.createInvoice(issuedPartsIssue, {
+      const invoice = await invoiceService.createInvoice({
         partsIssueId: issuedPartsIssue.id,
         purchaseOrderId: issuedPartsIssue.purchaseOrderId,
         paymentScreenshot: paymentScreenshot || undefined,
@@ -237,7 +312,7 @@ export default function PartsIssueRequestsPage() {
       setPaymentMethod("");
       setPaymentReference("");
       setIssuedPartsIssue(null);
-      
+
       // Navigate to invoice detail page
       setTimeout(() => {
         window.location.href = `/central-inventory/invoices/${invoice.id}`;
@@ -262,13 +337,12 @@ export default function PartsIssueRequestsPage() {
     return (
       <Card
         key={request.id}
-        className={`border-l-4 ${
-          isApproved
-            ? "border-l-green-500"
-            : isRejected
+        className={`border-l-4 ${isApproved
+          ? "border-l-green-500"
+          : isRejected
             ? "border-l-red-500"
             : "border-l-yellow-500"
-        }`}
+          }`}
       >
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -309,13 +383,12 @@ export default function PartsIssueRequestsPage() {
           <div className="mb-4 flex gap-3">
             <button
               disabled
-              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${
-                isApproved
-                  ? "bg-green-500 text-white"
-                  : isRejected
+              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${isApproved
+                ? "bg-green-500 text-white"
+                : isRejected
                   ? "bg-red-500 text-white"
                   : "bg-yellow-500 text-white"
-              }`}
+                }`}
             >
               {isApproved ? (
                 <CheckCircle size={16} />
@@ -329,7 +402,7 @@ export default function PartsIssueRequestsPage() {
           </div>
 
           {/* Approval Details */}
-              {isApproved && request.adminApprovedBy && (
+          {isApproved && request.adminApprovedBy && (
             <div className="mb-3 p-2 bg-green-50 rounded text-xs text-green-700">
               Approved by {request.adminApprovedBy} on{" "}
               {request.adminApprovedAt
@@ -394,9 +467,9 @@ export default function PartsIssueRequestsPage() {
                       )}
                     </p>
                     <p className="text-sm text-gray-600">₹{(item.totalPrice || 0).toLocaleString()}</p>
-                    {item.issuedQty > 0 && (
+                    {(item.issuedQty ?? 0) > 0 && (
                       <p className="text-xs text-green-600 mt-1">
-                        Issued: {item.issuedQty} / {item.approvedQty || item.quantity}
+                        Issued: {item.issuedQty} / {item.requestedQty || item.approvedQty || item.quantity}
                       </p>
                     )}
                   </div>
@@ -412,20 +485,55 @@ export default function PartsIssueRequestsPage() {
           )}
 
           {request.transportDetails && (
-            <div className="mb-4 p-2 bg-gray-50 rounded text-sm">
-              <strong>Transport Details:</strong>
-              {request.transportDetails.transporter && (
-                <p>Transporter: {request.transportDetails.transporter}</p>
-              )}
-              {request.transportDetails.trackingNumber && (
-                <p>Tracking: {request.transportDetails.trackingNumber}</p>
-              )}
-              {request.transportDetails.expectedDelivery && (
-                <p>
-                  Expected Delivery:{" "}
-                  {new Date(request.transportDetails.expectedDelivery).toLocaleString()}
-                </p>
-              )}
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <strong className="text-sm font-semibold text-blue-900">Transport Details:</strong>
+                {(request.status === "dispatched" || request.status === "issued" || request.status === "admin_approved") && (
+                  <Button
+                    onClick={() => handleEditTransportDetails(request)}
+                    disabled={isProcessing}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1"
+                  >
+                    <Edit size={12} className="mr-1" />
+                    Edit
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-1 text-sm">
+                {request.transportDetails.transporter && (
+                  <p className="text-gray-700">
+                    <span className="font-medium">Company:</span> {request.transportDetails.transporter}
+                  </p>
+                )}
+                {request.transportDetails.trackingNumber && (
+                  <p className="text-gray-700">
+                    <span className="font-medium">Tracking ID:</span> {request.transportDetails.trackingNumber}
+                  </p>
+                )}
+                {request.transportDetails.expectedDelivery && (
+                  <p className="text-gray-700">
+                    <span className="font-medium">Expected Delivery:</span>{" "}
+                    {new Date(request.transportDetails.expectedDelivery).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Show Edit button even if transport details don't exist yet for dispatched issues */}
+          {!request.transportDetails && (request.status === "dispatched" || request.status === "issued" || request.status === "admin_approved") && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-yellow-800">No transport details added yet</p>
+                <Button
+                  onClick={() => handleEditTransportDetails(request)}
+                  disabled={isProcessing}
+                  className="bg-yellow-600 hover:bg-yellow-700 text-white text-xs px-3 py-1"
+                >
+                  <Edit size={12} className="mr-1" />
+                  Add Details
+                </Button>
+              </div>
             </div>
           )}
 
@@ -712,6 +820,142 @@ export default function PartsIssueRequestsPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Dispatch Modal - Dispatch Parts (Transport details optional) */}
+      {showDispatchModal && (
+        <Modal
+          isOpen={showDispatchModal}
+          onClose={() => {
+            setShowDispatchModal(false);
+            setDispatchIssueId("");
+          }}
+          title="Dispatch Parts"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 mb-4">
+              Dispatch parts to the service center. You can add transport details (company name and tracking ID) later after dispatch.
+            </p>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-blue-800">
+                <strong>Note:</strong> Transport details can be added or edited after dispatch using the "Edit" button on the dispatched parts issue.
+              </p>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4 border-t">
+              <Button
+                onClick={() => {
+                  setShowDispatchModal(false);
+                  setDispatchIssueId("");
+                }}
+                disabled={isProcessing}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmDispatch}
+                disabled={isProcessing}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isProcessing ? "Dispatching..." : "Dispatch Parts"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit Transport Details Modal */}
+      {showEditTransportModal && (
+        <Modal
+          isOpen={showEditTransportModal}
+          onClose={() => {
+            setShowEditTransportModal(false);
+            setEditIssueId("");
+            setEditTransportDetails({
+              transporter: "",
+              trackingNumber: "",
+              expectedDelivery: "",
+            });
+          }}
+          title="Edit Transport Details"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 mb-4">
+              Update transport details for this dispatched parts issue. Service center will see this information in their dashboard.
+            </p>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Company Name (Transporter)
+              </label>
+              <input
+                type="text"
+                value={editTransportDetails.transporter}
+                onChange={(e) =>
+                  setEditTransportDetails({ ...editTransportDetails, transporter: e.target.value })
+                }
+                placeholder="e.g., Fast Logistics, Blue Dart, etc."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Tracking ID
+              </label>
+              <input
+                type="text"
+                value={editTransportDetails.trackingNumber}
+                onChange={(e) =>
+                  setEditTransportDetails({ ...editTransportDetails, trackingNumber: e.target.value })
+                }
+                placeholder="e.g., FL-2024-001234, BD123456789"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Expected Delivery Date (Optional)
+              </label>
+              <input
+                type="datetime-local"
+                value={editTransportDetails.expectedDelivery}
+                onChange={(e) =>
+                  setEditTransportDetails({ ...editTransportDetails, expectedDelivery: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4 border-t">
+              <Button
+                onClick={() => {
+                  setShowEditTransportModal(false);
+                  setEditIssueId("");
+                  setEditTransportDetails({
+                    transporter: "",
+                    trackingNumber: "",
+                    expectedDelivery: "",
+                  });
+                }}
+                disabled={isProcessing}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateTransportDetails}
+                disabled={isProcessing}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isProcessing ? "Updating..." : "Update Details"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

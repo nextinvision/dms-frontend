@@ -75,6 +75,13 @@ export interface AppointmentFormProps {
   onCustomerArrived?: (form: AppointmentFormType) => void;
   appointmentStatus?: string;
   customerArrived?: boolean;
+  // Optional: if provided, this will be called with pending uploads
+  onSubmitWithFiles?: (form: AppointmentFormType, pendingUploads: {
+    field: string;
+    cloudinaryResults: any[];
+    files: File[];
+    category: FileCategory;
+  }[]) => void;
 }
 
 export const AppointmentForm = ({
@@ -93,6 +100,7 @@ export const AppointmentForm = ({
   onCustomerArrived,
   appointmentStatus,
   customerArrived,
+  onSubmitWithFiles,
 }: AppointmentFormProps) => {
   const { userRole, userInfo } = useRole();
   const isCallCenter = userRole === "call_center";
@@ -359,6 +367,13 @@ export const AppointmentForm = ({
     }
   }, [selectedCustomer, availableServiceCenters]);
 
+  // Store pending uploads (Cloudinary results not yet saved to database) - must be before handleSubmit
+  const [pendingUploads, setPendingUploads] = useState<Record<string, {
+    cloudinaryResults: any[];
+    files: File[];
+    category: FileCategory;
+  }>>({});
+
   const handleSubmit = useCallback(() => {
     // Check if selected vehicle has an active job card
     if (selectedVehicle && (selectedVehicle.currentStatus === "Active Job Card" || selectedVehicle.activeJobCardId)) {
@@ -437,837 +452,630 @@ export const AppointmentForm = ({
 
     setValidationError("");
     setFieldErrors({});
-    onSubmit(finalFormData);
-  }, [formData, pickupState, pickupCity, dropState, dropCity, isCallCenter, onSubmit, selectedVehicle]);
 
-  const updateFormData = useCallback((updates: Partial<AppointmentFormType>) => {
-    setFormData((prev) => ({ ...prev, ...updates }));
-    // Clear field errors when user starts typing
-    const fieldKeys = Object.keys(updates);
-    if (fieldKeys.length > 0 && fieldErrors[fieldKeys[0]]) {
-      setFieldErrors((prev) => {
-        const newErrors = { ...prev };
-        fieldKeys.forEach((key) => delete newErrors[key]);
-        return newErrors;
-      });
+    // Convert pendingUploads to array format for parent
+    const pendingUploadsArray = Object.entries(pendingUploads).map(([field, data]) => ({
+      field,
+      cloudinaryResults: data.cloudinaryResults,
+      files: data.files,
+      category: data.category,
+    }));
+
+    // If parent provided onSubmitWithFiles, call it with pending uploads
+    // Otherwise, call regular onSubmit (for backward compatibility)
+    if (onSubmitWithFiles && pendingUploadsArray.length > 0) {
+      onSubmitWithFiles(finalFormData, pendingUploadsArray);
+    } else {
+      onSubmit(finalFormData);
     }
-  }, [fieldErrors]);
+  }, [formData, pickupState, pickupCity, dropState, dropCity, isCallCenter, onSubmit, onSubmitWithFiles, selectedVehicle, pendingUploads]);
 
-  // Document handlers with Cloudinary - NEW METADATA-AWARE IMPLEMENTATION
-  const { uploadMultipleWithMetadata, uploadFileWithMetadata, isUploading: isUploadingFiles, progress } = useCloudinaryUploadWithMetadata();
-  const [tempEntityId] = useState(() => generateTempEntityId());
-  const [uploadQueueId, setUploadQueueId] = useState<string | null>(null);
-  const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
-  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+const updateFormData = useCallback((updates: Partial<AppointmentFormType>) => {
+  setFormData((prev) => ({ ...prev, ...updates }));
+  // Clear field errors when user starts typing
+  const fieldKeys = Object.keys(updates);
+  if (fieldKeys.length > 0 && fieldErrors[fieldKeys[0]]) {
+    setFieldErrors((prev) => {
+      const newErrors = { ...prev };
+      fieldKeys.forEach((key) => delete newErrors[key]);
+      return newErrors;
+    });
+  }
+}, [fieldErrors]);
 
-  const handleDocumentUpload = useCallback(
-    async (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
-      if (!files || files.length === 0) return;
+// Document handlers with Cloudinary - Upload to Cloudinary only, save to DB after appointment creation
+const { uploadMultipleToCloudinaryOnly, uploadFileToCloudinaryOnly, isUploading: isUploadingFiles, progress } = useCloudinaryUploadWithMetadata();
+const [tempEntityId] = useState(() => generateTempEntityId());
+const [uploadQueueId, setUploadQueueId] = useState<string | null>(null);
+const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
+const [cameraModalOpen, setCameraModalOpen] = useState(false);
 
-      const fileArray = Array.from(files);
+const handleDocumentUpload = useCallback(
+  async (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", files: FileList | null) => {
+    if (!files || files.length === 0) return;
 
-      // Get user info for uploadedBy field
-      const userInfo = safeStorage.getItem<any>('userInfo', null);
+    const fileArray = Array.from(files);
 
-      // Determine folder and category based on field
-      let folder: string;
-      let category: FileCategory;
+    // Determine folder and category based on field
+    let folder: string;
+    let category: FileCategory;
 
-      // Use actual entity ID if in edit mode, otherwise use temp ID
-      // Try initialData.id first, then formData.id, finally fall back to tempEntityId
-      const entityId = mode === 'edit' && (initialData?.id || formData.id)
-        ? String(initialData?.id || formData.id)
-        : tempEntityId;
+    // Use temp entity ID for folder organization
+    const entityId = tempEntityId;
 
-      switch (field) {
-        case 'customerIdProof':
-          folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
-          category = FileCategory.CUSTOMER_ID_PROOF;
-          break;
-        case 'vehicleRCCopy':
-          folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
-          category = FileCategory.VEHICLE_RC;
-          break;
-        case 'photosVideos':
-          folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
-          category = FileCategory.VEHICLE_PHOTOS;
-          break;
-        case 'warrantyCardServiceBook':
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
-          category = FileCategory.WARRANTY_CARD;
-          break;
-        default:
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
-          category = FileCategory.PHOTOS_VIDEOS;
-      }
+    switch (field) {
+      case 'customerIdProof':
+        folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
+        category = FileCategory.CUSTOMER_ID_PROOF;
+        break;
+      case 'vehicleRCCopy':
+        folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
+        category = FileCategory.VEHICLE_RC;
+        break;
+      case 'photosVideos':
+        folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
+        category = FileCategory.VEHICLE_PHOTOS;
+        break;
+      case 'warrantyCardServiceBook':
+        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+        category = FileCategory.WARRANTY_CARD;
+        break;
+      default:
+        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+        category = FileCategory.PHOTOS_VIDEOS;
+    }
 
-      try {
-        // Upload files to Cloudinary AND save metadata to database
-        const fileMetadataList = await uploadMultipleWithMetadata(fileArray, {
-          folder,
-          category,
-          entityId,
-          entityType: RelatedEntityType.APPOINTMENT,
-          uploadedBy: userInfo?.id,
-          cloudinaryOptions: {
-            tags: [field, 'appointment'],
-            context: {
-              field,
-              appointmentId: entityId,
-            },
-          },
-        });
-
-        // Store complete FileMetadata objects in form data
-        const existingMetadata = formData[field]?.fileMetadata || [];
-
-        updateFormData({
-          [field]: {
-            fileMetadata: [...existingMetadata, ...fileMetadataList],
-            // Keep urls and publicIds for backward compatibility with display logic
-            urls: [...(formData[field]?.urls || []), ...fileMetadataList.map(f => f.url)],
-            publicIds: [...(formData[field]?.publicIds || []), ...fileMetadataList.map(f => f.publicId)],
-            metadata: [
-              ...(formData[field]?.metadata || [] as DocumentMetadata[]),
-              ...fileMetadataList.map(f => ({
-                publicId: f.publicId,
-                url: f.url,
-                format: f.format,
-                bytes: f.bytes,
-                uploadedAt: new Date().toISOString(),
-                fileId: String(f.id), // Convert database ID to string for DocumentMetadata
-              } as DocumentMetadata)),
-            ] as DocumentMetadata[],
-          },
-        });
-
-        console.log(`✅ Successfully uploaded and saved ${fileMetadataList.length} files for ${field}`);
-      } catch (err) {
-        console.error('Upload failed:', err);
-        alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      }
-    },
-    [formData, uploadMultipleWithMetadata, updateFormData, mode, initialData?.id, tempEntityId]
-  );
-
-  const handleRemoveDocument = useCallback(
-    async (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
-      const fileMetadata = formData[field]?.fileMetadata || [];
-      const urls = formData[field]?.urls || [];
-      const publicIds = formData[field]?.publicIds || [];
-      const metadata = (formData[field]?.metadata || []) as DocumentMetadata[];
-
-      const fileToDelete = fileMetadata[index];
-      const fileId = metadata[index]?.fileId; // Database ID
-
-      // Remove from state immediately (optimistic update)
-      const newFileMetadata = fileMetadata.filter((_: FileMetadata, i: number) => i !== index);
-      const newUrls = urls.filter((_: string, i: number) => i !== index);
-      const newPublicIds = publicIds.filter((_: string, i: number) => i !== index);
-      const newMetadata = metadata.filter((_: DocumentMetadata, i: number) => i !== index);
-
-      updateFormData({
-        [field]: {
-          fileMetadata: newFileMetadata,
-          urls: newUrls,
-          publicIds: newPublicIds,
-          metadata: newMetadata,
+    try {
+      // Upload files to Cloudinary ONLY (not to database yet)
+      const cloudinaryResults = await uploadMultipleToCloudinaryOnly(fileArray, folder, {
+        tags: [field, 'appointment'],
+        context: {
+          field,
+          appointmentId: entityId,
         },
       });
 
-      // Delete from backend (Cloudinary + Database)
-      if (fileId || fileToDelete?.id) {
-        try {
-          const idToDelete = fileId || fileToDelete?.id;
-          await deleteFile(idToDelete);
-          console.log(`✅ Successfully deleted file: ${idToDelete}`);
-        } catch (error) {
-          console.error('Failed to delete file:', error);
-          // Optionally revert the optimistic update here
-          alert(`Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-
-          // Revert the optimistic update
-          updateFormData({
-            [field]: {
-              fileMetadata,
-              urls,
-              publicIds,
-              metadata,
-            },
-          });
-        }
-      }
-    },
-    [formData, updateFormData]
-  );
-
-  const handleOpenCamera = useCallback(
-    (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos") => {
-      setCameraDocumentType(field);
-      setCameraModalOpen(true);
-    },
-    []
-  );
-
-  const handleCameraCapture = useCallback(
-    async (file: File) => {
-      if (!cameraDocumentType) return;
-
-      // Get user info for uploadedBy field
-      const userInfo = safeStorage.getItem<any>('userInfo', null);
-
-      // Determine folder and category
-      let folder: string;
-      let category: FileCategory;
-
-      // Use actual entity ID if in edit mode, otherwise use temp ID
-      const entityId = mode === 'edit' && initialData?.id ? String(initialData.id) : tempEntityId;
-
-      switch (cameraDocumentType) {
-        case 'customerIdProof':
-          folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
-          category = FileCategory.CUSTOMER_ID_PROOF;
-          break;
-        case 'vehicleRCCopy':
-          folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
-          category = FileCategory.VEHICLE_RC;
-          break;
-        case 'photosVideos':
-          folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
-          category = FileCategory.VEHICLE_PHOTOS;
-          break;
-        case 'warrantyCardServiceBook':
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
-          category = FileCategory.WARRANTY_CARD;
-          break;
-        default:
-          folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
-          category = FileCategory.PHOTOS_VIDEOS;
-      }
-
-      try {
-        // Upload to Cloudinary AND save metadata to database
-        const fileMetadata = await uploadFileWithMetadata(file, {
-          folder,
+      // Store results in pending uploads
+      setPendingUploads(prev => ({
+        ...prev,
+        [field]: {
+          cloudinaryResults,
+          files: fileArray,
           category,
-          entityId,
-          entityType: RelatedEntityType.APPOINTMENT,
-          uploadedBy: userInfo?.id,
-          cloudinaryOptions: {
-            tags: [cameraDocumentType, 'appointment', 'camera'],
-            context: {
-              field: cameraDocumentType,
-              appointmentId: entityId,
-              source: 'camera',
-            },
-          },
-        });
+        }
+      }));
 
-        // Store in form data
-        const existingMetadata = formData[cameraDocumentType]?.fileMetadata || [];
-        const existingUrls = formData[cameraDocumentType]?.urls || [];
-        const existingPublicIds = formData[cameraDocumentType]?.publicIds || [];
+      // Also update form data for display purposes
+      const existingMetadata = formData[field]?.metadata || [];
 
-        updateFormData({
-          [cameraDocumentType]: {
-            fileMetadata: [...existingMetadata, fileMetadata],
-            urls: [...existingUrls, fileMetadata.url],
-            publicIds: [...existingPublicIds, fileMetadata.publicId],
-            metadata: [
-              ...(formData[cameraDocumentType]?.metadata || [] as DocumentMetadata[]),
-              {
-                publicId: fileMetadata.publicId,
-                url: fileMetadata.url,
-                filename: fileMetadata.filename,
-                format: fileMetadata.format,
-                bytes: fileMetadata.bytes,
-                uploadedAt: new Date().toISOString(),
-                fileId: String(fileMetadata.id), // Convert database ID to string for DocumentMetadata
-              } as DocumentMetadata,
-            ] as DocumentMetadata[],
-          },
-        });
+      updateFormData({
+        [field]: {
+          urls: cloudinaryResults.map(r => r.secureUrl),
+          publicIds: cloudinaryResults.map(r => r.publicId),
+          metadata: [
+            ...(formData[field]?.metadata || [] as DocumentMetadata[]),
+            ...cloudinaryResults.map(r => ({
+              publicId: r.publicId,
+              url: r.secureUrl,
+              format: r.format,
+              bytes: r.bytes,
+              uploadedAt: new Date().toISOString(),
+              // Note: No fileId yet since not saved to DB
+            } as DocumentMetadata)),
+          ] as DocumentMetadata[],
+        },
+      });
 
-        setCameraModalOpen(false);
-        setCameraDocumentType(null);
-        console.log(`✅ Successfully captured and uploaded file for ${cameraDocumentType}`);
-      } catch (err) {
-        console.error('Camera capture upload failed:', err);
-        alert(`Failed to upload: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.log(`✅ Successfully uploaded ${cloudinaryResults.length} files to Cloudinary for ${field} (will save to DB after appointment creation)`);
+    } catch (err) {
+      console.error('Upload failed:', err);
+      alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  },
+  [formData, uploadMultipleToCloudinaryOnly, updateFormData, tempEntityId]
+);
+
+const handleRemoveDocument = useCallback(
+  async (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos", index: number) => {
+    const urls = formData[field]?.urls || [];
+    const publicIds = formData[field]?.publicIds || [];
+    const metadata = (formData[field]?.metadata || []) as DocumentMetadata[];
+
+    // Remove from state immediately (optimistic update)
+    const newUrls = urls.filter((_: string, i: number) => i !== index);
+    const newPublicIds = publicIds.filter((_: string, i: number) => i !== index);
+    const newMetadata = metadata.filter((_: DocumentMetadata, i: number) => i !== index);
+
+    // Also remove from pending uploads
+    setPendingUploads(prev => {
+      if (!prev[field]) return prev;
+      const newResults = prev[field].cloudinaryResults.filter((_: any, i: number) => i !== index);
+      const newFiles = prev[field].files.filter((_: File, i: number) => i !== index);
+
+      if (newResults.length === 0) {
+        const { [field]: _, ...rest } = prev;
+        return rest;
       }
-    },
-    [cameraDocumentType, formData, uploadFileWithMetadata, updateFormData, mode, initialData?.id, tempEntityId]
-  );
 
-  return (
-    <div className="space-y-6 p-6">
-      {validationError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-sm font-semibold text-red-800">{validationError}</p>
-        </div>
+      return {
+        ...prev,
+        [field]: {
+          ...prev[field],
+          cloudinaryResults: newResults,
+          files: newFiles,
+        }
+      };
+    });
+
+    updateFormData({
+      [field]: {
+        urls: newUrls,
+        publicIds: newPublicIds,
+        metadata: newMetadata,
+      },
+    });
+
+    // Note: Since files aren't saved to DB yet, no backend deletion needed
+    // Files will be uploaded when appointment is created
+    console.log(`✅ Removed file from upload queue`);
+  },
+  [formData, updateFormData, setPendingUploads]
+);
+
+const handleOpenCamera = useCallback(
+  (field: "customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos") => {
+    setCameraDocumentType(field);
+    setCameraModalOpen(true);
+  },
+  []
+);
+
+const handleCameraCapture = useCallback(
+  async (file: File) => {
+    if (!cameraDocumentType) return;
+
+    // Determine folder and category
+    let folder: string;
+    let category: FileCategory;
+
+    // Use temp entity ID
+    const entityId = tempEntityId;
+
+    switch (cameraDocumentType) {
+      case 'customerIdProof':
+        folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
+        category = FileCategory.CUSTOMER_ID_PROOF;
+        break;
+      case 'vehicleRCCopy':
+        folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
+        category = FileCategory.VEHICLE_RC;
+        break;
+      case 'photosVideos':
+        folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
+        category = FileCategory.VEHICLE_PHOTOS;
+        break;
+      case 'warrantyCardServiceBook':
+        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+        category = FileCategory.WARRANTY_CARD;
+        break;
+      default:
+        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
+        category = FileCategory.PHOTOS_VIDEOS;
+    }
+
+    try {
+      // Upload to Cloudinary ONLY (not to database yet)
+      const cloudinaryResult = await uploadFileToCloudinaryOnly(file, folder, {
+        tags: [cameraDocumentType, 'appointment', 'camera'],
+        context: {
+          field: cameraDocumentType,
+          appointmentId: entityId,
+          source: 'camera',
+        },
+      });
+
+      // Store in pending uploads
+      setPendingUploads(prev => ({
+        ...prev,
+        [cameraDocumentType]: {
+          cloudinaryResults: [...(prev[cameraDocumentType]?.cloudinaryResults || []), cloudinaryResult],
+          files: [...(prev[cameraDocumentType]?.files || []), file],
+          category,
+        }
+      }));
+
+      // Store in form data for display
+      const existingUrls = formData[cameraDocumentType]?.urls || [];
+      const existingPublicIds = formData[cameraDocumentType]?.publicIds || [];
+
+      updateFormData({
+        [cameraDocumentType]: {
+          urls: [...existingUrls, cloudinaryResult.secureUrl],
+          publicIds: [...existingPublicIds, cloudinaryResult.publicId],
+          metadata: [
+            ...(formData[cameraDocumentType]?.metadata || [] as DocumentMetadata[]),
+            {
+              publicId: cloudinaryResult.publicId,
+              url: cloudinaryResult.secureUrl,
+              filename: file.name,
+              format: cloudinaryResult.format,
+              bytes: cloudinaryResult.bytes,
+              uploadedAt: new Date().toISOString(),
+              // Note: No fileId yet since not saved to DB
+            } as DocumentMetadata,
+          ] as DocumentMetadata[],
+        },
+      });
+
+      setCameraModalOpen(false);
+      setCameraDocumentType(null);
+      console.log(`✅ Successfully captured and uploaded file to Cloudinary for ${cameraDocumentType}`);
+    } catch (err) {
+      console.error('Camera capture upload failed:', err);
+      alert(`Failed to upload: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  },
+  [cameraDocumentType, formData, uploadFileToCloudinaryOnly, updateFormData, tempEntityId, setPendingUploads]
+);
+
+return (
+  <div className="space-y-6 p-6">
+    {validationError && (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <p className="text-sm font-semibold text-red-800">{validationError}</p>
+      </div>
+    )}
+
+    {/* Customer Selection (if enabled) */}
+    {showCustomerSelection && onCustomerSelect && (
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Customer Information</h3>
+        {/* Customer search would be handled by parent component */}
+      </div>
+    )}
+
+    {/* Vehicle Selection */}
+    <div>
+      {selectedCustomer && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 1 ? (
+        <FormSelect
+          label="Vehicle"
+          required
+          value={formData.vehicle}
+          onChange={(e) => {
+            const selectedVehicleValue = e.target.value;
+            updateFormData({ vehicle: selectedVehicleValue });
+
+            // Find and notify parent about vehicle change
+            if (selectedCustomer && onVehicleChange) {
+              const vehicle = selectedCustomer.vehicles?.find(
+                (v) => formatVehicleString(v) === selectedVehicleValue
+              );
+              onVehicleChange(vehicle || null);
+            }
+          }}
+          placeholder="Select vehicle"
+          options={selectedCustomer.vehicles.map((v) => {
+            const hasActiveJobCard = v.currentStatus === "Active Job Card" || v.activeJobCardId;
+            return {
+              value: formatVehicleString(v),
+              label: `${formatVehicleString(v)}${v.registration ? ` - ${v.registration}` : ""}${hasActiveJobCard ? " ⚠️ (Active Job Card)" : ""}`,
+              disabled: hasActiveJobCard
+            };
+          })}
+          error={fieldErrors.vehicle}
+        />
+      ) : (
+        <FormInput
+          label="Vehicle"
+          required
+          value={formData.vehicle}
+          onChange={() => { }}
+          readOnly
+          error={fieldErrors.vehicle}
+        />
       )}
 
-      {/* Customer Selection (if enabled) */}
-      {showCustomerSelection && onCustomerSelect && (
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Customer Information</h3>
-          {/* Customer search would be handled by parent component */}
-        </div>
-      )}
-
-      {/* Vehicle Selection */}
-      <div>
-        {selectedCustomer && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 1 ? (
-          <FormSelect
-            label="Vehicle"
-            required
-            value={formData.vehicle}
-            onChange={(e) => {
-              const selectedVehicleValue = e.target.value;
-              updateFormData({ vehicle: selectedVehicleValue });
-
-              // Find and notify parent about vehicle change
-              if (selectedCustomer && onVehicleChange) {
-                const vehicle = selectedCustomer.vehicles?.find(
-                  (v) => formatVehicleString(v) === selectedVehicleValue
-                );
-                onVehicleChange(vehicle || null);
-              }
-            }}
-            placeholder="Select vehicle"
-            options={selectedCustomer.vehicles.map((v) => {
-              const hasActiveJobCard = v.currentStatus === "Active Job Card" || v.activeJobCardId;
-              return {
-                value: formatVehicleString(v),
-                label: `${formatVehicleString(v)}${v.registration ? ` - ${v.registration}` : ""}${hasActiveJobCard ? " ⚠️ (Active Job Card)" : ""}`,
-                disabled: hasActiveJobCard
-              };
-            })}
-            error={fieldErrors.vehicle}
-          />
-        ) : (
-          <FormInput
-            label="Vehicle"
-            required
-            value={formData.vehicle}
-            onChange={() => { }}
-            readOnly
-            error={fieldErrors.vehicle}
-          />
-        )}
-
-        {/* Active Job Card Warning */}
-        {selectedVehicle && (selectedVehicle.currentStatus === "Active Job Card" || selectedVehicle.activeJobCardId) && (
-          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={18} />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-red-800">Cannot Schedule Appointment</p>
-                <p className="text-xs text-red-700 mt-1">
-                  This vehicle has an active job card ({selectedVehicle.activeJobCardId}).
-                  Please complete or close the existing job card before scheduling a new appointment.
-                </p>
-              </div>
+      {/* Active Job Card Warning */}
+      {selectedVehicle && (selectedVehicle.currentStatus === "Active Job Card" || selectedVehicle.activeJobCardId) && (
+        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={18} />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-800">Cannot Schedule Appointment</p>
+              <p className="text-xs text-red-700 mt-1">
+                This vehicle has an active job card ({selectedVehicle.activeJobCardId}).
+                Please complete or close the existing job card before scheduling a new appointment.
+              </p>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {selectedCustomer && formData.vehicle && selectedVehicle?.lastServiceCenterName && (
-          <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
-            <Building2 size={12} />
-            Last serviced at: {selectedVehicle.lastServiceCenterName}
+      {selectedCustomer && formData.vehicle && selectedVehicle?.lastServiceCenterName && (
+        <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+          <Building2 size={12} />
+          Last serviced at: {selectedVehicle.lastServiceCenterName}
+        </p>
+      )}
+    </div>
+    {/* Vehicle Information Section */}
+    <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
+      <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
+        <span className="w-1 h-6 bg-green-600 rounded"></span>
+        Vehicle Information
+      </h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormInput
+          label="Vehicle Brand"
+          value={formData.vehicleBrand || ""}
+          onChange={(e) => updateFormData({ vehicleBrand: e.target.value })}
+          placeholder="Enter vehicle brand"
+        />
+        <FormInput
+          label="Vehicle Model"
+          value={formData.vehicleModel || ""}
+          onChange={(e) => updateFormData({ vehicleModel: e.target.value })}
+          placeholder="Enter vehicle model"
+        />
+        <FormInput
+          label="Registration Number"
+          value={formData.registrationNumber || ""}
+          onChange={(e) => updateFormData({ registrationNumber: e.target.value.toUpperCase() })}
+          placeholder="Enter registration number"
+        />
+        <FormInput
+          label="VIN / Chassis Number"
+          value={formData.vinChassisNumber || ""}
+          onChange={(e) => updateFormData({ vinChassisNumber: e.target.value.toUpperCase() })}
+          placeholder="Enter VIN/Chassis number"
+        />
+        <FormInput
+          label="Variant / Battery Capacity"
+          value={formData.variantBatteryCapacity || ""}
+          onChange={(e) => updateFormData({ variantBatteryCapacity: e.target.value })}
+          placeholder="Enter variant/battery capacity"
+        />
+        <FormInput
+          label="Motor Number"
+          value={formData.motorNumber || ""}
+          onChange={(e) => updateFormData({ motorNumber: e.target.value })}
+          placeholder="Enter motor number"
+        />
+        <FormInput
+          label="Charger Serial Number"
+          value={formData.chargerSerialNumber || ""}
+          onChange={(e) => updateFormData({ chargerSerialNumber: e.target.value })}
+          placeholder="Enter charger serial number"
+        />
+        <div>
+          <FormInput
+            label="Date of Purchase"
+            type="date"
+            value={formData.dateOfPurchase || ""}
+            onChange={(e) => updateFormData({ dateOfPurchase: e.target.value })}
+          />
+          {formData.dateOfPurchase && (() => {
+            const purchaseDate = new Date(formData.dateOfPurchase);
+            const today = new Date();
+            const yearsDiff = today.getFullYear() - purchaseDate.getFullYear();
+            const monthsDiff = today.getMonth() - purchaseDate.getMonth();
+            let vehicleAge = "";
+            if (yearsDiff > 0) {
+              vehicleAge = monthsDiff >= 0
+                ? `${yearsDiff} year${yearsDiff > 1 ? 's' : ''}`
+                : `${yearsDiff - 1} year${yearsDiff - 1 > 1 ? 's' : ''}`;
+            } else if (monthsDiff > 0) {
+              vehicleAge = `${monthsDiff} month${monthsDiff > 1 ? 's' : ''}`;
+            } else {
+              vehicleAge = "Less than 1 month";
+            }
+            return (
+              <div className="mt-2">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Vehicle Age:</span> {vehicleAge}
+                </p>
+              </div>
+            );
+          })()}
+        </div>
+        <FormSelect
+          label="Warranty Status"
+          value={formData.warrantyStatus || ""}
+          onChange={(e) => updateFormData({ warrantyStatus: e.target.value })}
+          placeholder="Select warranty status"
+          options={[
+            { value: "", label: "Select warranty status" },
+            { value: "Active", label: "Active" },
+            { value: "Expired", label: "Expired" },
+            { value: "Not Applicable", label: "Not Applicable" },
+          ]}
+        />
+        <FormInput
+          label="Insurance Start Date"
+          type="date"
+          value={formData.insuranceStartDate || ""}
+          onChange={(e) => updateFormData({ insuranceStartDate: e.target.value })}
+        />
+        <FormInput
+          label="Insurance End Date"
+          type="date"
+          value={formData.insuranceEndDate || ""}
+          onChange={(e) => updateFormData({ insuranceEndDate: e.target.value })}
+        />
+        <FormInput
+          label="Insurance Company Name"
+          value={formData.insuranceCompanyName || ""}
+          onChange={(e) => updateFormData({ insuranceCompanyName: e.target.value })}
+          placeholder="Enter insurance company name"
+        />
+        <FormInput
+          label="Vehicle Color"
+          value={formData.vehicleColor || ""}
+          onChange={(e) => updateFormData({ vehicleColor: e.target.value })}
+          placeholder="Enter vehicle color"
+        />
+      </div>
+    </div>
+    {/* Service Type */}
+    <FormSelect
+      label="Service Type"
+      required
+      value={formData.serviceType}
+      onChange={(e) => updateFormData({ serviceType: e.target.value })}
+      placeholder="Select service type"
+      options={SERVICE_TYPE_OPTIONS.map((type) => ({ value: type, label: type }))}
+      error={fieldErrors.serviceType}
+    />
+
+    {/* Service Center Selection */}
+    {canAssignServiceCenter && (
+      <div className="space-y-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Service Center</label>
+            <button
+              type="button"
+              onClick={() => setShowServiceCenterSelector(true)}
+              className="w-full text-left px-4 py-3 rounded-lg border border-gray-300 bg-white hover:border-indigo-500 transition"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-800">
+                  {selectedServiceCenter
+                    ? `${selectedServiceCenter.name} • ${selectedServiceCenter.location}`
+                    : formData.serviceCenterName || "Select a service center"}
+                </span>
+                <Search size={16} className="text-gray-400" />
+              </div>
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleAssignNearestServiceCenter}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition whitespace-nowrap"
+          >
+            Assign Nearest
+          </button>
+        </div>
+        {selectedCustomer?.address && nearestServiceCenter && (
+          <p className="text-xs text-gray-500">
+            Suggested nearest center: {nearestServiceCenter.name} • {nearestServiceCenter.location}
+          </p>
+        )}
+        {formData.serviceCenterId && selectedServiceCenter && (
+          <p className="text-xs text-gray-500">
+            Selected center: {selectedServiceCenter.name} • {selectedServiceCenter.location}
           </p>
         )}
       </div>
-      {/* Vehicle Information Section */}
-      <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
-        <h4 className="text-lg font-semibold text-green-900 mb-4 flex items-center gap-2">
-          <span className="w-1 h-6 bg-green-600 rounded"></span>
-          Vehicle Information
-        </h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormInput
-            label="Vehicle Brand"
-            value={formData.vehicleBrand || ""}
-            onChange={(e) => updateFormData({ vehicleBrand: e.target.value })}
-            placeholder="Enter vehicle brand"
-          />
-          <FormInput
-            label="Vehicle Model"
-            value={formData.vehicleModel || ""}
-            onChange={(e) => updateFormData({ vehicleModel: e.target.value })}
-            placeholder="Enter vehicle model"
-          />
-          <FormInput
-            label="Registration Number"
-            value={formData.registrationNumber || ""}
-            onChange={(e) => updateFormData({ registrationNumber: e.target.value.toUpperCase() })}
-            placeholder="Enter registration number"
-          />
-          <FormInput
-            label="VIN / Chassis Number"
-            value={formData.vinChassisNumber || ""}
-            onChange={(e) => updateFormData({ vinChassisNumber: e.target.value.toUpperCase() })}
-            placeholder="Enter VIN/Chassis number"
-          />
-          <FormInput
-            label="Variant / Battery Capacity"
-            value={formData.variantBatteryCapacity || ""}
-            onChange={(e) => updateFormData({ variantBatteryCapacity: e.target.value })}
-            placeholder="Enter variant/battery capacity"
-          />
-          <FormInput
-            label="Motor Number"
-            value={formData.motorNumber || ""}
-            onChange={(e) => updateFormData({ motorNumber: e.target.value })}
-            placeholder="Enter motor number"
-          />
-          <FormInput
-            label="Charger Serial Number"
-            value={formData.chargerSerialNumber || ""}
-            onChange={(e) => updateFormData({ chargerSerialNumber: e.target.value })}
-            placeholder="Enter charger serial number"
-          />
+    )}
+
+    {/* Service Details Section */}
+    {canAccessServiceDetails && (
+      <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <FileText className="text-purple-600" size={20} />
+          Service Details
+        </h3>
+        <div className="space-y-4">
           <div>
-            <FormInput
-              label="Date of Purchase"
-              type="date"
-              value={formData.dateOfPurchase || ""}
-              onChange={(e) => updateFormData({ dateOfPurchase: e.target.value })}
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Customer Complaint / Issue Description {isCallCenter && <span className="text-red-500">*</span>}
+            </label>
+            <textarea
+              value={formData.customerComplaint || ""}
+              onChange={(e) => updateFormData({ customerComplaint: e.target.value })}
+              rows={3}
+              placeholder="Describe the customer complaint or issue..."
+              className={`w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 resize-none ${fieldErrors.customerComplaint
+                ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
+                : "border border-gray-200 focus:ring-purple-500/20 focus:border-purple-500 bg-gray-50/50 focus:bg-white"
+                }`}
+              required={isCallCenter}
             />
-            {formData.dateOfPurchase && (() => {
-              const purchaseDate = new Date(formData.dateOfPurchase);
-              const today = new Date();
-              const yearsDiff = today.getFullYear() - purchaseDate.getFullYear();
-              const monthsDiff = today.getMonth() - purchaseDate.getMonth();
-              let vehicleAge = "";
-              if (yearsDiff > 0) {
-                vehicleAge = monthsDiff >= 0
-                  ? `${yearsDiff} year${yearsDiff > 1 ? 's' : ''}`
-                  : `${yearsDiff - 1} year${yearsDiff - 1 > 1 ? 's' : ''}`;
-              } else if (monthsDiff > 0) {
-                vehicleAge = `${monthsDiff} month${monthsDiff > 1 ? 's' : ''}`;
-              } else {
-                vehicleAge = "Less than 1 month";
-              }
-              return (
-                <div className="mt-2">
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Vehicle Age:</span> {vehicleAge}
-                  </p>
-                </div>
-              );
-            })()}
+            {fieldErrors.customerComplaint && (
+              <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
+                <span className="text-red-500">•</span>
+                {fieldErrors.customerComplaint}
+              </p>
+            )}
           </div>
-          <FormSelect
-            label="Warranty Status"
-            value={formData.warrantyStatus || ""}
-            onChange={(e) => updateFormData({ warrantyStatus: e.target.value })}
-            placeholder="Select warranty status"
-            options={[
-              { value: "", label: "Select warranty status" },
-              { value: "Active", label: "Active" },
-              { value: "Expired", label: "Expired" },
-              { value: "Not Applicable", label: "Not Applicable" },
-            ]}
-          />
-          <FormInput
-            label="Insurance Start Date"
-            type="date"
-            value={formData.insuranceStartDate || ""}
-            onChange={(e) => updateFormData({ insuranceStartDate: e.target.value })}
-          />
-          <FormInput
-            label="Insurance End Date"
-            type="date"
-            value={formData.insuranceEndDate || ""}
-            onChange={(e) => updateFormData({ insuranceEndDate: e.target.value })}
-          />
-          <FormInput
-            label="Insurance Company Name"
-            value={formData.insuranceCompanyName || ""}
-            onChange={(e) => updateFormData({ insuranceCompanyName: e.target.value })}
-            placeholder="Enter insurance company name"
-          />
-          <FormInput
-            label="Vehicle Color"
-            value={formData.vehicleColor || ""}
-            onChange={(e) => updateFormData({ vehicleColor: e.target.value })}
-            placeholder="Enter vehicle color"
-          />
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Previous Service History
+            </label>
+            <textarea
+              value={formData.previousServiceHistory || ""}
+              onChange={(e) => updateFormData({ previousServiceHistory: e.target.value })}
+              rows={3}
+              placeholder="Enter previous service history..."
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormInput
+              label="Estimated Service Time"
+              value={formData.estimatedServiceTime || ""}
+              onChange={(e) => updateFormData({ estimatedServiceTime: e.target.value })}
+              placeholder="e.g., 2 hours"
+            />
+            {canAccessEstimatedCost && (
+              <FormInput
+                label="Estimated Cost"
+                type="number"
+                value={formData.estimatedCost || ""}
+                onChange={(e) => updateFormData({ estimatedCost: e.target.value })}
+                placeholder="Enter estimated cost"
+              />
+            )}
+          </div>
+          {canAccessOdometer && (
+            <FormInput
+              label="Odometer Reading"
+              type="number"
+              value={formData.odometerReading || ""}
+              onChange={(e) => updateFormData({ odometerReading: e.target.value })}
+              placeholder="Enter odometer reading"
+            />
+          )}
         </div>
       </div>
-      {/* Service Type */}
-      <FormSelect
-        label="Service Type"
-        required
-        value={formData.serviceType}
-        onChange={(e) => updateFormData({ serviceType: e.target.value })}
-        placeholder="Select service type"
-        options={SERVICE_TYPE_OPTIONS.map((type) => ({ value: type, label: type }))}
-        error={fieldErrors.serviceType}
-      />
-
-      {/* Service Center Selection */}
-      {canAssignServiceCenter && (
-        <div className="space-y-2">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Service Center</label>
-              <button
-                type="button"
-                onClick={() => setShowServiceCenterSelector(true)}
-                className="w-full text-left px-4 py-3 rounded-lg border border-gray-300 bg-white hover:border-indigo-500 transition"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-800">
-                    {selectedServiceCenter
-                      ? `${selectedServiceCenter.name} • ${selectedServiceCenter.location}`
-                      : formData.serviceCenterName || "Select a service center"}
-                  </span>
-                  <Search size={16} className="text-gray-400" />
-                </div>
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={handleAssignNearestServiceCenter}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition whitespace-nowrap"
-            >
-              Assign Nearest
-            </button>
-          </div>
-          {selectedCustomer?.address && nearestServiceCenter && (
-            <p className="text-xs text-gray-500">
-              Suggested nearest center: {nearestServiceCenter.name} • {nearestServiceCenter.location}
-            </p>
-          )}
-          {formData.serviceCenterId && selectedServiceCenter && (
-            <p className="text-xs text-gray-500">
-              Selected center: {selectedServiceCenter.name} • {selectedServiceCenter.location}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Service Details Section */}
-      {canAccessServiceDetails && (
-        <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <FileText className="text-purple-600" size={20} />
-            Service Details
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Customer Complaint / Issue Description {isCallCenter && <span className="text-red-500">*</span>}
-              </label>
-              <textarea
-                value={formData.customerComplaint || ""}
-                onChange={(e) => updateFormData({ customerComplaint: e.target.value })}
-                rows={3}
-                placeholder="Describe the customer complaint or issue..."
-                className={`w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 resize-none ${fieldErrors.customerComplaint
-                  ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
-                  : "border border-gray-200 focus:ring-purple-500/20 focus:border-purple-500 bg-gray-50/50 focus:bg-white"
-                  }`}
-                required={isCallCenter}
-              />
-              {fieldErrors.customerComplaint && (
-                <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
-                  <span className="text-red-500">•</span>
-                  {fieldErrors.customerComplaint}
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Previous Service History
-              </label>
-              <textarea
-                value={formData.previousServiceHistory || ""}
-                onChange={(e) => updateFormData({ previousServiceHistory: e.target.value })}
-                rows={3}
-                placeholder="Enter previous service history..."
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none text-gray-900 transition-all duration-200 bg-gray-50/50 focus:bg-white resize-none"
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormInput
-                label="Estimated Service Time"
-                value={formData.estimatedServiceTime || ""}
-                onChange={(e) => updateFormData({ estimatedServiceTime: e.target.value })}
-                placeholder="e.g., 2 hours"
-              />
-              {canAccessEstimatedCost && (
-                <FormInput
-                  label="Estimated Cost"
-                  type="number"
-                  value={formData.estimatedCost || ""}
-                  onChange={(e) => updateFormData({ estimatedCost: e.target.value })}
-                  placeholder="Enter estimated cost"
-                />
-              )}
-            </div>
-            {canAccessOdometer && (
-              <FormInput
-                label="Odometer Reading"
-                type="number"
-                value={formData.odometerReading || ""}
-                onChange={(e) => updateFormData({ odometerReading: e.target.value })}
-                placeholder="Enter odometer reading"
-              />
-            )}
-          </div>
-        </div>
-      )}
+    )}
 
 
-      {/* Documentation Section */}
-      {(hasDocUploadAccess || hasDropoffMediaAccess) && (
-        <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 rounded-xl border border-indigo-200">
-          <h4 className="text-lg font-semibold text-indigo-900 mb-4 flex items-center gap-2">
-            <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-            Documentation
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {hasDocUploadAccess && (
-              <>
-                {/* Customer ID Proof */}
-                <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
-                    Customer ID Proof
-                  </label>
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                        <div className="flex flex-col items-center gap-2">
-                          <Upload className="text-indigo-600" size={24} />
-                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
-                        </div>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          multiple
-                          onChange={(e) => handleDocumentUpload("customerIdProof", e.target.files)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenCamera("customerIdProof")}
-                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
-                        title="Capture from camera"
-                      >
-                        <Camera size={24} />
-                        <span className="text-xs font-medium">Camera</span>
-                      </button>
-                    </div>
-                    {formData.customerIdProof?.urls && formData.customerIdProof.urls.length > 0 && (
-                      <div className="space-y-2">
-                        {formData.customerIdProof.urls.map((url: string, index: number) => {
-                          const metadata = formData.customerIdProof?.metadata?.[index];
-                          return (
-                            <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                              <FileText className="text-indigo-600 shrink-0" size={18} />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-800 truncate">
-                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
-                                </p>
-                              </div>
-                              <a
-                                href={metadata?.url || url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
-                                title="View file"
-                              >
-                                <ImageIcon size={16} />
-                              </a>
-                              <button
-                                onClick={() => handleRemoveDocument("customerIdProof", index)}
-                                className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                                title="Remove file"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Vehicle RC Copy */}
-                <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
-                    Vehicle RC Copy
-                  </label>
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                        <div className="flex flex-col items-center gap-2">
-                          <Upload className="text-indigo-600" size={24} />
-                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
-                        </div>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          multiple
-                          onChange={(e) => handleDocumentUpload("vehicleRCCopy", e.target.files)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenCamera("vehicleRCCopy")}
-                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
-                        title="Capture from camera"
-                      >
-                        <Camera size={24} />
-                        <span className="text-xs font-medium">Camera</span>
-                      </button>
-                    </div>
-                    {formData.vehicleRCCopy?.urls && formData.vehicleRCCopy.urls.length > 0 && (
-                      <div className="space-y-2">
-                        {formData.vehicleRCCopy.urls.map((url: string, index: number) => {
-                          const metadata = formData.vehicleRCCopy?.metadata?.[index];
-                          return (
-                            <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                              <FileText className="text-indigo-600 shrink-0" size={18} />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-800 truncate">
-                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
-                                </p>
-                              </div>
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
-                                title="View file"
-                              >
-                                <ImageIcon size={16} />
-                              </a>
-                              <button
-                                onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
-                                className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                                title="Remove file"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Warranty Card / Service Book */}
-                <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
-                    Warranty Card / Service Book
-                  </label>
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
-                        <div className="flex flex-col items-center gap-2">
-                          <Upload className="text-indigo-600" size={24} />
-                          <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                          <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
-                        </div>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          multiple
-                          onChange={(e) => handleDocumentUpload("warrantyCardServiceBook", e.target.files)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenCamera("warrantyCardServiceBook")}
-                        className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
-                        title="Capture from camera"
-                      >
-                        <Camera size={24} />
-                        <span className="text-xs font-medium">Camera</span>
-                      </button>
-                    </div>
-                    {formData.warrantyCardServiceBook?.urls && formData.warrantyCardServiceBook.urls.length > 0 && (
-                      <div className="space-y-2">
-                        {formData.warrantyCardServiceBook.urls.map((url: string, index: number) => {
-                          const metadata = formData.warrantyCardServiceBook?.metadata?.[index];
-                          return (
-                            <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                              <FileText className="text-indigo-600 shrink-0" size={18} />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-800 truncate">
-                                  {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
-                                </p>
-                              </div>
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
-                                title="View file"
-                              >
-                                <ImageIcon size={16} />
-                              </a>
-                              <button
-                                onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
-                                className="text-red-600 hover:text-red-700 p-1 rounded transition"
-                                title="Remove file"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-            {hasDropoffMediaAccess && (
+    {/* Documentation Section */}
+    {(hasDocUploadAccess || hasDropoffMediaAccess) && (
+      <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 rounded-xl border border-indigo-200">
+        <h4 className="text-lg font-semibold text-indigo-900 mb-4 flex items-center gap-2">
+          <span className="w-1 h-6 bg-indigo-600 rounded"></span>
+          Documentation
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {hasDocUploadAccess && (
+            <>
+              {/* Customer ID Proof */}
               <div className="bg-white rounded-lg p-4 border border-indigo-200">
                 <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  Photos/Videos of Vehicle at Drop-off
+                  Customer ID Proof
                 </label>
                 <div className="space-y-3">
                   <div className="flex gap-2">
                     <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
                       <div className="flex flex-col items-center gap-2">
-                        <ImageIcon className="text-indigo-600" size={24} />
+                        <Upload className="text-indigo-600" size={24} />
                         <span className="text-sm text-gray-600 font-medium">Click to upload</span>
-                        <span className="text-xs text-gray-500">Images (Max 4MB), Videos (Max 15MB)</span>
+                        <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
                       </div>
                       <input
                         type="file"
                         className="hidden"
-                        accept=".jpg,.jpeg,.png,.mp4,.mov"
+                        accept=".pdf,.jpg,.jpeg,.png"
                         multiple
-                        onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
+                        onChange={(e) => handleDocumentUpload("customerIdProof", e.target.files)}
                       />
                     </label>
                     <button
                       type="button"
-                      onClick={() => handleOpenCamera("photosVideos")}
+                      onClick={() => handleOpenCamera("customerIdProof")}
                       className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
                       title="Capture from camera"
                     >
@@ -1275,53 +1083,37 @@ export const AppointmentForm = ({
                       <span className="text-xs font-medium">Camera</span>
                     </button>
                   </div>
-                  {formData.photosVideos?.urls && formData.photosVideos.urls.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {formData.photosVideos.urls.map((url: string, index: number) => {
-                        const metadata = formData.photosVideos?.metadata?.[index];
-                        const isImage = metadata?.format && ['jpg', 'jpeg', 'png', 'webp'].includes(metadata.format.toLowerCase());
+                  {formData.customerIdProof?.urls && formData.customerIdProof.urls.length > 0 && (
+                    <div className="space-y-2">
+                      {formData.customerIdProof.urls.map((url: string, index: number) => {
+                        const metadata = formData.customerIdProof?.metadata?.[index];
                         return (
-                          <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                            {isImage && url ? (
-                              <Image
-                                src={metadata?.url || url}
-                                alt={`Upload ${index + 1}`}
-                                width={128}
-                                height={128}
-                                className="w-full h-32 object-cover"
-                                unoptimized
-                              />
-                            ) : (
-                              <div className="w-full h-32 flex items-center justify-center bg-gray-100">
-                                <FileText className="text-gray-400" size={32} />
-                              </div>
-                            )}
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <a
-                                href={metadata?.url || url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-white hover:text-blue-300 p-2 rounded transition mr-2"
-                                title="View file"
-                              >
-                                <ImageIcon size={20} />
-                              </a>
-                              <button
-                                onClick={() => handleRemoveDocument("photosVideos", index)}
-                                className="text-white hover:text-red-300 p-2 rounded transition"
-                                title="Remove file"
-                              >
-                                <Trash2 size={20} />
-                              </button>
-                            </div>
-                            <div className="p-2 bg-white">
-                              <p className="text-xs font-medium text-gray-800 truncate">
-                                {metadata?.format ? `File.${metadata.format.toUpperCase()}` : "Uploaded File"}
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">
+                                {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
                               </p>
                               <p className="text-xs text-gray-500">
                                 {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
                               </p>
                             </div>
+                            <a
+                              href={metadata?.url || url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                              title="View file"
+                            >
+                              <ImageIcon size={16} />
+                            </a>
+                            <button
+                              onClick={() => handleRemoveDocument("customerIdProof", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
                         );
                       })}
@@ -1329,127 +1121,387 @@ export const AppointmentForm = ({
                   )}
                 </div>
               </div>
-            )}
-          </div>
+
+              {/* Vehicle RC Copy */}
+              <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Vehicle RC Copy
+                </label>
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                      <div className="flex flex-col items-center gap-2">
+                        <Upload className="text-indigo-600" size={24} />
+                        <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                        <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        multiple
+                        onChange={(e) => handleDocumentUpload("vehicleRCCopy", e.target.files)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCamera("vehicleRCCopy")}
+                      className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                      title="Capture from camera"
+                    >
+                      <Camera size={24} />
+                      <span className="text-xs font-medium">Camera</span>
+                    </button>
+                  </div>
+                  {formData.vehicleRCCopy?.urls && formData.vehicleRCCopy.urls.length > 0 && (
+                    <div className="space-y-2">
+                      {formData.vehicleRCCopy.urls.map((url: string, index: number) => {
+                        const metadata = formData.vehicleRCCopy?.metadata?.[index];
+                        return (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">
+                                {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                              </p>
+                            </div>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                              title="View file"
+                            >
+                              <ImageIcon size={16} />
+                            </a>
+                            <button
+                              onClick={() => handleRemoveDocument("vehicleRCCopy", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Warranty Card / Service Book */}
+              <div className="bg-white rounded-lg p-4 border border-indigo-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Warranty Card / Service Book
+                </label>
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                      <div className="flex flex-col items-center gap-2">
+                        <Upload className="text-indigo-600" size={24} />
+                        <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                        <span className="text-xs text-gray-500">PDF, JPG, PNG (Max 4MB)</span>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        multiple
+                        onChange={(e) => handleDocumentUpload("warrantyCardServiceBook", e.target.files)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCamera("warrantyCardServiceBook")}
+                      className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                      title="Capture from camera"
+                    >
+                      <Camera size={24} />
+                      <span className="text-xs font-medium">Camera</span>
+                    </button>
+                  </div>
+                  {formData.warrantyCardServiceBook?.urls && formData.warrantyCardServiceBook.urls.length > 0 && (
+                    <div className="space-y-2">
+                      {formData.warrantyCardServiceBook.urls.map((url: string, index: number) => {
+                        const metadata = formData.warrantyCardServiceBook?.metadata?.[index];
+                        return (
+                          <div key={index} className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <FileText className="text-indigo-600 shrink-0" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">
+                                {metadata?.format ? `File.${metadata.format}` : "Uploaded File"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                              </p>
+                            </div>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-700 p-1 rounded transition"
+                              title="View file"
+                            >
+                              <ImageIcon size={16} />
+                            </a>
+                            <button
+                              onClick={() => handleRemoveDocument("warrantyCardServiceBook", index)}
+                              className="text-red-600 hover:text-red-700 p-1 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+          {hasDropoffMediaAccess && (
+            <div className="bg-white rounded-lg p-4 border border-indigo-200">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Photos/Videos of Vehicle at Drop-off
+              </label>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <label className="flex-1 flex items-center justify-center h-32 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors">
+                    <div className="flex flex-col items-center gap-2">
+                      <ImageIcon className="text-indigo-600" size={24} />
+                      <span className="text-sm text-gray-600 font-medium">Click to upload</span>
+                      <span className="text-xs text-gray-500">Images (Max 4MB), Videos (Max 15MB)</span>
+                    </div>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".jpg,.jpeg,.png,.mp4,.mov"
+                      multiple
+                      onChange={(e) => handleDocumentUpload("photosVideos", e.target.files)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCamera("photosVideos")}
+                    className="h-32 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex flex-col items-center justify-center gap-2 min-w-[100px]"
+                    title="Capture from camera"
+                  >
+                    <Camera size={24} />
+                    <span className="text-xs font-medium">Camera</span>
+                  </button>
+                </div>
+                {formData.photosVideos?.urls && formData.photosVideos.urls.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {formData.photosVideos.urls.map((url: string, index: number) => {
+                      const metadata = formData.photosVideos?.metadata?.[index];
+                      const isImage = metadata?.format && ['jpg', 'jpeg', 'png', 'webp'].includes(metadata.format.toLowerCase());
+                      return (
+                        <div key={index} className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                          {isImage && url ? (
+                            <Image
+                              src={metadata?.url || url}
+                              alt={`Upload ${index + 1}`}
+                              width={128}
+                              height={128}
+                              className="w-full h-32 object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="w-full h-32 flex items-center justify-center bg-gray-100">
+                              <FileText className="text-gray-400" size={32} />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <a
+                              href={metadata?.url || url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-white hover:text-blue-300 p-2 rounded transition mr-2"
+                              title="View file"
+                            >
+                              <ImageIcon size={20} />
+                            </a>
+                            <button
+                              onClick={() => handleRemoveDocument("photosVideos", index)}
+                              className="text-white hover:text-red-300 p-2 rounded transition"
+                              title="Remove file"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          </div>
+                          <div className="p-2 bg-white">
+                            <p className="text-xs font-medium text-gray-800 truncate">
+                              {metadata?.format ? `File.${metadata.format.toUpperCase()}` : "Uploaded File"}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {metadata?.bytes ? (metadata.bytes / 1024).toFixed(2) : "0.00"} KB
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
+    )}
 
-      {/* Camera Modal */}
-      {cameraModalOpen && cameraDocumentType && (
-        <CameraModal
-          isOpen={cameraModalOpen}
-          onClose={() => {
-            setCameraModalOpen(false);
-            setCameraDocumentType(null);
-          }}
-          onCapture={handleCameraCapture}
-        />
-      )}
+    {/* Camera Modal */}
+    {cameraModalOpen && cameraDocumentType && (
+      <CameraModal
+        isOpen={cameraModalOpen}
+        onClose={() => {
+          setCameraModalOpen(false);
+          setCameraDocumentType(null);
+        }}
+        onCapture={handleCameraCapture}
+      />
+    )}
 
 
 
-      {/* Date and Time */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <FormInput
-            label="Date"
-            required
-            type="date"
-            value={formData.date}
-            onChange={(e) => {
-              const newDate = e.target.value;
-              let updatedTime = formData.time;
-              if (isToday(newDate) && formData.time) {
-                const currentTime = getCurrentTime();
-                if (formData.time < currentTime) {
-                  updatedTime = currentTime;
-                }
-              }
-              updateFormData({ date: newDate, time: updatedTime });
-            }}
-            min={getCurrentDate()}
-            error={fieldErrors.date}
-          />
-        </div>
+    {/* Date and Time */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
         <FormInput
-          label="Time"
+          label="Date"
           required
-          type="time"
-          value={formData.time}
+          type="date"
+          value={formData.date}
           onChange={(e) => {
-            const selectedTime = e.target.value;
-            if (formData.date && isToday(formData.date)) {
+            const newDate = e.target.value;
+            let updatedTime = formData.time;
+            if (isToday(newDate) && formData.time) {
               const currentTime = getCurrentTime();
-              if (selectedTime < currentTime) {
-                return;
+              if (formData.time < currentTime) {
+                updatedTime = currentTime;
               }
             }
-            updateFormData({ time: selectedTime });
+            updateFormData({ date: newDate, time: updatedTime });
           }}
-          min={formData.date ? getMinTime(formData.date) : undefined}
-          error={fieldErrors.time}
+          min={getCurrentDate()}
+          error={fieldErrors.date}
         />
       </div>
+      <FormInput
+        label="Time"
+        required
+        type="time"
+        value={formData.time}
+        onChange={(e) => {
+          const selectedTime = e.target.value;
+          if (formData.date && isToday(formData.date)) {
+            const currentTime = getCurrentTime();
+            if (selectedTime < currentTime) {
+              return;
+            }
+          }
+          updateFormData({ time: selectedTime });
+        }}
+        min={formData.date ? getMinTime(formData.date) : undefined}
+        error={fieldErrors.time}
+      />
+    </div>
 
-      {/* Operational Details Section */}
-      {canAccessOperationalDetails && (
-        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Clock className="text-blue-600" size={20} />
-            Operational Details
-          </h3>
-          <div className="space-y-4">
-            {(isServiceAdvisor || isServiceManager) && (
-              <FormInput
-                label="Estimated Delivery Date"
-                type="date"
-                value={formData.estimatedDeliveryDate || ""}
-                onChange={(e) => updateFormData({ estimatedDeliveryDate: e.target.value })}
+    {/* Operational Details Section */}
+    {canAccessOperationalDetails && (
+      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <Clock className="text-blue-600" size={20} />
+          Operational Details
+        </h3>
+        <div className="space-y-4">
+          {(isServiceAdvisor || isServiceManager) && (
+            <FormInput
+              label="Estimated Delivery Date"
+              type="date"
+              value={formData.estimatedDeliveryDate || ""}
+              onChange={(e) => updateFormData({ estimatedDeliveryDate: e.target.value })}
+            />
+          )}
+          {(isServiceAdvisor || isServiceManager) && (
+            <FormSelect
+              label="Assigned Service Advisor"
+              value={formData.assignedServiceAdvisor || ""}
+              onChange={(e) => updateFormData({ assignedServiceAdvisor: e.target.value })}
+              placeholder="Select service advisor"
+              options={[
+                { value: "", label: "Select service advisor" },
+                ...serviceAdvisors.map((advisor) => ({
+                  value: advisor.name,
+                  label: advisor.name,
+                })),
+              ]}
+            />
+          )}
+          {canAssignTechnician && (
+            <FormSelect
+              label="Assigned Technician"
+              value={formData.assignedTechnician || ""}
+              onChange={(e) => updateFormData({ assignedTechnician: e.target.value })}
+              placeholder="Select technician"
+              options={[
+                { value: "", label: "Select technician" },
+                ...technicians.map((tech) => ({
+                  value: tech.name,
+                  label: tech.name,
+                })),
+              ]}
+            />
+          )}
+          {/* Pickup / Drop Required */}
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.pickupDropRequired || false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  updateFormData({
+                    pickupDropRequired: checked,
+                    ...(checked
+                      ? {}
+                      : {
+                        pickupAddress: undefined,
+                        pickupState: undefined,
+                        pickupCity: undefined,
+                        pickupPincode: undefined,
+                        dropAddress: undefined,
+                        dropState: undefined,
+                        dropCity: undefined,
+                        dropPincode: undefined,
+                      }),
+                  });
+                  if (!checked) {
+                    setPickupAddressDifferent(false);
+                    setPickupState("");
+                    setPickupCity("");
+                    setDropState("");
+                    setDropCity("");
+                  }
+                }}
+                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
               />
-            )}
-            {(isServiceAdvisor || isServiceManager) && (
-              <FormSelect
-                label="Assigned Service Advisor"
-                value={formData.assignedServiceAdvisor || ""}
-                onChange={(e) => updateFormData({ assignedServiceAdvisor: e.target.value })}
-                placeholder="Select service advisor"
-                options={[
-                  { value: "", label: "Select service advisor" },
-                  ...serviceAdvisors.map((advisor) => ({
-                    value: advisor.name,
-                    label: advisor.name,
-                  })),
-                ]}
-              />
-            )}
-            {canAssignTechnician && (
-              <FormSelect
-                label="Assigned Technician"
-                value={formData.assignedTechnician || ""}
-                onChange={(e) => updateFormData({ assignedTechnician: e.target.value })}
-                placeholder="Select technician"
-                options={[
-                  { value: "", label: "Select technician" },
-                  ...technicians.map((tech) => ({
-                    value: tech.name,
-                    label: tech.name,
-                  })),
-                ]}
-              />
-            )}
-            {/* Pickup / Drop Required */}
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.pickupDropRequired || false}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    updateFormData({
-                      pickupDropRequired: checked,
-                      ...(checked
-                        ? {}
-                        : {
+              <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
+            </label>
+            {formData.pickupDropRequired && (
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={pickupAddressDifferent}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setPickupAddressDifferent(checked);
+                      if (!checked) {
+                        updateFormData({
                           pickupAddress: undefined,
                           pickupState: undefined,
                           pickupCity: undefined,
@@ -1458,399 +1510,366 @@ export const AppointmentForm = ({
                           dropState: undefined,
                           dropCity: undefined,
                           dropPincode: undefined,
-                        }),
-                    });
-                    if (!checked) {
-                      setPickupAddressDifferent(false);
-                      setPickupState("");
-                      setPickupCity("");
-                      setDropState("");
-                      setDropCity("");
-                    }
-                  }}
-                  className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                />
-                <span className="text-sm font-medium text-gray-700">Pickup / Drop Required</span>
-              </label>
-              {formData.pickupDropRequired && (
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={pickupAddressDifferent}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setPickupAddressDifferent(checked);
-                        if (!checked) {
-                          updateFormData({
-                            pickupAddress: undefined,
-                            pickupState: undefined,
-                            pickupCity: undefined,
-                            pickupPincode: undefined,
-                            dropAddress: undefined,
-                            dropState: undefined,
-                            dropCity: undefined,
-                            dropPincode: undefined,
-                          });
-                          setPickupState("");
-                          setPickupCity("");
-                          setDropState("");
-                          setDropCity("");
-                        }
-                      }}
-                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                    />
-                    <span className="text-sm text-gray-700">
-                      Pickup / Drop address is different from customer address
-                    </span>
-                  </label>
-                  {pickupAddressDifferent && canAccessPickupAddress && (
-                    <>
-                      {/* Pickup Address Section */}
-                      <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
-                        <h4 className="text-md font-semibold text-gray-800 mb-3">Pickup Address</h4>
-                        <FormInput
-                          label="Address"
-                          value={formData.pickupAddress || ""}
-                          onChange={(e) => {
-                            updateFormData({
-                              pickupAddress: e.target.value,
-                              ...(dropSameAsPickup ? { dropAddress: e.target.value } : {}),
-                            });
-                          }}
-                          placeholder="Enter full address"
-                        />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormSelect
-                            label="State"
-                            value={pickupState}
-                            onChange={(e) => {
-                              const newState = e.target.value;
-                              setPickupState(newState);
-                              setPickupCity("");
-                              updateFormData({
-                                pickupState: newState,
-                                pickupCity: undefined,
-                                ...(dropSameAsPickup
-                                  ? {
-                                    dropState: newState,
-                                    dropCity: undefined,
-                                  }
-                                  : {}),
-                              });
-                              if (dropSameAsPickup) {
-                                setDropState(newState);
-                                setDropCity("");
-                              }
-                            }}
-                            placeholder="Select State"
-                            options={INDIAN_STATES.map((state) => ({ value: state.name, label: state.name }))}
-                          />
-                          <FormSelect
-                            label="City"
-                            value={pickupCity}
-                            onChange={(e) => {
-                              const newCity = e.target.value;
-                              setPickupCity(newCity);
-                              updateFormData({
-                                pickupCity: newCity,
-                                ...(dropSameAsPickup ? { dropCity: newCity } : {}),
-                              });
-                              if (dropSameAsPickup) {
-                                setDropCity(newCity);
-                              }
-                            }}
-                            placeholder={pickupState ? "Select City" : "Select State First"}
-                            options={
-                              pickupState
-                                ? getCitiesByState(pickupState).map((city) => ({ value: city, label: city }))
-                                : []
-                            }
-                            disabled={!pickupState}
-                          />
-                        </div>
-                        <FormInput
-                          label="PIN Code"
-                          value={formData.pickupPincode || ""}
-                          onChange={(e) => {
-                            const newPincode = e.target.value.replace(/\D/g, "").slice(0, 6);
-                            updateFormData({
-                              pickupPincode: newPincode,
-                              ...(dropSameAsPickup ? { dropPincode: newPincode } : {}),
-                            });
-                          }}
-                          placeholder="6-digit PIN code"
-                          maxLength={6}
-                        />
-                      </div>
-                      {/* Drop Address Section */}
-                      <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-md font-semibold text-gray-800">Drop Address</h4>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={dropSameAsPickup}
-                              onChange={(e) => {
-                                const checked = e.target.checked;
-                                setDropSameAsPickup(checked);
-                                if (checked) {
-                                  setDropState(pickupState);
-                                  setDropCity(pickupCity);
-                                  updateFormData({
-                                    dropAddress: formData.pickupAddress,
-                                    dropState: formData.pickupState,
-                                    dropCity: formData.pickupCity,
-                                    dropPincode: formData.pickupPincode,
-                                  });
-                                } else {
-                                  setDropState("");
-                                  setDropCity("");
-                                  updateFormData({
-                                    dropAddress: undefined,
-                                    dropState: undefined,
-                                    dropCity: undefined,
-                                    dropPincode: undefined,
-                                  });
-                                }
-                              }}
-                              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                            />
-                            <span className="text-sm text-gray-700">Same as pickup address</span>
-                          </label>
-                        </div>
-                        <FormInput
-                          label="Address"
-                          value={formData.dropAddress || ""}
-                          onChange={(e) => updateFormData({ dropAddress: e.target.value })}
-                          placeholder="Enter full address"
-                          readOnly={dropSameAsPickup}
-                        />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormSelect
-                            label="State"
-                            value={dropState}
-                            onChange={(e) => {
-                              setDropState(e.target.value);
-                              setDropCity("");
-                              updateFormData({ dropState: e.target.value, dropCity: undefined });
-                            }}
-                            placeholder="Select State"
-                            options={INDIAN_STATES.map((state) => ({ value: state.name, label: state.name }))}
-                            disabled={dropSameAsPickup}
-                          />
-                          <FormSelect
-                            label="City"
-                            value={dropCity}
-                            onChange={(e) => {
-                              setDropCity(e.target.value);
-                              updateFormData({ dropCity: e.target.value });
-                            }}
-                            placeholder={dropState ? "Select City" : "Select State First"}
-                            options={
-                              dropState
-                                ? getCitiesByState(dropState).map((city) => ({ value: city, label: city }))
-                                : []
-                            }
-                            disabled={!dropState || dropSameAsPickup}
-                          />
-                        </div>
-                        <FormInput
-                          label="PIN Code"
-                          value={formData.dropPincode || ""}
-                          onChange={(e) =>
-                            updateFormData({ dropPincode: e.target.value.replace(/\D/g, "").slice(0, 6) })
-                          }
-                          placeholder="6-digit PIN code"
-                          maxLength={6}
-                          readOnly={dropSameAsPickup}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            {/* Preferred Communication Mode */}
-            {canAccessPreferredCommunication && (
-              <FormSelect
-                label="Preferred Communication Mode"
-                value={formData.preferredCommunicationMode || ""}
-                onChange={(e) =>
-                  updateFormData({
-                    preferredCommunicationMode: e.target.value as
-                      | "Phone"
-                      | "Email"
-                      | "SMS"
-                      | "WhatsApp"
-                      | undefined,
-                  })
-                }
-                placeholder="Select communication mode"
-                options={[
-                  { value: "Phone", label: "Phone" },
-                  { value: "Email", label: "Email" },
-                  { value: "SMS", label: "SMS" },
-                  { value: "WhatsApp", label: "WhatsApp" },
-                ]}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Cost Estimation */}
-      {canViewCostEstimation && formData.estimatedCost && (
-        <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <FileText className="text-indigo-600" size={20} />
-            Cost Estimation
-          </h3>
-          <div className="space-y-4">
-            <FormInput
-              label="Estimated Cost"
-              value={formData.estimatedCost ? `₹${formData.estimatedCost}` : ""}
-              onChange={() => { }}
-              readOnly
-              placeholder="Cost will be determined during service"
-            />
-            <p className="text-xs text-gray-500">
-              Note: Payment method and billing details will be collected when creating the invoice during vehicle delivery.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Validation Errors */}
-      {Object.keys(fieldErrors).length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-sm font-semibold text-red-800 mb-2">Please fill the following mandatory fields:</p>
-          <ul className="list-disc list-inside space-y-1 text-sm text-red-700">
-            {Object.entries(fieldErrors).map(([field, error]) => (
-              <li key={field}>{error}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Customer Arrival Section (Service Advisor Only) */}
-      {isServiceAdvisor &&
-        onCustomerArrived &&
-        appointmentStatus &&
-        appointmentStatus !== "In Progress" &&
-        appointmentStatus !== "Sent to Manager" && (
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <CheckCircle size={20} className="text-blue-600" />
-              Customer Arrival
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Mark customer arrival status. This will update the appointment status when you save.
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  if (onCustomerArrived) {
-                    // Ensure all state values are synced to formData
-                    const finalFormData: AppointmentFormType = {
-                      ...formData,
-                      pickupState: pickupState || formData.pickupState,
-                      pickupCity: pickupCity || formData.pickupCity,
-                      dropState: dropState || formData.dropState,
-                      dropCity: dropCity || formData.dropCity,
-                    };
-                    onCustomerArrived(finalFormData);
-                  }
-                }}
-                className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
-              >
-                <CheckCircle size={18} />
-                Customer Arrived
-              </button>
-              <button
-                type="button"
-                onClick={onCancel}
-                className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
-              >
-                Customer Not Arrived
-              </button>
-            </div>
-          </div>
-        )}
-
-      {/* Action Buttons */}
-      <div className="flex gap-3 pt-4 border-t border-gray-200">
-        <button
-          onClick={onCancel}
-          className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
-        >
-          Cancel
-        </button>
-        {(
-          <button
-            onClick={handleSubmit}
-            className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
-          >
-            {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
-          </button>
-        )}
-      </div>
-
-      {/* Service Center Selector Modal */}
-      {showServiceCenterSelector && (
-        <div className="fixed inset-0 z-1100 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Choose Service Center</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowServiceCenterSelector(false);
-                  setServiceCenterSearch("");
-                }}
-                className="text-gray-400 hover:text-gray-600 transition"
-                aria-label="Close service center selector"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="px-6 py-4 space-y-4">
-              <input
-                type="text"
-                placeholder="Search service center..."
-                value={serviceCenterSearch}
-                onChange={(e) => setServiceCenterSearch(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-              />
-              <div className="py-2 space-y-2 max-h-64 overflow-y-auto">
-                {filteredServiceCenters.map((center) => (
-                  <button
-                    key={center.id}
-                    type="button"
-                    onClick={() => {
-                      updateFormData({
-                        serviceCenterId: center.id,
-                        serviceCenterName: center.name,
-                      });
-                      setShowServiceCenterSelector(false);
-                      setServiceCenterSearch("");
+                        });
+                        setPickupState("");
+                        setPickupCity("");
+                        setDropState("");
+                        setDropCity("");
+                      }
                     }}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-200 text-left hover:bg-indigo-50 transition"
-                  >
-                    <div className="font-semibold text-gray-900">{center.name}</div>
-                    <p className="text-xs text-gray-500">{center.location}</p>
-                  </button>
-                ))}
-                {filteredServiceCenters.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center">No service centers match your search.</p>
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Pickup / Drop address is different from customer address
+                  </span>
+                </label>
+                {pickupAddressDifferent && canAccessPickupAddress && (
+                  <>
+                    {/* Pickup Address Section */}
+                    <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <h4 className="text-md font-semibold text-gray-800 mb-3">Pickup Address</h4>
+                      <FormInput
+                        label="Address"
+                        value={formData.pickupAddress || ""}
+                        onChange={(e) => {
+                          updateFormData({
+                            pickupAddress: e.target.value,
+                            ...(dropSameAsPickup ? { dropAddress: e.target.value } : {}),
+                          });
+                        }}
+                        placeholder="Enter full address"
+                      />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormSelect
+                          label="State"
+                          value={pickupState}
+                          onChange={(e) => {
+                            const newState = e.target.value;
+                            setPickupState(newState);
+                            setPickupCity("");
+                            updateFormData({
+                              pickupState: newState,
+                              pickupCity: undefined,
+                              ...(dropSameAsPickup
+                                ? {
+                                  dropState: newState,
+                                  dropCity: undefined,
+                                }
+                                : {}),
+                            });
+                            if (dropSameAsPickup) {
+                              setDropState(newState);
+                              setDropCity("");
+                            }
+                          }}
+                          placeholder="Select State"
+                          options={INDIAN_STATES.map((state) => ({ value: state.name, label: state.name }))}
+                        />
+                        <FormSelect
+                          label="City"
+                          value={pickupCity}
+                          onChange={(e) => {
+                            const newCity = e.target.value;
+                            setPickupCity(newCity);
+                            updateFormData({
+                              pickupCity: newCity,
+                              ...(dropSameAsPickup ? { dropCity: newCity } : {}),
+                            });
+                            if (dropSameAsPickup) {
+                              setDropCity(newCity);
+                            }
+                          }}
+                          placeholder={pickupState ? "Select City" : "Select State First"}
+                          options={
+                            pickupState
+                              ? getCitiesByState(pickupState).map((city) => ({ value: city, label: city }))
+                              : []
+                          }
+                          disabled={!pickupState}
+                        />
+                      </div>
+                      <FormInput
+                        label="PIN Code"
+                        value={formData.pickupPincode || ""}
+                        onChange={(e) => {
+                          const newPincode = e.target.value.replace(/\D/g, "").slice(0, 6);
+                          updateFormData({
+                            pickupPincode: newPincode,
+                            ...(dropSameAsPickup ? { dropPincode: newPincode } : {}),
+                          });
+                        }}
+                        placeholder="6-digit PIN code"
+                        maxLength={6}
+                      />
+                    </div>
+                    {/* Drop Address Section */}
+                    <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-md font-semibold text-gray-800">Drop Address</h4>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={dropSameAsPickup}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setDropSameAsPickup(checked);
+                              if (checked) {
+                                setDropState(pickupState);
+                                setDropCity(pickupCity);
+                                updateFormData({
+                                  dropAddress: formData.pickupAddress,
+                                  dropState: formData.pickupState,
+                                  dropCity: formData.pickupCity,
+                                  dropPincode: formData.pickupPincode,
+                                });
+                              } else {
+                                setDropState("");
+                                setDropCity("");
+                                updateFormData({
+                                  dropAddress: undefined,
+                                  dropState: undefined,
+                                  dropCity: undefined,
+                                  dropPincode: undefined,
+                                });
+                              }
+                            }}
+                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-gray-700">Same as pickup address</span>
+                        </label>
+                      </div>
+                      <FormInput
+                        label="Address"
+                        value={formData.dropAddress || ""}
+                        onChange={(e) => updateFormData({ dropAddress: e.target.value })}
+                        placeholder="Enter full address"
+                        readOnly={dropSameAsPickup}
+                      />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormSelect
+                          label="State"
+                          value={dropState}
+                          onChange={(e) => {
+                            setDropState(e.target.value);
+                            setDropCity("");
+                            updateFormData({ dropState: e.target.value, dropCity: undefined });
+                          }}
+                          placeholder="Select State"
+                          options={INDIAN_STATES.map((state) => ({ value: state.name, label: state.name }))}
+                          disabled={dropSameAsPickup}
+                        />
+                        <FormSelect
+                          label="City"
+                          value={dropCity}
+                          onChange={(e) => {
+                            setDropCity(e.target.value);
+                            updateFormData({ dropCity: e.target.value });
+                          }}
+                          placeholder={dropState ? "Select City" : "Select State First"}
+                          options={
+                            dropState
+                              ? getCitiesByState(dropState).map((city) => ({ value: city, label: city }))
+                              : []
+                          }
+                          disabled={!dropState || dropSameAsPickup}
+                        />
+                      </div>
+                      <FormInput
+                        label="PIN Code"
+                        value={formData.dropPincode || ""}
+                        onChange={(e) =>
+                          updateFormData({ dropPincode: e.target.value.replace(/\D/g, "").slice(0, 6) })
+                        }
+                        placeholder="6-digit PIN code"
+                        maxLength={6}
+                        readOnly={dropSameAsPickup}
+                      />
+                    </div>
+                  </>
                 )}
               </div>
-            </div>
+            )}
+          </div>
+          {/* Preferred Communication Mode */}
+          {canAccessPreferredCommunication && (
+            <FormSelect
+              label="Preferred Communication Mode"
+              value={formData.preferredCommunicationMode || ""}
+              onChange={(e) =>
+                updateFormData({
+                  preferredCommunicationMode: e.target.value as
+                    | "Phone"
+                    | "Email"
+                    | "SMS"
+                    | "WhatsApp"
+                    | undefined,
+                })
+              }
+              placeholder="Select communication mode"
+              options={[
+                { value: "Phone", label: "Phone" },
+                { value: "Email", label: "Email" },
+                { value: "SMS", label: "SMS" },
+                { value: "WhatsApp", label: "WhatsApp" },
+              ]}
+            />
+          )}
+        </div>
+      </div>
+    )}
+
+    {/* Cost Estimation */}
+    {canViewCostEstimation && formData.estimatedCost && (
+      <div className="bg-white p-4 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <FileText className="text-indigo-600" size={20} />
+          Cost Estimation
+        </h3>
+        <div className="space-y-4">
+          <FormInput
+            label="Estimated Cost"
+            value={formData.estimatedCost ? `₹${formData.estimatedCost}` : ""}
+            onChange={() => { }}
+            readOnly
+            placeholder="Cost will be determined during service"
+          />
+          <p className="text-xs text-gray-500">
+            Note: Payment method and billing details will be collected when creating the invoice during vehicle delivery.
+          </p>
+        </div>
+      </div>
+    )}
+
+    {/* Validation Errors */}
+    {Object.keys(fieldErrors).length > 0 && (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <p className="text-sm font-semibold text-red-800 mb-2">Please fill the following mandatory fields:</p>
+        <ul className="list-disc list-inside space-y-1 text-sm text-red-700">
+          {Object.entries(fieldErrors).map(([field, error]) => (
+            <li key={field}>{error}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+
+    {/* Customer Arrival Section (Service Advisor Only) */}
+    {isServiceAdvisor &&
+      onCustomerArrived &&
+      appointmentStatus &&
+      appointmentStatus !== "In Progress" &&
+      appointmentStatus !== "Sent to Manager" && (
+        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mt-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <CheckCircle size={20} className="text-blue-600" />
+            Customer Arrival
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Mark customer arrival status. This will update the appointment status when you save.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (onCustomerArrived) {
+                  // Ensure all state values are synced to formData
+                  const finalFormData: AppointmentFormType = {
+                    ...formData,
+                    pickupState: pickupState || formData.pickupState,
+                    pickupCity: pickupCity || formData.pickupCity,
+                    dropState: dropState || formData.dropState,
+                    dropCity: dropCity || formData.dropCity,
+                  };
+                  onCustomerArrived(finalFormData);
+                }
+              }}
+              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
+            >
+              <CheckCircle size={18} />
+              Customer Arrived
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 px-4 py-3 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              Customer Not Arrived
+            </button>
           </div>
         </div>
       )}
+
+    {/* Action Buttons */}
+    <div className="flex gap-3 pt-4 border-t border-gray-200">
+      <button
+        onClick={onCancel}
+        className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition"
+      >
+        Cancel
+      </button>
+      {(
+        <button
+          onClick={handleSubmit}
+          className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition"
+        >
+          {mode === "edit" ? "Update Appointment" : "Schedule Appointment"}
+        </button>
+      )}
     </div>
-  );
+
+    {/* Service Center Selector Modal */}
+    {showServiceCenterSelector && (
+      <div className="fixed inset-0 z-1100 bg-black/40 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Choose Service Center</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setShowServiceCenterSelector(false);
+                setServiceCenterSearch("");
+              }}
+              className="text-gray-400 hover:text-gray-600 transition"
+              aria-label="Close service center selector"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="px-6 py-4 space-y-4">
+            <input
+              type="text"
+              placeholder="Search service center..."
+              value={serviceCenterSearch}
+              onChange={(e) => setServiceCenterSearch(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+            />
+            <div className="py-2 space-y-2 max-h-64 overflow-y-auto">
+              {filteredServiceCenters.map((center) => (
+                <button
+                  key={center.id}
+                  type="button"
+                  onClick={() => {
+                    updateFormData({
+                      serviceCenterId: center.id,
+                      serviceCenterName: center.name,
+                    });
+                    setShowServiceCenterSelector(false);
+                    setServiceCenterSearch("");
+                  }}
+                  className="w-full px-4 py-3 rounded-lg border border-gray-200 text-left hover:bg-indigo-50 transition"
+                >
+                  <div className="font-semibold text-gray-900">{center.name}</div>
+                  <p className="text-xs text-gray-500">{center.location}</p>
+                </button>
+              ))}
+              {filteredServiceCenters.length === 0 && (
+                <p className="text-sm text-gray-500 text-center">No service centers match your search.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+);
 };
 

@@ -6,6 +6,9 @@ import {
   Wrench, AlertCircle, Package, FileText, Eye, Edit, Car, Calendar
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { Modal } from "@/components/ui/Modal/Modal";
+import { Button } from "@/components/ui/Button";
+import { useToast } from "@/core/contexts/ToastContext";
 
 
 // Components
@@ -110,6 +113,7 @@ export default function JobCards() {
 
     handleJobCardCreated,
     handleAssignEngineer,
+    assignEngineer, // Added this
     handleStatusUpdate,
     handleManagerQuoteAction,
     handlePartRequestSubmit,
@@ -132,6 +136,9 @@ export default function JobCards() {
   const [activeTab, setActiveTab] = useState<"assigned" | "in_progress" | "completed">("assigned");
 
   const [isClient, setIsClient] = useState(false);
+  const [rejectionModalState, setRejectionModalState] = useState<{ isOpen: boolean; jobId: string | null }>({ isOpen: false, jobId: null });
+  const [rejectionReason, setRejectionReason] = useState("");
+  const { showError } = useToast();
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -228,8 +235,8 @@ export default function JobCards() {
       : null;
 
     const handleJobCardClick = (job: JobCard) => {
-      setSelectedJobCardForRequest(job.id);
-      setShowPartsRequestModal(true);
+      // Navigate to the full job card detail view which includes images, parts list, customer info, etc.
+      router.push(`/sc/job-cards/${job.id}`);
     };
 
     const getJobsByStatusForTechnician = (status: JobCardStatus): JobCard[] => {
@@ -362,6 +369,7 @@ export default function JobCards() {
       </div>
     );
   }
+
 
 
   return (
@@ -527,6 +535,11 @@ export default function JobCards() {
             onCreateQuotation={(job) => {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
             }}
+            onCreateInvoice={(job) => {
+              if (handleCreateInvoice) {
+                handleCreateInvoice(job);
+              }
+            }}
             onPassToManager={handleSubmitToManager}
           />
         )}
@@ -541,6 +554,7 @@ export default function JobCards() {
             onJobClick={(job) => router.push(`/sc/job-cards/${job.id}`)}
             isServiceAdvisor={isServiceAdvisor}
             isServiceManager={isServiceManager}
+            engineers={engineers}
             onView={(jobId) => router.push(`/sc/job-cards/${jobId}`)}
             onEdit={(jobId) => router.push(`/sc/job-cards/${jobId}/edit`)}
             onEditDraft={handleEditDraft}
@@ -548,10 +562,22 @@ export default function JobCards() {
               setAssigningJobId(jobId);
               setShowAssignEngineerModal(true);
             }}
+            onDirectAssignEngineer={(jobId, engineerId) => {
+              const eng = engineers.find((e) => e.id.toString() === engineerId.toString());
+              const name = eng ? eng.name : "this engineer";
+              if (window.confirm(`Are you sure you want to assign ${name} to this job card?`)) {
+                assignEngineer(jobId, engineerId);
+              }
+            }}
             onUpdateStatus={(jobId, initialStatus) => {
               setUpdatingStatusJobId(jobId);
               setNewStatus(getNextStatus(initialStatus)[0]);
               setShowStatusUpdateModal(true);
+            }}
+            onDirectUpdateStatus={(jobId, status) => {
+              if (window.confirm(`Are you sure you want to update the status to ${status}?`)) {
+                updateStatus(jobId, status);
+              }
             }}
             getNextStatus={getNextStatus}
             hasQuotation={(jobId) => {
@@ -561,7 +587,19 @@ export default function JobCards() {
             onCreateQuotation={(job) => {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
             }}
+            onCreateInvoice={(job) => {
+              if (handleCreateInvoice) {
+                handleCreateInvoice(job);
+              }
+            }}
             onPassToManager={(jobId) => handleSubmitToManager(jobId)}
+            onApprove={(jobId) => handleManagerReview(jobId, "APPROVED", "Approved from Table")}
+            onReject={(jobId) => {
+              const reason = prompt("Please provide a reason for rejection:");
+              if (reason) {
+                handleManagerReview(jobId, "REJECTED", reason);
+              }
+            }}
           />
         )}
 
@@ -588,13 +626,77 @@ export default function JobCards() {
           setAssigningJobId(jobId);
           setShowAssignEngineerModal(true);
         }}
+        onApprove={(jobId) => {
+          setShowDetails(false);
+          handleManagerReview(jobId, "APPROVED", "Approved from Details");
+        }}
+        onReject={(jobId) => {
+          setShowDetails(false);
+          setRejectionModalState({ isOpen: true, jobId });
+          setRejectionReason("");
+        }}
+        onSendToManager={(jobId) => {
+          setShowDetails(false);
+          handleSubmitToManager(jobId);
+        }}
         onUpdateStatus={(jobId, initialStatus) => {
           setShowDetails(false);
           setUpdatingStatusJobId(jobId);
           setNewStatus(getNextStatus(initialStatus)[0]);
           setShowStatusUpdateModal(true);
         }}
+        onCreateQuotation={(job) => {
+          setShowDetails(false);
+          router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
+        }}
+        onCreateInvoice={(job) => {
+          setShowDetails(false);
+          if (handleCreateInvoice) {
+            handleCreateInvoice(job);
+          }
+        }}
       />
+      <Modal
+        isOpen={rejectionModalState.isOpen}
+        onClose={() => setRejectionModalState({ isOpen: false, jobId: null })}
+        title="Reject Job Card"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">Please provide a reason for rejection.</p>
+          <textarea
+            value={rejectionReason}
+            onChange={(e) => setRejectionReason(e.target.value)}
+            placeholder="Enter rejection reason..."
+            className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none resize-none"
+          />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              onClick={() => setRejectionModalState({ isOpen: false, jobId: null })}
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!rejectionReason.trim()) {
+                  showError("Please provide a reason.");
+                  return;
+                }
+                if (rejectionModalState.jobId) {
+                  handleManagerReview(rejectionModalState.jobId, "REJECTED", rejectionReason);
+                  setRejectionModalState({ isOpen: false, jobId: null });
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={!rejectionReason.trim()}
+            >
+              Confirm Rejection
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
 
 
       {/* Assign Engineer Modal */}

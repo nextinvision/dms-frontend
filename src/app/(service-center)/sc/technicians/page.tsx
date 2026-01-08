@@ -103,7 +103,7 @@ export default function Technicians() {
     mutationFn: (data: any) => userRepository.create({
       ...data,
       role: 'service_engineer',
-      serviceCenterId: normalizeServiceCenterId(serviceCenterContext.serviceCenterId)
+      serviceCenterId: serviceCenterContext.serviceCenterId
     }),
     onSuccess: () => {
       showSuccess("Technician added successfully");
@@ -231,7 +231,7 @@ export default function Technicians() {
                     <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${tech.utilization > 80 ? 'bg-red-500' :
-                            tech.utilization > 50 ? 'bg-orange-400' : 'bg-green-500'
+                          tech.utilization > 50 ? 'bg-orange-400' : 'bg-green-500'
                           }`}
                         style={{ width: `${tech.utilization}%` }}
                       />
