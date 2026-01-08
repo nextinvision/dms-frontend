@@ -2,15 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Upload, Video, Image as ImageIcon, FileText, Trash2, CheckCircle2, AlertCircle, Eye } from "lucide-react";
-import { useCloudinaryUploadWithMetadata } from "@/shared/hooks/useCloudinaryUploadWithMetadata";
-import { optimizeCloudinaryUrl } from "@/services/cloudinary/cloudinary.service";
-import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
-import {
-    FileCategory,
-    RelatedEntityType,
-    deleteFile,
-    FileMetadata
-} from "@/services/cloudinary/fileMetadata.service";
+import { useUpload } from "@/shared/hooks/useUpload";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 interface WarrantyDocumentationData {

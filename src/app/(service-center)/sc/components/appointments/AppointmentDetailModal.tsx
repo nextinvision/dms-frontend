@@ -36,8 +36,7 @@ const safeStorage = {
   }
 };
 import { INITIAL_SERVICE_INTAKE_FORM } from "../../appointments/constants";
-import { getFilesForEntity } from "@/services/files/fileMetadata.service";
-import { FileCategory, RelatedEntityType } from "@/services/files/types";
+
 
 interface AppointmentDetailModalProps {
   isOpen: boolean;

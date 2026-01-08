@@ -16,8 +16,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
-import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
-import { useCloudinaryUploadWithMetadata } from "@/shared/hooks/useCloudinaryUploadWithMetadata";
+import { useUpload } from "@/shared/hooks/useUpload";
 import { staticServiceCenters } from "../service-center";
 import { apiClient } from "@/core/api";
 import { API_ENDPOINTS } from "@/config/api.config";
@@ -28,7 +27,7 @@ import { findNearestServiceCenter } from "./types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
 import type { AppointmentForm as AppointmentFormType } from "./types";
 import { INITIAL_APPOINTMENT_FORM } from "./types";
-import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
+
 import {
   getCurrentTime,
   getCurrentDate,
@@ -37,15 +36,7 @@ import {
 } from "@/shared/utils/date";
 import { validatePhone } from "@/shared/utils/validation";
 import { getInitialAppointmentForm, mapVehicleToFormData, mapCustomerToFormData } from "./utils";
-import {
-  generateTempEntityId,
-  FileCategory,
-  RelatedEntityType,
-  deleteFile,
-  updateFileEntityAssociation,
-  FileMetadata,
-} from "@/services/cloudinary/fileMetadata.service";
-import { fileUploadQueue } from "@/services/cloudinary/fileUploadQueue";
+
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 // Type for document metadata stored in form

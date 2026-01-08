@@ -1,81 +1,53 @@
-/**
- * API configuration
- */
-
 export const API_CONFIG = {
-  BASE_URL: process.env.NEXT_PUBLIC_API_URL,
-  TIMEOUT: Number(process.env.NEXT_PUBLIC_API_TIMEOUT) || 30000,
+  BASE_URL: "/api",
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000,
-  USE_MOCK: false, // Force disable usage of mock API
-} as const;
+  TIMEOUT: 30000,
+};
 
 export const API_ENDPOINTS = {
-  // Auth
-  LOGIN: "/auth/login",
-  LOGOUT: "/auth/logout",
-  REFRESH: "/auth/refresh",
+  AUTH_LOGIN: "/auth/login",
+  AUTH_LOGOUT: "/auth/logout",
+  AUTH_ME: "/auth/me",
 
-  // Service Centers
-  SERVICE_CENTERS: "/service-centers",
-  SERVICE_CENTER: (id: string) => `/service-centers/${id}`,
-
-  // Users
   USERS: "/users",
   USER: (id: string) => `/users/${id}`,
 
-  // Customers
-  CUSTOMERS: "/customers",
-  CUSTOMER: (id: string) => `/customers/${id}`,
-  CUSTOMER_SEARCH: "/customers/search",
-  CUSTOMER_RECENT: "/customers/recent",
+  SERVICE_CENTERS: "/service-centers",
+  SERVICE_CENTER: (id: string) => `/service-centers/${id}`,
 
-  // Vehicles
-  VEHICLES: "/vehicles",
-  VEHICLE: (id: string) => `/vehicles/${id}`,
-  VEHICLE_SEARCH: "/vehicles/search",
-
-  // Job Cards
-  JOB_CARDS: "/job-cards",
-  JOB_CARD: (id: string) => `/job-cards/${id}`,
-  JOB_CARD_PASS_TO_MANAGER: (id: string) => `/job-cards/${id}/pass-to-manager`,
-  JOB_CARD_MANAGER_REVIEW: (id: string) => `/job-cards/${id}/manager-review`,
-  JOB_CARD_CONVERT_TO_ACTUAL: (id: string) => `/job-cards/${id}/convert-to-actual`,
-
-
-
-  // Inventory
-  INVENTORY: "/inventory",
-  INVENTORY_ITEM: (id: string) => `/inventory/${id}`,
-  PARTS_ISSUES: "/parts-issues",
-
-  // Invoices
-  INVOICES: "/invoices",
-  INVOICE: (id: string) => `/invoices/${id}`,
-
-  // Appointments
   APPOINTMENTS: "/appointments",
   APPOINTMENT: (id: string) => `/appointments/${id}`,
 
-  // Quotations (Fixed to match Backend)
+  JOB_CARDS: "/job-cards",
+  JOB_CARD: (id: string) => `/job-cards/${id}`,
+
   QUOTATIONS: "/quotations",
   QUOTATION: (id: string) => `/quotations/${id}`,
-  QUOTATION_PASS_TO_MANAGER: (id: string) => `/quotations/${id}/pass-to-manager`,
-  QUOTATION_STATUS: (id: string) => `/quotations/${id}/status`,
 
-  // Files
-  FILES_UPLOAD: "/files/upload",
-  FILES: "/files",
+  INVOICES: "/invoices",
+  INVOICE: (id: string) => `/invoices/${id}`,
 
-
-
-
-
-  // Leads (NOT IMPLEMENTED IN BACKEND)
-  // Leads
   LEADS: "/leads",
   LEAD: (id: string) => `/leads/${id}`,
 
+  INVENTORY: "/inventory",
+  INVENTORY_PARTS: "/inventory/parts",
+  INVENTORY_PART: (id: string) => `/inventory/parts/${id}`,
 
-} as const;
+  PARTS_REQUESTS: "/parts-requests",
+  PARTS_REQUEST: (id: string) => `/parts-requests/${id}`,
 
+  PARTS_ISSUES: "/parts-issues",
+  PARTS_ISSUE: (id: string) => `/parts-issues/${id}`,
+
+  FILES: "/files",
+  FILES_UPLOAD: "/files/upload",
+
+  SERVICE_REQUESTS: "/service-requests",
+  SERVICE_REQUEST: (id: string) => `/service-requests/${id}`,
+};
+
+export function getApiUrl(path: string): string {
+  return `${API_CONFIG.BASE_URL}${path}`;
+}

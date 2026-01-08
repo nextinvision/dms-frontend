@@ -42,6 +42,8 @@ class ApiClient {
 
     let url: string;
 
+    console.log('[API Client] Building URL with baseURL:', this.baseURL);
+
     // ✅ Absolute base URL (http / https)
     if (this.baseURL.startsWith('http')) {
         const cleanBaseUrl = this.baseURL.replace(/\/$/, '');
@@ -74,6 +76,7 @@ class ApiClient {
         }
     }
 
+    console.log('[API Client] Final URL:', url);
     return url;
 }
 

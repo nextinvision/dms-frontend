@@ -38,6 +38,15 @@ const nextConfig = {
     // Allow build to succeed even with lint errors (for migration)
     ignoreDuringBuilds: true,
   },
+
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:3001/api/:path*',
+      },
+    ]
+  },
 };
 
 export default nextConfig;

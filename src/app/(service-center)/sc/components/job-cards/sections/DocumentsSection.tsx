@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { Camera, FileText, ImageIcon, Trash2, Upload } from 'lucide-react';
 import Image from 'next/image';
 import { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
-import { useCloudinaryUploadWithMetadata } from "@/shared/hooks/useCloudinaryUploadWithMetadata";
+import { useUpload } from "@/shared/hooks/useUpload";
 import { FileCategory, RelatedEntityType } from "@/services/files/types";
 import { DocumentationFiles } from "@/shared/types/documentation.types";
 
@@ -19,7 +19,7 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     jobCardId,
     userId,
 }) => {
-    const { uploadMultipleWithMetadata } = useCloudinaryUploadWithMetadata();
+    const { uploadMultiple } = useUpload();
 
     // Mapping form fields to File Categories
     const getCategoryForField = (field: keyof CreateJobCardForm): FileCategory => {
@@ -42,12 +42,8 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
         try {
             console.log(`📤 Uploading ${files.length} files for ${field} with entityId: ${entityId}`);
-            const result = await uploadMultipleWithMetadata(files, {
+            const result = await uploadMultiple(files, {
                 folder: 'job-cards',
-                category,
-                entityId,
-                entityType: RelatedEntityType.JOB_CARD,
-                uploadedBy: userId,
             });
 
             if (result) {
@@ -55,9 +51,9 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 const newMetadata = result.map(f => ({
                     url: f.url,
                     publicId: f.publicId,
-                    filename: f.filename,
-                    fileId: f.id || "",
-                    id: f.id,
+                    filename: f.publicId,
+                    fileId: f.publicId || "",
+                    id: f.publicId,
                     secureUrl: f.url,
                     resourceType: f.format && ['jpg', 'jpeg', 'png', 'webp'].includes(f.format) ? 'image' : 'raw',
                     format: f.format,
@@ -69,14 +65,13 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 }));
 
                 const newUrls = result.map(f => f.url);
-                const newPublicIds = result.map(f => f.publicId);
 
                 // Merge with existing
                 const currentDoc = form[field] as DocumentationFiles || { urls: [], publicIds: [], metadata: [] };
 
                 const newDoc: DocumentationFiles = {
                     urls: [...(currentDoc.urls || []), ...newUrls],
-                    publicIds: [...(currentDoc.publicIds || []), ...newPublicIds],
+                    publicIds: [],
                     metadata: [...(currentDoc.metadata || []), ...newMetadata],
                 };
 
@@ -92,9 +87,6 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         const currentDoc = form[field] as DocumentationFiles;
         if (!currentDoc) return;
 
-        const metadata = currentDoc.metadata?.[index];
-        const fileId = metadata?.fileId || (metadata as any)?.id;
-
         // Optimistic update
         const newDoc: DocumentationFiles = {
             urls: currentDoc.urls.filter((_, i) => i !== index),
@@ -102,17 +94,6 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             metadata: currentDoc.metadata?.filter((_, i) => i !== index) || [],
         };
         updateField(field, newDoc);
-
-        // Delete from backend if we have a file ID
-        if (fileId) {
-            try {
-                const { deleteFile } = await import("@/services/cloudinary/fileMetadata.service");
-                await deleteFile(fileId);
-                console.log(`✅ Successfully deleted file: ${fileId}`);
-            } catch (error) {
-                console.error('Failed to delete file from backend:', error);
-            }
-        }
     };
 
     return (

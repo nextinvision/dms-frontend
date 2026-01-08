@@ -2,10 +2,7 @@
 import { useState, useCallback } from "react";
 import { Upload, X, Image as ImageIcon } from "lucide-react";
 import type { CheckInSlipFormData } from "@/shared/types/check-in-slip.types";
-import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
-import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
-import { saveFileMetadata } from "@/services/files/fileMetadata.service";
-import { FileCategory, RelatedEntityType } from "@/services/files/types";
+import { useUpload } from "@/shared/hooks/useUpload";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 interface VehicleConditionSectionProps {

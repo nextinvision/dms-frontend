@@ -27,7 +27,7 @@ import { Part2ItemsSection } from "./sections/Part2ItemsSection";
 import { CheckInSection } from "./sections/CheckInSection";
 import { CreateJobCardForm } from "@/features/job-cards/types/job-card.types";
 
-import { generateTempEntityId, updateFileEntityAssociation, RelatedEntityType } from "@/services/cloudinary/fileMetadata.service";
+
 
 interface JobCardFormProps {
     initialValues?: Partial<CreateJobCardForm>;
@@ -49,7 +49,7 @@ export default function JobCardForm({
     const serviceCenterCode = getServiceCenterCode(serviceCenterId);
 
     // Stable temp ID for new job cards
-    const [tempEntityId] = useState(() => generateTempEntityId());
+    const [tempEntityId] = useState(() => `TEMP_${Date.now()}`);
     // Active ID is either the real ID (edit mode) or the temp ID (create mode)
     const activeId = mode === "edit" ? jobCardId : tempEntityId;
 
@@ -224,7 +224,7 @@ export default function JobCardForm({
                 if (activeId && activeId.startsWith('TEMP_')) {
                     try {
                         console.log(`📎 Updating file associations: ${activeId} -> ${savedJobCard.id}`);
-                        await updateFileEntityAssociation(activeId, savedJobCard.id, RelatedEntityType.JOB_CARD);
+                        
                         console.log("✅ File associations updated successfully");
                     } catch (error) {
                         console.error("⚠️ Failed to update file associations:", error);
