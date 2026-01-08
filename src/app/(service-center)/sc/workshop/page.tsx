@@ -8,7 +8,6 @@ import {
   CheckCircle,
   Search,
   Filter,
-  Eye,
   UserPlus,
   AlertTriangle,
   User,
@@ -18,6 +17,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import type { Engineer, WorkshopStats, EngineerStatus, Workload, Priority, JobCard, JobCardStatus } from "@/shared/types";
+import { useToast } from "@/shared/utils/toast.util";
 // import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 const safeStorage = {
@@ -53,6 +53,7 @@ const defaultEngineers: Engineer[] = [];
 
 
 export default function Workshop() {
+  const { showSuccess, showWarning } = useToast();
   const [selectedEngineer, setSelectedEngineer] = useState<Engineer | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -154,7 +155,7 @@ export default function Workshop() {
 
   const handleAssignEngineer = () => {
     if (!selectedJobForAction || !selectedEngineerForAssign) {
-      alert("Please select a job and engineer");
+      showWarning("Please select a job and engineer");
       return;
     }
     const engineerName = engineers.find((e) => e.id.toString() === selectedEngineerForAssign)?.name || null;
@@ -168,12 +169,12 @@ export default function Workshop() {
     setShowAssignModal(false);
     setSelectedJobForAction(null);
     setSelectedEngineerForAssign("");
-    alert("Engineer assigned successfully!");
+    showSuccess("Engineer assigned successfully!");
   };
 
   const handleCompleteJob = () => {
     if (!selectedJobForAction) {
-      alert("Please select a job to complete");
+      showWarning("Please select a job to complete");
       return;
     }
     const updatedJobs = jobCards.map((job) =>
@@ -207,7 +208,7 @@ export default function Workshop() {
 
     setShowCompleteModal(false);
     setSelectedJobForAction(null);
-    alert("Job marked as completed!");
+    showSuccess("Job marked as completed!");
   };
 
   const getStatusColor = (status: JobCardStatus): string => {
@@ -396,10 +397,10 @@ export default function Workshop() {
                             )}
                             {(hasVehicle || hasRegistration) && (
                               <p className="text-sm text-gray-600 mt-1">
-                                {hasVehicle && hasRegistration 
+                                {hasVehicle && hasRegistration
                                   ? `${job.vehicle} • ${job.registration}`
-                                  : hasVehicle 
-                                    ? job.vehicle 
+                                  : hasVehicle
+                                    ? job.vehicle
                                     : job.registration}
                               </p>
                             )}
@@ -574,7 +575,7 @@ export default function Workshop() {
                 <button
                   onClick={() => {
                     if (activeJobCards.length === 0) {
-                      alert("No active jobs available");
+                      showWarning("No active jobs available");
                       return;
                     }
                     setShowAssignModal(true);
@@ -587,7 +588,7 @@ export default function Workshop() {
                 <button
                   onClick={() => {
                     if (activeJobCards.length === 0) {
-                      alert("No active jobs available");
+                      showWarning("No active jobs available");
                       return;
                     }
                     setShowCompleteModal(true);

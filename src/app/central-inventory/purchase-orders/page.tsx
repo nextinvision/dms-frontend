@@ -23,7 +23,7 @@ import {
   calculateRemainingQuantity,
   hasClosedSubPo
 } from "@/shared/utils/po-fulfillment.utils";
-import type { PurchaseOrder } from "@/shared/types/central-inventory.types";
+import type { PurchaseOrder, PurchaseOrderItem } from "@/shared/types/central-inventory.types";
 
 type FilterStatus = "all" | "pending" | "approved" | "rejected" | "not_fully_fulfilled" | "fulfilled";
 
@@ -76,7 +76,7 @@ export default function PurchaseOrdersPage() {
             // Try to match by items - if all PO items can be found in a parts issue, consider it related
             relatedIssues = serviceCenterIssues.filter(issue => {
               let matchedItems = 0;
-              po.items.forEach(poItem => {
+              po.items.forEach((poItem: PurchaseOrderItem) => {
                 const foundInIssue = issue.items.some(issueItem => {
                   // Try to match the item
                   return (
@@ -107,7 +107,7 @@ export default function PurchaseOrdersPage() {
             issue.items.forEach(issueItem => {
               if (hasClosedSubPo(issueItem)) {
                 // Find matching PO item to mark it as having closed sub-PO
-                const poItem = po.items.find(item => {
+                const poItem = po.items.find((item: PurchaseOrderItem) => {
                   return (
                     (item.centralInventoryPartId && issueItem.partId && item.centralInventoryPartId === issueItem.partId) ||
                     (item.partId && issueItem.partId && item.partId === issueItem.partId) ||
@@ -130,7 +130,7 @@ export default function PurchaseOrdersPage() {
           let partiallyFulfilledCount = 0;
           let itemsWithClosedSubPo = 0;
 
-          po.items.forEach(item => {
+          po.items.forEach((item: PurchaseOrderItem) => {
             const requestedQty = Number(item.requestedQty || item.quantity || 0);
             const issuedQty = Number(itemIssuedQty.get(item.id) || 0);
             const remainingQty = calculateRemainingQuantity(requestedQty, issuedQty);
@@ -181,7 +181,7 @@ export default function PurchaseOrdersPage() {
             fulfillmentStatus = "not_fulfilled";
           } else {
             // Check each item individually
-            const allItemsFullyIssued = po.items.every(item => {
+            const allItemsFullyIssued = po.items.every((item: PurchaseOrderItem) => {
               const requestedQty = Number(item.requestedQty || item.quantity || 0);
               const issuedQty = Number(itemIssuedQty.get(item.id) || 0);
               // Item is fully fulfilled if requestedQty > 0 and issuedQty >= requestedQty (within tolerance)
@@ -274,7 +274,7 @@ export default function PurchaseOrdersPage() {
           po.serviceCenterState?.toLowerCase().includes(query) ||
           po.serviceCenterAddress?.toLowerCase().includes(query) ||
           po.requestedBy.toLowerCase().includes(query) ||
-          po.items.some((item) => item.partName.toLowerCase().includes(query))
+          po.items.some((item) => item.partName?.toLowerCase().includes(query))
       );
     }
 
@@ -378,8 +378,8 @@ export default function PurchaseOrdersPage() {
                     key={filter.key}
                     onClick={() => setStatusFilter(filter.key as FilterStatus)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${statusFilter === filter.key
-                        ? "bg-blue-50 border-blue-300 text-blue-700"
-                        : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                      ? "bg-blue-50 border-blue-300 text-blue-700"
+                      : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
                       }`}
                   >
                     <filter.icon className="w-4 h-4" />

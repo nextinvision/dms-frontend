@@ -7,6 +7,7 @@ export type HomeServiceFilterType = "all" | "scheduled" | "in_progress" | "compl
 
 export interface HomeService {
   id: string;
+  serviceNumber?: string;
   customerName: string;
   phone: string;
   vehicle: string;
