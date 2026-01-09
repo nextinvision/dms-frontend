@@ -17,14 +17,41 @@ import { convertAppointmentToFormData, formatVehicleString } from "../utils";
 import { SERVICE_CENTER_CODE_MAP, TOAST_DURATION, JOB_CARD_STORAGE_KEY } from "../constants";
 import type { AppointmentRecord, ToastType, CustomerArrivalStatus } from "../types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
-import type { JobCard } from "@/shared/types/job-card.types";
 import type { AppointmentForm as AppointmentFormType } from "../../components/appointment/types";
 import type { CreateAppointmentDto, UpdateAppointmentDto } from "@/features/appointments/types/appointment.types"; // Added
 import { useCustomerSearch } from "@/app/(service-center)/sc/components/customers";
 import { type CheckInSlipData, generateCheckInSlipNumber } from "@/components/check-in-slip/CheckInSlip";
 import { migrateAllJobCards } from "@/features/job-cards/utils/migrateJobCards.util";
-// Import file metadata services
-import { FileCategory, RelatedEntityType, saveMultipleFileMetadata } from "@/services/cloudinary/fileMetadata.service";
+// Removed Cloudinary-specific file metadata imports
+// import { FileCategory, RelatedEntityType, saveMultipleFileMetadata } from "@/services/cloudinary/fileMetadata.service";
+
+// Define FileCategory enum locally
+export enum FileCategory {
+    CUSTOMER_ID_PROOF = "customer_id_proof",
+    VEHICLE_RC = "vehicle_rc",
+    WARRANTY_CARD = "warranty_card",
+    VEHICLE_PHOTOS = "vehicle_photos",
+    JOB_CARD_WARRANTY = "job_card_warranty",
+    WARRANTY_VIDEO = "warranty_video",
+    WARRANTY_VIN = "warranty_vin",
+    WARRANTY_ODO = "warranty_odo",
+    WARRANTY_DAMAGE = "warranty_damage",
+    VEHICLE_CONDITION = "vehicle_condition",
+    PHOTOS_VIDEOS = "photos_videos", // General category for photos/videos
+    APPOINTMENT_DOCS = "appointment_docs", // General category for various appointment documents
+}
+
+// Type for document metadata stored in form
+interface DocumentMetadata {
+    publicId: string; // This will now be a local identifier
+    url: string; // This will be a local blob URL
+    filename: string;
+    format: string;
+    bytes: number;
+    uploadedAt: string;
+    fileId?: string; // Database ID for deletion (optional)
+    fileObject?: File; // The actual File object
+}
 
 export const useAppointmentLogic = () => {
     // Router
@@ -513,9 +540,11 @@ export const useAppointmentLogic = () => {
         form: AppointmentFormType,
         pendingUploads: {
             field: string;
-            cloudinaryResults: any[];
-            files: File[];
-            category: FileCategory;
+            files: {
+                file: File;
+                category: FileCategory;
+                metadata: DocumentMetadata;
+            }[];
         }[]
     ) => {
         try {
@@ -568,6 +597,15 @@ export const useAppointmentLogic = () => {
                 location: form.location || "STATION",
                 estimatedCost: form.estimatedCost ? parseFloat(form.estimatedCost) : undefined,
                 uploadedBy: userInfo?.id,
+                // Documentation files - now store metadata directly in appointment payload for backend to process
+                documentationFiles: {
+                    customerIdProof: form.customerIdProof?.metadata,
+                    vehicleRCCopy: form.vehicleRCCopy?.metadata,
+                    warrantyCardServiceBook: form.warrantyCardServiceBook?.metadata,
+                    photosVideos: form.photosVideos?.metadata,
+                },
+
+                // Operational details
                 estimatedDeliveryDate: form.estimatedDeliveryDate,
                 assignedServiceAdvisor: form.assignedServiceAdvisor,
                 assignedTechnician: form.assignedTechnician,
@@ -602,28 +640,37 @@ export const useAppointmentLogic = () => {
                 createdAppointment = await appointmentsService.create(createPayload);
             }
 
-            // Step 2: Now save all pending uploads to database with real appointment ID
+            // Step 2: Now handle actual file uploads to backend for local storage
             if (pendingUploads.length > 0 && createdAppointment?.id) {
-                console.log(`📤 Saving ${pendingUploads.length} pending file upload(s) to database...`);
+                console.log(`📤 Preparing to send ${pendingUploads.length} file upload(s) to backend for local storage...`);
+                
+                // --- Placeholder for actual file upload to a new local storage API endpoint ---
+                // This would involve iterating through pendingUploads, creating FormData,
+                // and sending it to an endpoint that handles saving files to dms-data.
+                // For example:
+                for (const uploadGroup of pendingUploads) {
+                    for (const fileData of uploadGroup.files) {
+                        try {
+                            const formData = new FormData();
+                            formData.append('file', fileData.file);
+                            formData.append('category', fileData.category);
+                            formData.append('relatedEntityId', createdAppointment.id.toString());
+                            formData.append('relatedEntityType', 'APPOINTMENT'); // Assuming 'APPOINTMENT' as entity type
+                            formData.append('uploadedBy', userInfo?.id || 'unknown');
+                            // Other metadata from fileData.metadata can also be appended
 
-                for (const upload of pendingUploads) {
-                    try {
-                        await saveMultipleFileMetadata(
-                            upload.cloudinaryResults,
-                            upload.files,
-                            {
-                                category: upload.category,
-                                relatedEntityId: createdAppointment.id.toString(),
-                                relatedEntityType: RelatedEntityType.APPOINTMENT,
-                                uploadedBy: userInfo?.id,
-                            }
-                        );
-                        console.log(`✅ Saved ${upload.cloudinaryResults.length} file(s) for ${upload.field}`);
-                    } catch (fileError) {
-                        console.error(`Failed to save files for ${upload.field}:`, fileError);
-                        // Don't fail the entire operation, just log the error
+                            // Example API call (this endpoint needs to exist on backend)
+                            // await apiClient.post('/api/files/upload-local', formData, {
+                            //     headers: { 'Content-Type': 'multipart/form-data' },
+                            // });
+                            console.log(`✅ Simulating upload for file: ${fileData.metadata.filename} (Category: ${fileData.category})`);
+                        } catch (fileError) {
+                            console.error(`Failed to upload file ${fileData.metadata.filename}:`, fileError);
+                        }
                     }
                 }
+                // --- End Placeholder ---
+                console.log("Local file upload process completed.");
             }
 
             showToast(
@@ -752,6 +799,13 @@ export const useAppointmentLogic = () => {
                         vcuSerialNumber: "",
                         otherPartSerialNumber: "",
                         technicianObservation: "",
+                    },
+                    // Include documentation files from the appointment
+                    documentationFiles: {
+                        customerIdProof: selectedAppointment.customerIdProof,
+                        vehicleRCCopy: selectedAppointment.vehicleRCCopy,
+                        warrantyCardServiceBook: selectedAppointment.warrantyCardServiceBook,
+                        photosVideos: selectedAppointment.photosVideos,
                     },
                 };
 

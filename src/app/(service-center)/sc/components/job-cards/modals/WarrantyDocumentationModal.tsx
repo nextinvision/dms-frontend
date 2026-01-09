@@ -2,8 +2,36 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Upload, Video, Image as ImageIcon, FileText, Trash2, CheckCircle2, AlertCircle, Eye } from "lucide-react";
-import { useUpload } from "@/shared/hooks/useUpload";
+import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs for local files
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
+
+// Define FileCategory enum as it was previously part of cloudinary context
+export enum FileCategory {
+  CUSTOMER_ID_PROOF = "customer_id_proof",
+  VEHICLE_RC = "vehicle_rc",
+  WARRANTY_CARD = "warranty_card",
+  VEHICLE_PHOTOS = "vehicle_photos",
+  JOB_CARD_WARRANTY = "job_card_warranty",
+  WARRANTY_VIDEO = "warranty_video",
+  WARRANTY_VIN = "warranty_vin",
+  WARRANTY_ODO = "warranty_odo",
+  WARRANTY_DAMAGE = "warranty_damage",
+  VEHICLE_CONDITION = "vehicle_condition",
+  PHOTOS_VIDEOS = "photos_videos", // General category for photos/videos
+  APPOINTMENT_DOCS = "appointment_docs", // General category for various appointment documents
+}
+
+// Type for document metadata stored in form
+interface DocumentMetadata {
+  publicId: string; // This will now be a local identifier, not Cloudinary publicId
+  url: string; // This will be a local blob URL or identifier, not Cloudinary URL
+  filename: string;
+  format: string;
+  bytes: number;
+  uploadedAt: string;
+  fileId?: string; // Database ID for deletion (optional string from FileMetadata)
+  fileObject?: File; // New field to store the actual File object
+}
 
 interface WarrantyDocumentationData {
     videoEvidence: string[];
@@ -15,7 +43,7 @@ interface WarrantyDocumentationData {
     symptom: string;
     defectPart: string;
     // Store full metadata for persistence tracking
-    fileMetadata?: Record<string, FileMetadata[]>;
+    fileMetadata?: Record<string, DocumentMetadata[]>;
 }
 
 interface WarrantyDocumentationModalProps {
@@ -23,9 +51,9 @@ interface WarrantyDocumentationModalProps {
     onClose: () => void;
     itemDescription: string;
     initialData?: WarrantyDocumentationData;
-    onSave: (data: WarrantyDocumentationData) => void;
+    onSave: (data: WarrantyDocumentationData, pendingFiles: Record<string, { file: File; category: FileCategory; metadata: DocumentMetadata }[]>) => void;
     mode?: "upload" | "view";
-    jobCardId?: string; // For Cloudinary folder organization
+    jobCardId?: string; // For folder organization
     itemIndex?: number; // For folder organization
     userId?: string; // User ID for file metadata
     customerId?: string;
@@ -45,7 +73,9 @@ export default function WarrantyDocumentationModal({
     customerId,
     vehicleId,
 }: WarrantyDocumentationModalProps) {
-    const { uploadMultipleWithMetadata, isUploading, progress } = useCloudinaryUploadWithMetadata();
+    // State to hold files that are pending upload to the backend
+    const [pendingUploads, setPendingUploads] = useState<Record<string, { file: File; category: FileCategory; metadata: DocumentMetadata }[]>>({});
+
     const [formData, setFormData] = useState<WarrantyDocumentationData>({
         videoEvidence: [],
         vinImage: [],
@@ -82,72 +112,62 @@ export default function WarrantyDocumentationModal({
             if (!files) return;
 
             const fileArray = Array.from(files);
+            const uploadBatchId = `local-warranty-${Date.now()}`;
 
-            // Determine folder and category based on field type
-            let folder: string;
             let category: FileCategory;
             switch (field) {
-                // ... (switch cases remain same)
                 case 'videoEvidence':
-                    folder = CLOUDINARY_FOLDERS.warrantyVideo(jobCardId, itemIndex);
                     category = FileCategory.WARRANTY_VIDEO;
                     break;
                 case 'vinImage':
-                    folder = CLOUDINARY_FOLDERS.warrantyVIN(jobCardId, itemIndex);
                     category = FileCategory.WARRANTY_VIN;
                     break;
                 case 'odoImage':
-                    folder = CLOUDINARY_FOLDERS.warrantyODO(jobCardId, itemIndex);
                     category = FileCategory.WARRANTY_ODO;
                     break;
                 case 'damageImages':
-                    folder = CLOUDINARY_FOLDERS.warrantyDamage(jobCardId, itemIndex);
                     category = FileCategory.WARRANTY_DAMAGE;
                     break;
                 default:
-                    folder = CLOUDINARY_FOLDERS.jobCardWarranty(jobCardId);
                     category = FileCategory.PHOTOS_VIDEOS;
             }
 
-            try {
-                // Upload files to Cloudinary AND save metadata to backend
-                const fileMetadatas = await uploadMultipleWithMetadata(fileArray, {
-                    folder,
+            const newFilesData: { file: File; category: FileCategory; metadata: DocumentMetadata }[] = fileArray.map(file => {
+                const publicId = `${uploadBatchId}-${file.name}-${uuidv4()}`; // Unique ID for local tracking
+                const url = URL.createObjectURL(file); // Create a local URL for immediate display
+
+                return {
+                    file,
                     category,
-                    entityId: jobCardId,
-                    entityType: RelatedEntityType.JOB_CARD,
-                    uploadedBy: userId,
-                    customerId, // explicit relation
-                    vehicleId,  // explicit relation
-                    cloudinaryOptions: {
-                        tags: [field, 'warranty', 'job-card'],
-                        context: {
-                            field,
-                            jobCardId,
-                            itemIndex: itemIndex.toString(),
-                            itemDescription,
-                        },
-                    },
-                });
-
-                // ... (rest of success logic)
-                const newUrls = fileMetadatas.map(result => result.url);
-                setFormData((prev) => ({
-                    ...prev,
-                    [field]: [...(prev[field] || []), ...newUrls],
-                    fileMetadata: {
-                        ...(prev.fileMetadata || {}),
-                        [field]: [...(prev.fileMetadata?.[field] || []), ...fileMetadatas],
+                    metadata: {
+                        publicId: publicId,
+                        url: url,
+                        filename: file.name,
+                        format: file.type.split('/').pop() || 'unknown',
+                        bytes: file.size,
+                        uploadedAt: new Date().toISOString(),
+                        fileObject: file, // Store the actual File object
                     }
-                }));
+                };
+            });
 
-                console.log(`✅ Successfully uploaded and saved ${fileMetadatas.length} files for ${field}`);
-            } catch (err) {
-                console.error('Upload failed:', err);
-                alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
-            }
+            setPendingUploads(prev => ({
+                ...prev,
+                [field]: [...(prev[field] || []), ...newFilesData],
+            }));
+
+            setFormData((prev) => ({
+                ...prev,
+                [field]: [...(prev[field] || []), ...newFilesData.map(data => data.metadata.url)],
+                fileMetadata: {
+                    ...(prev.fileMetadata || {}),
+                    [field]: [...(prev.fileMetadata?.[field] || []), ...newFilesData.map(data => data.metadata)],
+                }
+            }));
+
+            console.log(`✅ Successfully queued ${newFilesData.length} files for local storage for ${field}`);
         },
-        [jobCardId, itemIndex, itemDescription, uploadMultipleWithMetadata, userId, customerId, vehicleId]
+        []
     );
 
     const handleRemoveFile = useCallback(
@@ -155,10 +175,11 @@ export default function WarrantyDocumentationModal({
             field: keyof Pick<WarrantyDocumentationData, "videoEvidence" | "vinImage" | "odoImage" | "damageImages">,
             index: number
         ) => {
-            const fileMetadata = formData.fileMetadata?.[field]?.[index];
-            const fileUrl = formData[field][index];
+            const currentMetadata = formData.fileMetadata?.[field];
+            if (currentMetadata && currentMetadata[index]?.url) {
+                URL.revokeObjectURL(currentMetadata[index].url);
+            }
 
-            // Optimistic update
             setFormData((prev) => ({
                 ...prev,
                 [field]: prev[field].filter((_, i) => i !== index),
@@ -168,22 +189,30 @@ export default function WarrantyDocumentationModal({
                 }
             }));
 
-            // Delete from backend if we have a file ID
-            if (fileMetadata?.id) {
-                try {
-                    await deleteFile(fileMetadata.id);
-                    console.log(`✅ Successfully deleted file: ${fileMetadata.id}`);
-                } catch (error) {
-                    console.error('Failed to delete file from backend:', error);
-                    // Optionally revert optimistic update
+            setPendingUploads(prev => {
+                if (!prev[field]) return prev;
+                const newFiles = prev[field].filter((_, i) => i !== index);
+                if (newFiles.length === 0) {
+                    const { [field]: _, ...rest } = prev;
+                    return rest;
                 }
-            }
+                return {
+                    ...prev,
+                    [field]: newFiles,
+                };
+            });
+
+            console.log(`✅ Removed file from local queue for ${field}`);
         },
         [formData]
     );
 
     const handleSave = () => {
-        onSave(formData);
+        const finalPendingFiles: { file: File; category: FileCategory; metadata: DocumentMetadata }[] = [];
+        Object.values(pendingUploads).forEach(fileList => {
+            fileList.forEach(fileData => finalPendingFiles.push(fileData));
+        });
+        onSave(formData, finalPendingFiles);
         onClose();
     };
 
@@ -335,7 +364,7 @@ export default function WarrantyDocumentationModal({
                                                             />
                                                         ) : (
                                                             <img
-                                                                src={optimizeCloudinaryUrl(url, 300, 300, 'fill')}
+                                                                src={url}
                                                                 alt={`${section.label} ${index + 1}`}
                                                                 className="w-full h-full object-cover rounded-lg border border-gray-200"
                                                             />

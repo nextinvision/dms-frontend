@@ -382,7 +382,7 @@ export default function JobCardFormModal({
             rate: isWarranty ? 0 : preGstRate,
             gstPercent: item.gstPercent || 18,
             amount: isWarranty ? 0 : lineAmountInclGst,
-            partWarrantyTag: isWarranty,
+            // partWarrantyTag: isWarranty, // Removed as it's not expected in quotation items
           };
         });
 

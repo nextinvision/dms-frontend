@@ -431,26 +431,10 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
       // This is a limitation - we need these IDs to be available
 
       // For job card invoices, we should have this data from the populated invoice
-      let customerId: string | undefined;
-      let vehicleId: string | undefined;
-      let jobCardIdUUID: string | undefined;
 
-      // If creating from job card, try to get from the query params
-      const createFromJobCardId = searchParams?.get("createFromJobCard");
-      if (createFromJobCardId) {
-        // Fetch the job card to get customer and vehicle IDs
-        const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
-        const jobCard = await jobCardService.getById(createFromJobCardId);
-
-        if (jobCard) {
-          customerId = jobCard.customerId;
-          vehicleId = jobCard.vehicleId;
-          jobCardIdUUID = jobCard.id;
-        }
-      }
 
       // If we still don't have the IDs, we can't proceed
-      if (!customerId || !vehicleId) {
+      if (!invoiceForm.customerId || !invoiceForm.vehicleId) {
         alert("Missing customer or vehicle information. Please ensure you have selected a customer and vehicle.");
         return;
       }
@@ -469,10 +453,10 @@ ${totalTax > 0 ? `Tax: ₹${totalTax.toLocaleString("en-IN", { minimumFractionDi
       // Prepare DTO for backend
       const createInvoiceDto = {
         serviceCenterId: contextServiceCenterId,
-        customerId: customerId,
-        vehicleId: vehicleId,
-        jobCardId: jobCardIdUUID,
-        invoiceType: jobCardIdUUID ? 'JOB_CARD' : 'OTC_ORDER' as any,
+        customerId: invoiceForm.customerId,
+        vehicleId: invoiceForm.vehicleId,
+        jobCardId: invoiceForm.jobCardId,
+        invoiceType: invoiceForm.jobCardId ? 'JOB_CARD' : 'OTC_ORDER' as any,
         items: backendItems,
         placeOfSupply: invoiceForm.placeOfSupply || invoiceForm.customerState || undefined,
       };

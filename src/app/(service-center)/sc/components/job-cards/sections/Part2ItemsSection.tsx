@@ -3,14 +3,37 @@ import { Plus, Edit2, Trash2, Upload, Eye, ArrowRight, Loader2 } from 'lucide-re
 import { CreateJobCardForm, JobCardPart2Item } from "@/features/job-cards/types/job-card.types";
 import { extractPartCode, extractPartName, extractLabourCode, generateSrNoForPart2Items } from "@/features/job-cards/utils/jobCardUtils";
 import WarrantyDocumentationModal from "../modals/WarrantyDocumentationModal";
-import { useCloudinaryUpload } from "@/shared/hooks/useCloudinaryUpload";
-import { CLOUDINARY_FOLDERS } from "@/services/cloudinary/folderStructure";
-import { saveFileMetadata } from "@/services/files/fileMetadata.service";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { apiClient } from "@/core/api/client";
 import type { Part } from "@/features/inventory/types/inventory.types";
 
-import { FileMetadata, FileCategory, RelatedEntityType } from "@/services/cloudinary/fileMetadata.service";
+// Define FileCategory enum locally
+export enum FileCategory {
+    CUSTOMER_ID_PROOF = "customer_id_proof",
+    VEHICLE_RC = "vehicle_rc",
+    WARRANTY_CARD = "warranty_card",
+    VEHICLE_PHOTOS = "vehicle_photos",
+    JOB_CARD_WARRANTY = "job_card_warranty",
+    WARRANTY_VIDEO = "warranty_video",
+    WARRANTY_VIN = "warranty_vin",
+    WARRANTY_ODO = "warranty_odo",
+    WARRANTY_DAMAGE = "warranty_damage",
+    VEHICLE_CONDITION = "vehicle_condition",
+    PHOTOS_VIDEOS = "photos_videos", // General category for photos/videos
+    APPOINTMENT_DOCS = "appointment_docs", // General category for various appointment documents
+}
+
+// Type for document metadata stored in form
+interface DocumentMetadata {
+    publicId: string; // This will now be a local identifier, not Cloudinary publicId
+    url: string; // This will be a local blob URL or identifier, not Cloudinary URL
+    filename: string;
+    format: string;
+    bytes: number;
+    uploadedAt: string;
+    fileId?: string; // Database ID for deletion (optional string from FileMetadata)
+    fileObject?: File; // New field to store the actual File object
+}
 
 interface WarrantyDocumentationData {
     videoEvidence: string[];
@@ -21,7 +44,8 @@ interface WarrantyDocumentationData {
     numberOfObservations: string;
     symptom: string;
     defectPart: string;
-    fileMetadata?: Record<string, FileMetadata[]>;
+    // Store full metadata for persistence tracking
+    fileMetadata?: Record<string, DocumentMetadata[]>;
 }
 
 interface Part2ItemsSectionProps {
@@ -139,52 +163,41 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                 // Re-construct metadata if available
                 fileMetadata: {
                     videoEvidence: (form.videoEvidence?.metadata || []).map(m => ({
-                        id: m.fileId,
                         url: m.url,
                         publicId: m.publicId,
                         filename: m.filename,
                         format: m.format,
                         bytes: m.bytes,
-                        category: FileCategory.WARRANTY_VIDEO,
-                        relatedEntityId: jobCardId,
-                        relatedEntityType: RelatedEntityType.JOB_CARD,
-                        metadata: { uploadedAt: m.uploadedAt }
+                        uploadedAt: m.uploadedAt,
+                        fileId: m.fileId, // Keep if it's coming from DB
+                        // category and fileObject are not stored in form data directly, but determined on upload
                     })),
                     vinImage: (form.vinImage?.metadata || []).map(m => ({
-                        id: m.fileId,
                         url: m.url,
                         publicId: m.publicId,
                         filename: m.filename,
                         format: m.format,
                         bytes: m.bytes,
-                        category: FileCategory.WARRANTY_VIN,
-                        relatedEntityId: jobCardId,
-                        relatedEntityType: RelatedEntityType.JOB_CARD,
-                        metadata: { uploadedAt: m.uploadedAt }
+                        uploadedAt: m.uploadedAt,
+                        fileId: m.fileId, // Keep if it's coming from DB
                     })),
                     odoImage: (form.odoImage?.metadata || []).map(m => ({
-                        id: m.fileId,
                         url: m.url,
                         publicId: m.publicId,
                         filename: m.filename,
                         format: m.format,
                         bytes: m.bytes,
-                        category: FileCategory.WARRANTY_ODO,
-                        relatedEntityId: jobCardId,
-                        relatedEntityType: RelatedEntityType.JOB_CARD,
-                        metadata: { uploadedAt: m.uploadedAt }
+                        uploadedAt: m.uploadedAt,
+                        fileId: m.fileId, // Keep if it's coming from DB
                     })),
                     damageImages: (form.damageImages?.metadata || []).map(m => ({
-                        id: m.fileId,
                         url: m.url,
                         publicId: m.publicId,
                         filename: m.filename,
                         format: m.format,
                         bytes: m.bytes,
-                        category: FileCategory.WARRANTY_DAMAGE,
-                        relatedEntityId: jobCardId,
-                        relatedEntityType: RelatedEntityType.JOB_CARD,
-                        metadata: { uploadedAt: m.uploadedAt }
+                        uploadedAt: m.uploadedAt,
+                        fileId: m.fileId, // Keep if it's coming from DB
                     })),
                 }
             };
@@ -274,16 +287,16 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
                 if (metadatas.length === 0) return { urls: [], publicIds: [], metadata: [] };
 
                 return {
-                    urls: metadatas.map((m: any) => m.url),
-                    publicIds: metadatas.map((m: any) => m.publicId),
-                    metadata: metadatas.map((m: any) => ({
+                    urls: metadatas.map((m: DocumentMetadata) => m.url),
+                    publicIds: metadatas.map((m: DocumentMetadata) => m.publicId),
+                    metadata: metadatas.map((m: DocumentMetadata) => ({
                         url: m.url,
                         publicId: m.publicId,
                         filename: m.filename,
                         format: m.format,
                         bytes: m.bytes,
-                        fileId: m.id || "",
-                        uploadedAt: new Date().toISOString()
+                        fileId: m.fileId || "",
+                        uploadedAt: m.uploadedAt
                     }))
                 };
             };

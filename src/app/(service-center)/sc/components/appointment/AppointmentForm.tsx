@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Image from "next/image";
+import { v4 as uuidv4 } from 'uuid';
 import {
   Calendar,
   Clock,
@@ -39,15 +40,33 @@ import { getInitialAppointmentForm, mapVehicleToFormData, mapCustomerToFormData 
 
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
+// Define FileCategory enum as it was previously part of cloudinary context
+export enum FileCategory {
+  CUSTOMER_ID_PROOF = "customer_id_proof",
+  VEHICLE_RC = "vehicle_rc",
+  WARRANTY_CARD = "warranty_card",
+  VEHICLE_PHOTOS = "vehicle_photos",
+  JOB_CARD_WARRANTY = "job_card_warranty",
+  WARRANTY_VIDEO = "warranty_video",
+  WARRANTY_VIN = "warranty_vin",
+  WARRANTY_ODO = "warranty_odo",
+  WARRANTY_DAMAGE = "warranty_damage",
+  VEHICLE_CONDITION = "vehicle_condition",
+  PHOTOS_VIDEOS = "photos_videos", // General category for photos/videos
+  APPOINTMENT_DOCS = "appointment_docs", // General category for various appointment documents
+}
+
 // Type for document metadata stored in form
 interface DocumentMetadata {
-  publicId: string;
-  url: string;
+  publicId: string; // This will now be a local identifier, not Cloudinary publicId
+  url: string; // This will be a local blob URL or identifier, not Cloudinary URL
   filename: string;
   format: string;
   bytes: number;
   uploadedAt: string;
   fileId?: string; // Database ID for deletion (optional string from FileMetadata)
+  // New field to store the actual File object
+  fileObject?: File;
 }
 
 export interface AppointmentFormProps {
@@ -69,9 +88,11 @@ export interface AppointmentFormProps {
   // Optional: if provided, this will be called with pending uploads
   onSubmitWithFiles?: (form: AppointmentFormType, pendingUploads: {
     field: string;
-    cloudinaryResults: any[];
-    files: File[];
-    category: FileCategory;
+    files: {
+      file: File;
+      category: FileCategory;
+      metadata: DocumentMetadata;
+    }[];
   }[]) => void;
 }
 
@@ -358,11 +379,13 @@ export const AppointmentForm = ({
     }
   }, [selectedCustomer, availableServiceCenters]);
 
-  // Store pending uploads (Cloudinary results not yet saved to database) - must be before handleSubmit
+  // Store pending uploads (File objects not yet saved to database) - must be before handleSubmit
   const [pendingUploads, setPendingUploads] = useState<Record<string, {
-    cloudinaryResults: any[];
-    files: File[];
-    category: FileCategory;
+    files: {
+      file: File;
+      category: FileCategory;
+      metadata: DocumentMetadata;
+    }[];
   }>>({});
 
   const handleSubmit = useCallback(() => {
@@ -447,9 +470,7 @@ export const AppointmentForm = ({
     // Convert pendingUploads to array format for parent
     const pendingUploadsArray = Object.entries(pendingUploads).map(([field, data]) => ({
       field,
-      cloudinaryResults: data.cloudinaryResults,
       files: data.files,
-      category: data.category,
     }));
 
     // If parent provided onSubmitWithFiles, call it with pending uploads
@@ -474,10 +495,6 @@ const updateFormData = useCallback((updates: Partial<AppointmentFormType>) => {
   }
 }, [fieldErrors]);
 
-// Document handlers with Cloudinary - Upload to Cloudinary only, save to DB after appointment creation
-const { uploadMultipleToCloudinaryOnly, uploadFileToCloudinaryOnly, isUploading: isUploadingFiles, progress } = useCloudinaryUploadWithMetadata();
-const [tempEntityId] = useState(() => generateTempEntityId());
-const [uploadQueueId, setUploadQueueId] = useState<string | null>(null);
 const [cameraDocumentType, setCameraDocumentType] = useState<"customerIdProof" | "vehicleRCCopy" | "warrantyCardServiceBook" | "photosVideos" | null>(null);
 const [cameraModalOpen, setCameraModalOpen] = useState(false);
 
@@ -487,83 +504,71 @@ const handleDocumentUpload = useCallback(
 
     const fileArray = Array.from(files);
 
-    // Determine folder and category based on field
-    let folder: string;
+    // Determine category based on field
     let category: FileCategory;
 
-    // Use temp entity ID for folder organization
-    const entityId = tempEntityId;
+    // Generate a unique ID for this batch of uploads if needed
+    const uploadBatchId = `local-upload-${Date.now()}`;
 
     switch (field) {
       case 'customerIdProof':
-        folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
         category = FileCategory.CUSTOMER_ID_PROOF;
         break;
       case 'vehicleRCCopy':
-        folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
         category = FileCategory.VEHICLE_RC;
         break;
       case 'photosVideos':
-        folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
         category = FileCategory.VEHICLE_PHOTOS;
         break;
       case 'warrantyCardServiceBook':
-        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
         category = FileCategory.WARRANTY_CARD;
         break;
       default:
-        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
         category = FileCategory.PHOTOS_VIDEOS;
     }
 
-    try {
-      // Upload files to Cloudinary ONLY (not to database yet)
-      const cloudinaryResults = await uploadMultipleToCloudinaryOnly(fileArray, folder, {
-        tags: [field, 'appointment'],
-        context: {
-          field,
-          appointmentId: entityId,
-        },
-      });
+    const newFilesData: { file: File; category: FileCategory; metadata: DocumentMetadata }[] = fileArray.map(file => {
+      const publicId = `${uploadBatchId}-${file.name}-${uuidv4()}`; // Unique ID for local tracking
+      const url = URL.createObjectURL(file); // Create a local URL for immediate display
 
-      // Store results in pending uploads
-      setPendingUploads(prev => ({
-        ...prev,
-        [field]: {
-          cloudinaryResults,
-          files: fileArray,
-          category,
+      return {
+        file,
+        category,
+        metadata: {
+          publicId: publicId,
+          url: url,
+          filename: file.name,
+          format: file.type.split('/').pop() || 'unknown',
+          bytes: file.size,
+          uploadedAt: new Date().toISOString(),
+          fileObject: file, // Store the actual File object
         }
-      }));
+      };
+    });
 
-      // Also update form data for display purposes
-      const existingMetadata = formData[field]?.metadata || [];
+    // Store results in pending uploads
+    setPendingUploads(prev => ({
+      ...prev,
+      [field]: {
+        files: [...(prev[field]?.files || []), ...newFilesData],
+      }
+    }));
 
-      updateFormData({
-        [field]: {
-          urls: cloudinaryResults.map(r => r.secureUrl),
-          publicIds: cloudinaryResults.map(r => r.publicId),
-          metadata: [
-            ...(formData[field]?.metadata || [] as DocumentMetadata[]),
-            ...cloudinaryResults.map(r => ({
-              publicId: r.publicId,
-              url: r.secureUrl,
-              format: r.format,
-              bytes: r.bytes,
-              uploadedAt: new Date().toISOString(),
-              // Note: No fileId yet since not saved to DB
-            } as DocumentMetadata)),
-          ] as DocumentMetadata[],
-        },
-      });
+    // Also update form data for display purposes
+    updateFormData({
+      [field]: {
+        urls: [...(formData[field]?.urls || []), ...newFilesData.map(data => data.metadata.url)],
+        publicIds: [...(formData[field]?.publicIds || []), ...newFilesData.map(data => data.metadata.publicId)],
+        metadata: [
+          ...(formData[field]?.metadata || [] as DocumentMetadata[]),
+          ...newFilesData.map(data => data.metadata),
+        ] as DocumentMetadata[],
+      },
+    });
 
-      console.log(`✅ Successfully uploaded ${cloudinaryResults.length} files to Cloudinary for ${field} (will save to DB after appointment creation)`);
-    } catch (err) {
-      console.error('Upload failed:', err);
-      alert(`Failed to upload files: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
+    console.log(`✅ Successfully queued ${newFilesData.length} files for local storage for ${field}`);
   },
-  [formData, uploadMultipleToCloudinaryOnly, updateFormData, tempEntityId]
+  [formData, updateFormData]
 );
 
 const handleRemoveDocument = useCallback(
@@ -571,6 +576,11 @@ const handleRemoveDocument = useCallback(
     const urls = formData[field]?.urls || [];
     const publicIds = formData[field]?.publicIds || [];
     const metadata = (formData[field]?.metadata || []) as DocumentMetadata[];
+
+    // Revoke object URL for the removed file
+    if (metadata[index]?.url) {
+      URL.revokeObjectURL(metadata[index].url);
+    }
 
     // Remove from state immediately (optimistic update)
     const newUrls = urls.filter((_: string, i: number) => i !== index);
@@ -580,10 +590,9 @@ const handleRemoveDocument = useCallback(
     // Also remove from pending uploads
     setPendingUploads(prev => {
       if (!prev[field]) return prev;
-      const newResults = prev[field].cloudinaryResults.filter((_: any, i: number) => i !== index);
-      const newFiles = prev[field].files.filter((_: File, i: number) => i !== index);
+      const newFiles = prev[field].files.filter((_: any, i: number) => i !== index);
 
-      if (newResults.length === 0) {
+      if (newFiles.length === 0) {
         const { [field]: _, ...rest } = prev;
         return rest;
       }
@@ -592,7 +601,6 @@ const handleRemoveDocument = useCallback(
         ...prev,
         [field]: {
           ...prev[field],
-          cloudinaryResults: newResults,
           files: newFiles,
         }
       };
@@ -606,9 +614,7 @@ const handleRemoveDocument = useCallback(
       },
     });
 
-    // Note: Since files aren't saved to DB yet, no backend deletion needed
-    // Files will be uploaded when appointment is created
-    console.log(`✅ Removed file from upload queue`);
+    console.log(`✅ Removed file from local queue`);
   },
   [formData, updateFormData, setPendingUploads]
 );
@@ -625,88 +631,70 @@ const handleCameraCapture = useCallback(
   async (file: File) => {
     if (!cameraDocumentType) return;
 
-    // Determine folder and category
-    let folder: string;
+    // Determine category
     let category: FileCategory;
 
-    // Use temp entity ID
-    const entityId = tempEntityId;
+    const uploadBatchId = `local-upload-${Date.now()}`;
 
     switch (cameraDocumentType) {
       case 'customerIdProof':
-        folder = CLOUDINARY_FOLDERS.customerIdProof(entityId);
         category = FileCategory.CUSTOMER_ID_PROOF;
         break;
       case 'vehicleRCCopy':
-        folder = CLOUDINARY_FOLDERS.vehicleRC(entityId);
         category = FileCategory.VEHICLE_RC;
         break;
       case 'photosVideos':
-        folder = CLOUDINARY_FOLDERS.vehiclePhotos(entityId);
         category = FileCategory.VEHICLE_PHOTOS;
         break;
       case 'warrantyCardServiceBook':
-        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
         category = FileCategory.WARRANTY_CARD;
         break;
       default:
-        folder = CLOUDINARY_FOLDERS.appointmentDocs(entityId);
         category = FileCategory.PHOTOS_VIDEOS;
     }
 
-    try {
-      // Upload to Cloudinary ONLY (not to database yet)
-      const cloudinaryResult = await uploadFileToCloudinaryOnly(file, folder, {
-        tags: [cameraDocumentType, 'appointment', 'camera'],
-        context: {
-          field: cameraDocumentType,
-          appointmentId: entityId,
-          source: 'camera',
-        },
-      });
+    const publicId = `${uploadBatchId}-${file.name}-${uuidv4()}`; // Unique ID for local tracking
+    const url = URL.createObjectURL(file); // Create a local URL for immediate display
 
-      // Store in pending uploads
-      setPendingUploads(prev => ({
-        ...prev,
-        [cameraDocumentType]: {
-          cloudinaryResults: [...(prev[cameraDocumentType]?.cloudinaryResults || []), cloudinaryResult],
-          files: [...(prev[cameraDocumentType]?.files || []), file],
-          category,
-        }
-      }));
+    const newFileData = {
+      file,
+      category,
+      metadata: {
+        publicId: publicId,
+        url: url,
+        filename: file.name,
+        format: file.type.split('/').pop() || 'unknown',
+        bytes: file.size,
+        uploadedAt: new Date().toISOString(),
+        fileObject: file, // Store the actual File object
+      }
+    };
 
-      // Store in form data for display
-      const existingUrls = formData[cameraDocumentType]?.urls || [];
-      const existingPublicIds = formData[cameraDocumentType]?.publicIds || [];
+    // Store in pending uploads
+    setPendingUploads(prev => ({
+      ...prev,
+      [cameraDocumentType]: {
+        files: [...(prev[cameraDocumentType]?.files || []), newFileData],
+      }
+    }));
 
-      updateFormData({
-        [cameraDocumentType]: {
-          urls: [...existingUrls, cloudinaryResult.secureUrl],
-          publicIds: [...existingPublicIds, cloudinaryResult.publicId],
-          metadata: [
-            ...(formData[cameraDocumentType]?.metadata || [] as DocumentMetadata[]),
-            {
-              publicId: cloudinaryResult.publicId,
-              url: cloudinaryResult.secureUrl,
-              filename: file.name,
-              format: cloudinaryResult.format,
-              bytes: cloudinaryResult.bytes,
-              uploadedAt: new Date().toISOString(),
-              // Note: No fileId yet since not saved to DB
-            } as DocumentMetadata,
-          ] as DocumentMetadata[],
-        },
-      });
+    // Store in form data for display
+    updateFormData({
+      [cameraDocumentType]: {
+        urls: [...(formData[cameraDocumentType]?.urls || []), newFileData.metadata.url],
+        publicIds: [...(formData[cameraDocumentType]?.publicIds || []), newFileData.metadata.publicId],
+        metadata: [
+          ...(formData[cameraDocumentType]?.metadata || [] as DocumentMetadata[]),
+          newFileData.metadata,
+        ] as DocumentMetadata[],
+      },
+    });
 
-      setCameraModalOpen(false);
-      setCameraDocumentType(null);
-      console.log(`✅ Successfully captured and uploaded file to Cloudinary for ${cameraDocumentType}`);
-    } catch (err) {
-      console.error('Camera capture upload failed:', err);
-      alert(`Failed to upload: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
+    setCameraModalOpen(false);
+    setCameraDocumentType(null);
+    console.log(`✅ Successfully captured file and queued for local storage for ${cameraDocumentType}`);
   },
-  [cameraDocumentType, formData, uploadFileToCloudinaryOnly, updateFormData, tempEntityId, setPendingUploads]
+  [cameraDocumentType, formData, updateFormData, setPendingUploads]
 );
 
 return (
