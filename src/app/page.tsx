@@ -137,7 +137,7 @@ export default function LoginPage() {
             </div>
             <h1 className="text-4xl font-bold mb-4 text-center">Welcome Back</h1>
             <p className="text-xl text-indigo-100 text-center max-w-md mb-8">
-              Sign in to access your Service Center Management System
+              Sign up to access your Service Center Management System
             </p>
             <div className="w-full max-w-md space-y-3">
               <div className="flex items-center gap-3 text-indigo-100">
