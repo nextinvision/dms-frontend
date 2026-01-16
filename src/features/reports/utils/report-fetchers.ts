@@ -39,16 +39,16 @@ interface ReportData {
     totalParts: number;
     lowStockCount: number;
     totalValue: number;
-    topMovingParts: Array<{ 
-      name: string; 
-      quantity: number; 
+    topMovingParts: Array<{
+      name: string;
+      quantity: number;
       usageCount: number;
       price: number;
       value: number;
     }>;
-    lowMovingParts: Array<{ 
-      name: string; 
-      quantity: number; 
+    lowMovingParts: Array<{
+      name: string;
+      quantity: number;
       usageCount: number;
       price: number;
       value: number;
@@ -76,7 +76,7 @@ export const filterByDateRange = <T extends { createdAt?: string; date?: string;
   const fromDate = new Date(dateRange.from);
   const toDate = new Date(dateRange.to);
   toDate.setHours(23, 59, 59, 999);
-  
+
   return items.filter((item) => {
     const itemDate = new Date(item.createdAt || item.date || item.invoiceDate || '');
     return itemDate >= fromDate && itemDate <= toDate;
@@ -85,15 +85,20 @@ export const filterByDateRange = <T extends { createdAt?: string; date?: string;
 
 // Helper function to get price from part
 const getPrice = (part: Part): number => {
-  if (typeof part.price === 'number') {
-    return part.price;
-  } else if (typeof part.price === 'string') {
-    return parseFloat(part.price.replace(/[^0-9.]/g, '')) || 0;
-  } else if (typeof part.unitPrice === 'number') {
-    return part.unitPrice;
-  } else if (typeof part.unitPrice === 'string') {
-    return parseFloat(part.unitPrice.replace(/[^0-9.]/g, '')) || 0;
+  // Try to get price from part.price first
+  if (part.price !== undefined && part.price !== null) {
+    if (typeof part.price === 'number') {
+      return part.price;
+    }
   }
+
+  // Fall back to unitPrice
+  if (part.unitPrice !== undefined && part.unitPrice !== null) {
+    if (typeof part.unitPrice === 'number') {
+      return part.unitPrice;
+    }
+  }
+
   return 0;
 };
 
@@ -111,32 +116,48 @@ export const fetchSalesReport = async (
   serviceCenterId: string,
   dateRange: DateRange
 ): Promise<ReportData['sales']> => {
-  // Fetch revenue stats
-  const revenueResponse = await apiClient.get(`/analytics/revenue?serviceCenterId=${serviceCenterId}&months=6`);
-  const revenueData = revenueResponse.data || revenueResponse;
+  try {
+    // Fetch revenue stats
+    const revenueResponse = await apiClient.get(`/analytics/revenue?serviceCenterId=${serviceCenterId}&months=6`);
+    const revenueData = revenueResponse.data || revenueResponse;
 
-  // Fetch invoices for detailed analysis
-  const invoicesResponse = await apiClient.get(`/invoices?serviceCenterId=${serviceCenterId}`);
-  const invoices = Array.isArray(invoicesResponse.data) 
-    ? invoicesResponse.data 
-    : invoicesResponse.data?.data || [];
+    // Fetch invoices for detailed analysis
+    const invoicesResponse = await apiClient.get(`/invoices?serviceCenterId=${serviceCenterId}`);
+    const invoices = Array.isArray(invoicesResponse.data)
+      ? invoicesResponse.data
+      : invoicesResponse.data?.data || [];
 
-  // Filter by date range
-  const filteredInvoices = filterByDateRange(invoices, dateRange);
+    console.log(`[Sales Report] Total invoices fetched: ${invoices.length}`);
 
-  const totalRevenue = filteredInvoices
-    .filter((inv: any) => inv.status === 'PAID')
-    .reduce((sum: number, inv: any) => sum + (Number(inv.grandTotal) || 0), 0);
+    // Filter by date range
+    const filteredInvoices = filterByDateRange(invoices, dateRange);
+    console.log(`[Sales Report] Filtered invoices (by date): ${filteredInvoices.length}`);
 
-  const totalInvoices = filteredInvoices.length;
-  const avgInvoiceValue = totalInvoices > 0 ? totalRevenue / totalInvoices : 0;
+    const totalRevenue = filteredInvoices
+      .filter((inv: any) => inv.status === 'PAID')
+      .reduce((sum: number, inv: any) => sum + (Number(inv.grandTotal) || 0), 0);
 
-  return {
-    totalRevenue,
-    totalInvoices,
-    avgInvoiceValue,
-    revenueByMonth: Array.isArray(revenueData) ? revenueData : [],
-  };
+    const totalInvoices = filteredInvoices.length;
+    const avgInvoiceValue = totalInvoices > 0 ? totalRevenue / totalInvoices : 0;
+
+    console.log(`[Sales Report] Report generated - Revenue: ₹${totalRevenue}, Invoices: ${totalInvoices}, Avg: ₹${avgInvoiceValue.toFixed(2)}`);
+
+    return {
+      totalRevenue,
+      totalInvoices,
+      avgInvoiceValue,
+      revenueByMonth: Array.isArray(revenueData) ? revenueData : [],
+    };
+  } catch (error) {
+    console.error('[Sales Report] Error fetching report:', error);
+    // Return empty data instead of throwing
+    return {
+      totalRevenue: 0,
+      totalInvoices: 0,
+      avgInvoiceValue: 0,
+      revenueByMonth: [],
+    };
+  }
 };
 
 /**
@@ -146,41 +167,75 @@ export const fetchServiceVolumeReport = async (
   serviceCenterId: string,
   dateRange: DateRange
 ): Promise<ReportData['serviceVolume']> => {
-  // Fetch job cards
-  const jobCardsResponse = await apiClient.get(`/job-cards?serviceCenterId=${serviceCenterId}`);
-  const jobCards = Array.isArray(jobCardsResponse.data)
-    ? jobCardsResponse.data
-    : jobCardsResponse.data?.data || [];
+  try {
+    // Fetch job cards
+    const jobCardsResponse = await apiClient.get(`/job-cards?serviceCenterId=${serviceCenterId}`);
+    const jobCards = Array.isArray(jobCardsResponse.data)
+      ? jobCardsResponse.data
+      : jobCardsResponse.data?.data || [];
 
-  // Filter by date range
-  const filteredJobCards = filterByDateRange(jobCards, dateRange);
+    console.log(`[Service Volume Report] Total job cards fetched: ${jobCards.length}`);
 
-  const totalJobCards = filteredJobCards.length;
-  const completed = filteredJobCards.filter((jc: any) => jc.status === 'COMPLETED' || jc.status === 'INVOICED').length;
-  const inProgress = filteredJobCards.filter((jc: any) => jc.status === 'IN_PROGRESS').length;
-  const pending = filteredJobCards.filter((jc: any) => jc.status === 'PENDING' || jc.status === 'APPROVED').length;
+    // Filter by date range
+    const filteredJobCards = filterByDateRange(jobCards, dateRange);
+    console.log(`[Service Volume Report] Filtered job cards (by date): ${filteredJobCards.length}`);
 
-  // Calculate average completion time
-  const completedCards = filteredJobCards.filter((jc: any) => jc.status === 'COMPLETED' && jc.completedAt && jc.createdAt);
-  let avgCompletionTime = "N/A";
-  if (completedCards.length > 0) {
-    const totalTime = completedCards.reduce((sum: number, jc: any) => {
-      const created = new Date(jc.createdAt).getTime();
-      const completed = new Date(jc.completedAt).getTime();
-      return sum + (completed - created);
-    }, 0);
-    const avgMs = totalTime / completedCards.length;
-    const avgHours = Math.round(avgMs / (1000 * 60 * 60) * 10) / 10;
-    avgCompletionTime = `${avgHours} hours`;
+    const totalJobCards = filteredJobCards.length;
+
+    // Use case-insensitive status checks
+    const completed = filteredJobCards.filter((jc: any) => {
+      const status = (jc.status || '').toUpperCase();
+      return status === 'COMPLETED' || status === 'INVOICED';
+    }).length;
+
+    const inProgress = filteredJobCards.filter((jc: any) => {
+      const status = (jc.status || '').toUpperCase();
+      return status === 'IN_PROGRESS';
+    }).length;
+
+    const pending = filteredJobCards.filter((jc: any) => {
+      const status = (jc.status || '').toUpperCase();
+      return status === 'PENDING' || status === 'APPROVED';
+    }).length;
+
+    // Calculate average completion time
+    const completedCards = filteredJobCards.filter((jc: any) => {
+      const status = (jc.status || '').toUpperCase();
+      return status === 'COMPLETED' && jc.completedAt && jc.createdAt;
+    });
+
+    let avgCompletionTime = "N/A";
+    if (completedCards.length > 0) {
+      const totalTime = completedCards.reduce((sum: number, jc: any) => {
+        const created = new Date(jc.createdAt).getTime();
+        const completed = new Date(jc.completedAt).getTime();
+        return sum + (completed - created);
+      }, 0);
+      const avgMs = totalTime / completedCards.length;
+      const avgHours = Math.round(avgMs / (1000 * 60 * 60) * 10) / 10;
+      avgCompletionTime = `${avgHours} hours`;
+    }
+
+    console.log(`[Service Volume Report] Report generated - Total: ${totalJobCards}, Completed: ${completed}, In Progress: ${inProgress}, Pending: ${pending}`);
+
+    return {
+      totalJobCards,
+      completed,
+      inProgress,
+      pending,
+      avgCompletionTime,
+    };
+  } catch (error) {
+    console.error('[Service Volume Report] Error fetching report:', error);
+    // Return empty data instead of throwing
+    return {
+      totalJobCards: 0,
+      completed: 0,
+      inProgress: 0,
+      pending: 0,
+      avgCompletionTime: "N/A",
+    };
   }
-
-  return {
-    totalJobCards,
-    completed,
-    inProgress,
-    pending,
-    avgCompletionTime,
-  };
 };
 
 /**
@@ -190,42 +245,76 @@ export const fetchTechnicianPerformanceReport = async (
   serviceCenterId: string,
   dateRange: DateRange
 ): Promise<ReportData['technicianPerformance']> => {
-  // Fetch job cards with assigned technicians
-  const jobCardsResponse = await apiClient.get(`/job-cards?serviceCenterId=${serviceCenterId}&expand=assignedTechnician`);
-  const jobCards = Array.isArray(jobCardsResponse.data)
-    ? jobCardsResponse.data
-    : jobCardsResponse.data?.data || [];
+  try {
+    // Fetch job cards with assigned technicians
+    const jobCardsResponse = await apiClient.get(`/job-cards?serviceCenterId=${serviceCenterId}&expand=assignedTechnician`);
+    const jobCards = Array.isArray(jobCardsResponse.data)
+      ? jobCardsResponse.data
+      : jobCardsResponse.data?.data || [];
 
-  // Filter by date range
-  const filteredJobCards = filterByDateRange(jobCards, dateRange);
+    console.log(`[Technician Performance Report] Total job cards fetched: ${jobCards.length}`);
 
-  // Group by technician
-  const technicianMap = new Map<string, { name: string; completedJobs: number; totalJobs: number }>();
+    // Filter by date range
+    const filteredJobCards = filterByDateRange(jobCards, dateRange);
+    console.log(`[Technician Performance Report] Filtered job cards (by date): ${filteredJobCards.length}`);
 
-  filteredJobCards.forEach((jc: any) => {
-    const techId = jc.assignedTechnicianId || jc.assignedTechnician?.id;
-    const techName = jc.assignedTechnician?.name || jc.assignedTechnicianName || "Unassigned";
+    // Define completed statuses - include all states that represent completed work
+    const completedStatuses = ['COMPLETED', 'INVOICED'];
 
-    if (techId) {
-      const existing = technicianMap.get(techId) || { name: techName, completedJobs: 0, totalJobs: 0 };
-      existing.totalJobs++;
-      if (jc.status === 'COMPLETED' || jc.status === 'INVOICED') {
-        existing.completedJobs++;
+    // Group by technician
+    const technicianMap = new Map<string, { name: string; completedJobs: number; totalJobs: number }>();
+
+    filteredJobCards.forEach((jc: any) => {
+      // Get technician info from various possible fields
+      const techId = jc.assignedTechnicianId || jc.assignedTechnician?.id || jc.assignedEngineer?.id;
+      const techName = jc.assignedTechnician?.name || jc.assignedTechnicianName || jc.assignedEngineer?.name || jc.assignedEngineer || "Unassigned";
+
+      // Only process if we have a valid technician ID or name
+      if (techId || (techName && techName !== "Unassigned")) {
+        // Use technician ID as key, or fall back to name if ID not available
+        const mapKey = techId || techName;
+
+        const existing = technicianMap.get(mapKey) || { name: techName, completedJobs: 0, totalJobs: 0 };
+        existing.totalJobs++;
+
+        // Check if job card is completed - handle case insensitivity
+        const status = (jc.status || '').toUpperCase();
+        if (completedStatuses.includes(status)) {
+          existing.completedJobs++;
+        }
+
+        technicianMap.set(mapKey, existing);
       }
-      technicianMap.set(techId, existing);
-    }
-  });
+    });
 
-  const technicians = Array.from(technicianMap.values()).map((tech) => ({
-    name: tech.name,
-    completedJobs: tech.completedJobs,
-    avgRating: 4.5, // Placeholder - would need ratings data
-    efficiency: tech.totalJobs > 0 ? Math.round((tech.completedJobs / tech.totalJobs) * 100) : 0,
-  }));
+    console.log(`[Technician Performance Report] Technicians found: ${technicianMap.size}`);
 
-  return {
-    technicians: technicians.sort((a, b) => b.completedJobs - a.completedJobs),
-  };
+    // Convert map to array
+    const technicians = Array.from(technicianMap.values()).map((tech) => {
+      const efficiency = tech.totalJobs > 0 ? Math.round((tech.completedJobs / tech.totalJobs) * 100) : 0;
+      return {
+        name: tech.name,
+        completedJobs: tech.completedJobs,
+        avgRating: 4.5, // Placeholder - would need ratings data
+        efficiency: efficiency,
+      };
+    });
+
+    // Sort by completed jobs (descending)
+    const sortedTechnicians = technicians.sort((a, b) => b.completedJobs - a.completedJobs);
+
+    console.log(`[Technician Performance Report] Report generated with ${sortedTechnicians.length} technicians`);
+
+    return {
+      technicians: sortedTechnicians,
+    };
+  } catch (error) {
+    console.error('[Technician Performance Report] Error fetching report:', error);
+    // Return empty data instead of throwing to prevent report generation from failing
+    return {
+      technicians: [],
+    };
+  }
 };
 
 /**
@@ -291,7 +380,7 @@ export const fetchInventoryReport = async (
   });
 
   const totalParts = parts.length;
-  
+
   // Calculate low stock
   const lowStockCount = parts.filter((part: Part) => {
     const stockQty = part.stockQuantity ?? 0;
@@ -313,7 +402,7 @@ export const fetchInventoryReport = async (
     const value = stockQty * price;
     const usageCount = partUsageMap.get(part.partNumber || part.partId || '') || 0;
     const minLevel = part.minStockLevel ?? 0;
-    
+
     return {
       name: part.partName || "Unknown",
       partNumber: part.partNumber || part.partId || "N/A",

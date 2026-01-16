@@ -79,6 +79,8 @@ export function validateEmail(email: string): boolean {
  * @returns true if valid VIN format
  */
 export function validateVIN(vin: string): boolean {
-  return vin.length === 17 && /^[A-HJ-NPR-Z0-9]{17}$/i.test(vin);
+  // Relaxed validation: Allow any 17 alphanumeric characters (including I, O, Q)
+  // detailed strict ISO 3779 validation excludes I, O, Q, but practically for a DMS it's better to be permissive
+  return vin.length === 17 && /^[A-Z0-9]{17}$/i.test(vin);
 }
 

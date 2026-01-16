@@ -36,8 +36,13 @@ export const useAuthStore = create<AuthState>()(
             },
 
             clearAuth: () => {
-                Cookies.remove('auth_role');
-                Cookies.remove('auth_token');
+                // Aggressively clear cookies by both removing and setting to empty with max-age: 0
+                Cookies.remove('auth_role', { path: '/' });
+                Cookies.remove('auth_token', { path: '/' });
+                
+                // Also set to empty with immediate expiration as a fallback
+                Cookies.set('auth_role', '', { expires: new Date(0), path: '/' });
+                Cookies.set('auth_token', '', { expires: new Date(0), path: '/' });
 
                 set({
                     userRole: 'admin',

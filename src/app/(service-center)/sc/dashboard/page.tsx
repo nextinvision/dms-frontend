@@ -81,7 +81,7 @@ interface DashboardStats {
 
 export default function SCDashboard() {
   const { userRole, userInfo } = useRole();
-  const serviceCenter = userInfo?.serviceCenter || "Pune Phase 1";
+  const serviceCenter = userInfo?.serviceCenterName || "Pune Phase 1";
   const serviceCenterId = userInfo?.serviceCenterId || "sc-001";
 
   const [isLoading, setIsLoading] = useState(true);
@@ -535,12 +535,6 @@ export default function SCDashboard() {
         ],
         alerts: [],
         quickActions: [
-          {
-            label: "Create Lead",
-            icon: PlusCircle,
-            bg: "bg-gradient-to-r from-green-500 to-green-700",
-            link: "/sc/leads?action=create",
-          },
           {
             label: "Create Quotation",
             icon: FileText,

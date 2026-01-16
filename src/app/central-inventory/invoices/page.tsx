@@ -251,7 +251,9 @@ export default function InvoicesPage() {
                                 <Button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    downloadCentralInvoicePDF(invoice);
+                                    downloadCentralInvoicePDF(invoice).catch((error) => {
+                                      console.error("Failed to download PDF:", error);
+                                    });
                                   }}
                                   variant="outline"
                                   className="flex items-center gap-2"

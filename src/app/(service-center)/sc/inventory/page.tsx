@@ -57,7 +57,7 @@ export default function SCInventory() {
         setIsLoading(true);
         // Fetch parts from parts master (inventory manager's database)
         const parts: Part[] = await partsMasterService.getAll();
-        
+
         // Map Part to InventoryItem format - only include fields that exist in database
         const inventoryItems: InventoryItem[] = parts.map((part) => {
           let status: StockStatus = "In Stock";
@@ -107,21 +107,15 @@ export default function SCInventory() {
           if (part.partType) item.partType = part.partType;
           if (part.color) item.color = part.color;
           if (part.costPrice !== undefined && part.costPrice !== null) {
-            item.costPrice = typeof part.costPrice === 'number' 
-              ? `₹${part.costPrice.toLocaleString('en-IN')}` 
-              : part.costPrice.toString();
+            item.costPrice = `₹${part.costPrice.toLocaleString('en-IN')}`;
           }
           if (part.pricePreGst !== undefined && part.pricePreGst !== null) item.pricePreGst = part.pricePreGst;
           if (part.gstRateInput !== undefined && part.gstRateInput !== null) item.gstRateInput = part.gstRateInput;
           if (part.gstInput !== undefined && part.gstInput !== null) item.gstInput = part.gstInput;
           if (part.unitPrice !== undefined && part.unitPrice !== null) {
-            item.unitPrice = typeof part.unitPrice === 'number' 
-              ? `₹${part.unitPrice.toLocaleString('en-IN')}` 
-              : part.unitPrice.toString();
+            item.unitPrice = `₹${part.unitPrice.toLocaleString('en-IN')}`;
           } else if (part.price !== undefined && part.price !== null) {
-            item.unitPrice = typeof part.price === 'number' 
-              ? `₹${part.price.toLocaleString('en-IN')}` 
-              : part.price.toString();
+            item.unitPrice = `₹${part.price.toLocaleString('en-IN')}`;
           }
           if (part.gstRate !== undefined && part.gstRate !== null) item.gstRate = part.gstRate;
           if (part.gstRateOutput !== undefined && part.gstRateOutput !== null) item.gstRateOutput = part.gstRateOutput;
@@ -137,7 +131,7 @@ export default function SCInventory() {
 
           return item as InventoryItem;
         });
-        
+
         setInventory(inventoryItems);
       } catch (error) {
         console.error("Failed to load inventory from parts master:", error);
@@ -152,9 +146,9 @@ export default function SCInventory() {
   const filteredInventory = inventory.filter((item) => {
     const matchesSearch =
       item.partName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.hsnCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.partCode && item.partCode.toLowerCase().includes(searchQuery.toLowerCase()));
+      (item.hsnCode?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+      (item.category?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+      (item.partCode?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
 
     if (filter === "low_stock") {
       return matchesSearch && item.currentQty <= item.minStock && item.currentQty > 0;
@@ -182,10 +176,12 @@ export default function SCInventory() {
     (item) => item.currentQty <= item.minStock && item.currentQty > 0
   ).length;
   const outOfStockCount = inventory.filter((item) => item.currentQty === 0).length;
-  const totalValue = inventory.reduce(
-    (sum, item) => sum + item.currentQty * parseFloat(item.costPrice.replace("₹", "").replace(",", "")),
-    0
-  );
+  const totalValue = inventory.reduce((sum, item) => {
+    const price = typeof item.costPrice === 'string'
+      ? parseFloat(item.costPrice.replace("₹", "").replace(/,/g, ""))
+      : item.costPrice;
+    return sum + item.currentQty * price;
+  }, 0);
 
   const getStatusColor = (status: StockStatus): string => {
     const colors: Record<StockStatus, string> = {
@@ -259,7 +255,7 @@ export default function SCInventory() {
     const newItem: RequestItem = {
       partId: selectedPart.id,
       partName: selectedPart.partName,
-      hsnCode: selectedPart.hsnCode,
+      hsnCode: selectedPart.hsnCode || "",
       partCode: selectedPart.partCode,
       quantity: currentRequest?.quantity || selectedPart.minStock * 2 - selectedPart.currentQty,
       urgency: currentRequest?.urgency || "Normal",
@@ -286,7 +282,7 @@ export default function SCInventory() {
       const newItem: RequestItem = {
         partId: selectedPart.id,
         partName: selectedPart.partName,
-        hsnCode: selectedPart.hsnCode,
+        hsnCode: selectedPart.hsnCode ?? "",
         partCode: selectedPart.partCode,
         quantity: currentRequest?.quantity || selectedPart.minStock * 2 - selectedPart.currentQty,
         urgency: currentRequest?.urgency || "Normal",
@@ -301,7 +297,7 @@ export default function SCInventory() {
       finalItems.push({
         partId: selectedPart.id,
         partName: selectedPart.partName,
-        hsnCode: selectedPart.hsnCode,
+        hsnCode: selectedPart.hsnCode ?? "",
         partCode: selectedPart.partCode,
         quantity: currentRequest?.quantity || selectedPart.minStock * 2 - selectedPart.currentQty,
         urgency: currentRequest?.urgency || "Normal",
@@ -444,161 +440,161 @@ export default function SCInventory() {
               <p className="text-gray-600">Loading parts from inventory master...</p>
             </div>
           ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Part Name
-                  </th>
-                  {hasData.partCode && (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Part Code
+                      Part Name
                     </th>
-                  )}
-                  {hasData.category && (
+                    {hasData.partCode && (
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Part Code
+                      </th>
+                    )}
+                    {hasData.category && (
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Category
+                      </th>
+                    )}
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Category
+                      Stock
                     </th>
-                  )}
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Stock
-                  </th>
-                  {hasData.minStock && (
+                    {hasData.minStock && (
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Min Level
+                      </th>
+                    )}
+                    {hasData.unitPrice && (
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Unit Price
+                      </th>
+                    )}
+                    {hasData.location && (
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Location
+                      </th>
+                    )}
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Min Level
+                      Status
                     </th>
-                  )}
-                  {hasData.unitPrice && (
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Unit Price
+                      Actions
                     </th>
-                  )}
-                  {hasData.location && (
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Location
-                    </th>
-                  )}
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredInventory.map((item) => {
-                  const stockIndicator = getStockIndicator(item.currentQty, item.minStock);
-                  return (
-                    <tr key={item.id} className="hover:bg-gray-50 transition">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <Package className="text-gray-400 mr-3" size={20} />
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {item.partName}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredInventory.map((item) => {
+                    const stockIndicator = getStockIndicator(item.currentQty, item.minStock);
+                    return (
+                      <tr key={item.id} className="hover:bg-gray-50 transition">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <Package className="text-gray-400 mr-3" size={20} />
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {item.partName}
+                              </div>
+                              {hasData.supplier && item.supplier && item.supplier !== "Unknown" && (
+                                <div className="text-xs text-gray-500">{item.supplier}</div>
+                              )}
                             </div>
-                            {hasData.supplier && item.supplier && item.supplier !== "Unknown" && (
-                              <div className="text-xs text-gray-500">{item.supplier}</div>
-                            )}
                           </div>
-                        </div>
-                      </td>
-                      {hasData.partCode && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-700">
-                            {item.partCode && item.partCode.trim() !== "" ? item.partCode : "-"}
-                          </span>
                         </td>
-                      )}
-                      {hasData.category && (
+                        {hasData.partCode && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-700">
+                              {item.partCode && item.partCode.trim() !== "" ? item.partCode : "-"}
+                            </span>
+                          </td>
+                        )}
+                        {hasData.category && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-700">
+                              {item.category && item.category.trim() !== "" ? item.category : "-"}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-700">
-                            {item.category && item.category.trim() !== "" ? item.category : "-"}
-                          </span>
-                        </td>
-                      )}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
-                            <div
-                              className={`h-2 rounded-full ${stockIndicator.color}`}
-                              style={{
-                                width: `${(item.currentQty / (item.minStock * 3)) * 100
-                                  }%`,
-                              }}
-                            ></div>
+                          <div className="flex flex-col gap-2">
+                            <div className="bg-gray-200 rounded-full h-2 w-16">
+                              <div
+                                className={`h-2 rounded-full ${stockIndicator.color}`}
+                                style={{
+                                  width: `${(item.currentQty / (item.minStock * 3)) * 100
+                                    }%`,
+                                }}
+                              ></div>
+                            </div>
+                            <span className="text-sm font-medium text-gray-900">
+                              {item.currentQty}
+                            </span>
                           </div>
-                          <span className="text-sm font-medium text-gray-900">
-                            {item.currentQty}
-                          </span>
-                        </div>
-                      </td>
-                      {hasData.minStock && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-700">
-                            {item.minStock !== undefined && item.minStock !== null ? item.minStock : "-"}
-                          </span>
                         </td>
-                      )}
-                      {hasData.unitPrice && (
+                        {hasData.minStock && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-700">
+                              {item.minStock !== undefined && item.minStock !== null ? item.minStock : "-"}
+                            </span>
+                          </td>
+                        )}
+                        {hasData.unitPrice && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm font-medium text-gray-900">
+                              {item.unitPrice && item.unitPrice !== "₹0" && item.unitPrice !== "₹0.00"
+                                ? item.unitPrice
+                                : "-"}
+                            </span>
+                          </td>
+                        )}
+                        {hasData.location && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-700">
+                              {item.location && item.location !== "N/A" && item.location.trim() !== ""
+                                ? item.location
+                                : "-"}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-gray-900">
-                            {item.unitPrice && item.unitPrice !== "₹0" && item.unitPrice !== "₹0.00" 
-                              ? item.unitPrice 
-                              : "-"}
-                          </span>
-                        </td>
-                      )}
-                      {hasData.location && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-700">
-                            {item.location && item.location !== "N/A" && item.location.trim() !== "" 
-                              ? item.location 
-                              : "-"}
-                          </span>
-                        </td>
-                      )}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
-                            item.status
-                          )}`}
-                        >
-                          {item.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedPart(item);
-                              setShowDetailModal(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
+                              item.status
+                            )}`}
                           >
-                            View
-                          </button>
-                          {item.currentQty <= item.minStock && (
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex gap-2">
                             <button
                               onClick={() => {
                                 setSelectedPart(item);
-                                setShowRequestModal(true);
+                                setShowDetailModal(true);
                               }}
-                              className="text-orange-600 hover:text-orange-800 text-sm font-medium"
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                             >
-                              Request
+                              View
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            {item.currentQty <= item.minStock && (
+                              <button
+                                onClick={() => {
+                                  setSelectedPart(item);
+                                  setShowRequestModal(true);
+                                }}
+                                className="text-orange-600 hover:text-orange-800 text-sm font-medium"
+                              >
+                                Request
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
@@ -649,7 +645,7 @@ export default function SCInventory() {
                           setCurrentRequest({
                             partId: part.id,
                             partName: part.partName,
-                            hsnCode: part.hsnCode,
+                            hsnCode: part.hsnCode ?? "",
                             partCode: part.partCode,
                             quantity: part.minStock * 2 - part.currentQty > 0 ? part.minStock * 2 - part.currentQty : part.minStock,
                             urgency: "Normal",

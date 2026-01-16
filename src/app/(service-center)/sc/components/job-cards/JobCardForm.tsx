@@ -349,7 +349,8 @@ export default function JobCardForm({
             router.push(`/sc/quotations?highlight=${createdQuotation.id}`);
         } catch (error: any) {
             console.error("Error creating quotation:", error);
-            const errorMessage = error.response?.data?.message || error.message || "Unknown error";
+            const { formatApiErrorMessage } = require("@/shared/utils/api-validation.utils");
+            const errorMessage = formatApiErrorMessage(error);
             alert(`Failed to create quotation: ${errorMessage}`);
         } finally {
             setIsSubmitting(false);

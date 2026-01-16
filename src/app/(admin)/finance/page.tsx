@@ -686,10 +686,30 @@ export default function FinancePage() {
             <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-between">
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    // Start download
-                    // window.open(`/api/invoices/${selectedInvoice.id}/pdf`, "_blank");
-                    alert("Download started...");
+                  onClick={async () => {
+                    try {
+                      const { pdf } = await import("@react-pdf/renderer");
+                      const { InvoicePDFDocument } = await import("@/shared/components/invoice/InvoicePDFDocument");
+                      const React = await import("react");
+
+                      // Generate PDF blob using React-PDF
+                      const blob = await pdf(
+                        React.createElement(InvoicePDFDocument, { invoice: selectedInvoice }) as any
+                      ).toBlob();
+
+                      // Create download link
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement("a");
+                      link.href = url;
+                      link.download = `Invoice-${selectedInvoice.invoiceNumber || selectedInvoice.id}.pdf`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(url);
+                    } catch (error) {
+                      console.error("Failed to download PDF:", error);
+                      alert("Failed to download PDF. Please try again.");
+                    }
                   }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-black hover:bg-gray-50 transition font-medium flex items-center gap-2"
                 >
@@ -697,7 +717,39 @@ export default function FinancePage() {
                   Download PDF
                 </button>
                 <button
-                  onClick={() => window.print()}
+                  onClick={async () => {
+                    try {
+                      const { pdf } = await import("@react-pdf/renderer");
+                      const { InvoicePDFDocument } = await import("@/shared/components/invoice/InvoicePDFDocument");
+                      const React = await import("react");
+
+                      // Generate PDF blob using React-PDF
+                      const blob = await pdf(
+                        React.createElement(InvoicePDFDocument, { invoice: selectedInvoice }) as any
+                      ).toBlob();
+
+                      // Open PDF in new window/tab for printing
+                      const url = URL.createObjectURL(blob);
+                      const printWindow = window.open(url, '_blank');
+
+                      if (printWindow) {
+                        printWindow.onload = () => {
+                          setTimeout(() => {
+                            printWindow.print();
+                            setTimeout(() => {
+                              URL.revokeObjectURL(url);
+                            }, 1000);
+                          }, 500);
+                        };
+                      } else {
+                        alert("Popup blocked. Please allow popups to print, or use Download PDF instead.");
+                        URL.revokeObjectURL(url);
+                      }
+                    } catch (error) {
+                      console.error("Failed to generate PDF for printing:", error);
+                      window.print();
+                    }
+                  }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-black hover:bg-gray-50 transition font-medium flex items-center gap-2"
                 >
                   <Printer size={16} />

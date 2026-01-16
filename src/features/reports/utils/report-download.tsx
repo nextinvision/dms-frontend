@@ -4,7 +4,7 @@
 
 import React from "react";
 import { pdf } from "@react-pdf/renderer";
-import { ReportPDFDocument } from "@/components/reports/ReportPDFDocument";
+import { ReportPDFDocument } from "../../../components/reports/ReportPDFDocument";
 
 interface ReportData {
   sales?: any;
@@ -27,12 +27,12 @@ export const downloadReportAsPdf = async (
   try {
     // Generate PDF blob using React-PDF
     const blob = await pdf(
-      React.createElement(ReportPDFDocument, {
-        reportType,
-        reportData,
-        serviceCenterName,
-        dateRange,
-      })
+      <ReportPDFDocument
+        reportType={reportType}
+        reportData={reportData}
+        serviceCenterName={serviceCenterName}
+        dateRange={dateRange}
+      />
     ).toBlob();
 
     // Create download link
@@ -43,7 +43,7 @@ export const downloadReportAsPdf = async (
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     // Clean up
     URL.revokeObjectURL(url);
     onSuccess?.();

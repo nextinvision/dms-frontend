@@ -34,7 +34,7 @@ export abstract class BaseRepository<T> implements IBaseRepository<T> {
     }
 
     async update(id: string, data: Partial<T>): Promise<T> {
-        const response = await apiClient.put<T>(`${this.endpoint}/${id}`, data);
+        const response = await apiClient.patch<T>(`${this.endpoint}/${id}`, data);
         return response.data;
     }
 

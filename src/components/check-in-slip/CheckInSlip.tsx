@@ -1,6 +1,8 @@
 "use client";
-import { useRef } from "react";
+import React, { useRef } from "react";
 import { Printer, Download, X, Building2, User, Car, Calendar, Clock, Hash, CheckCircle, AlertCircle, MessageCircle } from "lucide-react";
+import { pdf } from "@react-pdf/renderer";
+import { CheckInSlipPDFDocument } from "./CheckInSlipPDFDocument";
 import type { EnhancedCheckInSlipData } from "@/shared/types/check-in-slip.types";
 
 export interface CheckInSlipData {
@@ -35,14 +37,63 @@ interface CheckInSlipProps {
 export default function CheckInSlip({ data, onClose, showActions = true, onSendToCustomer }: CheckInSlipProps) {
   const slipRef = useRef<HTMLDivElement>(null);
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    try {
+      // Generate PDF blob using React-PDF for proper text-based PDF
+      const blob = await pdf(
+        React.createElement(CheckInSlipPDFDocument, { data })
+      ).toBlob();
+      
+      // Open PDF in new window/tab for printing
+      const url = URL.createObjectURL(blob);
+      const printWindow = window.open(url, '_blank');
+      
+      if (printWindow) {
+        // Wait for PDF to load, then trigger print dialog
+        printWindow.onload = () => {
+          setTimeout(() => {
+            printWindow.print();
+            // Clean up URL after a delay
+            setTimeout(() => {
+              URL.revokeObjectURL(url);
+            }, 1000);
+          }, 500);
+        };
+      } else {
+        // Fallback: if popup blocked, try download instead
+        alert("Popup blocked. Please allow popups to print, or use Download PDF instead.");
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error("Failed to generate PDF for printing:", error);
+      // Fallback to old print method if PDF generation fails
+      window.print();
+    }
   };
 
-  const handleDownloadPDF = () => {
-    // In production, this would use a PDF library like jsPDF or html2pdf
-    // For now, we'll use the browser's print to PDF functionality
-    window.print();
+  const handleDownloadPDF = async () => {
+    try {
+      // Generate PDF blob using React-PDF
+      const blob = await pdf(
+        React.createElement(CheckInSlipPDFDocument, { data })
+      ).toBlob();
+      
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Check-in-Slip-${data.slipNumber || data.registrationNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      // Fallback to print dialog if PDF generation fails
+      window.print();
+    }
   };
 
   const formatDate = (dateString: string) => {

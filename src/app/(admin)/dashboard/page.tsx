@@ -18,6 +18,7 @@ import {
 import type { DashboardCard, Alert, QuickAction } from "@/shared/types";
 
 import { adminApprovalService } from "@/features/inventory/services/adminApproval.service";
+import { serviceCenterService } from "@/features/service-centers/services/service-center.service";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import type { PartsIssue } from "@/shared/types/central-inventory.types";
@@ -26,9 +27,8 @@ export default function Dashboard() {
   const [selectedCentre, setSelectedCentre] = useState("All Centres");
   const [pendingPartsIssues, setPendingPartsIssues] = useState<PartsIssue[]>([]);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(true);
-
-  // Load centres from localStorage
-  const centres = ["All Centres"];
+  const [centres, setCentres] = useState<string[]>(["All Centres"]);
+  const [isLoadingCentres, setIsLoadingCentres] = useState(true);
   const dashboardData: Record<string, { cards: DashboardCard[]; alerts: Alert[] }> = {
     "All Centres": {
       cards: [
@@ -59,7 +59,22 @@ export default function Dashboard() {
       }
     };
 
+    const fetchServiceCentres = async () => {
+      try {
+        setIsLoadingCentres(true);
+        const serviceCenters = await serviceCenterService.getAll();
+        const centreNames = ["All Centres", ...serviceCenters.map(sc => sc.name)];
+        setCentres(centreNames);
+      } catch (error) {
+        console.error("Failed to fetch service centres:", error);
+        // Keep default "All Centres" on error
+      } finally {
+        setIsLoadingCentres(false);
+      }
+    };
+
     fetchPendingApprovals();
+    fetchServiceCentres();
   }, []);
 
   const quickActions: QuickAction[] = [
@@ -106,13 +121,18 @@ export default function Dashboard() {
           <select
             value={selectedCentre}
             onChange={(e) => setSelectedCentre(e.target.value)}
-            className="bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 shadow-sm hover:border-purple-500 focus:border-purple-600 focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer"
+            disabled={isLoadingCentres}
+            className="bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 shadow-sm hover:border-purple-500 focus:border-purple-600 focus:ring-2 focus:ring-purple-200 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {centres.map((centre) => (
-              <option key={centre} value={centre}>
-                {centre}
-              </option>
-            ))}
+            {isLoadingCentres ? (
+              <option>Loading centres...</option>
+            ) : (
+              centres.map((centre) => (
+                <option key={centre} value={centre}>
+                  {centre}
+                </option>
+              ))
+            )}
           </select>
         </div>
 

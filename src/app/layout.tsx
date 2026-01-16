@@ -41,7 +41,8 @@ export default function RootLayout({ children }: RootLayoutProps) {
     pathname === "/finance" ||
     pathname === "/reports" ||
     pathname === "/complaints" ||
-    pathname === "/audit-logs";
+    pathname === "/audit-logs" ||
+    pathname === "/settings";
 
   // For /inventory and /approvals, check role to determine which sidebar
   const isSharedRoute = pathname === "/inventory" || pathname === "/approvals";

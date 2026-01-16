@@ -1,4 +1,6 @@
 "use client";
+import { serviceCenterService } from "@/features/service-centers/services/service-center.service";
+import type { ServiceCenter } from "@/shared/types/service-center.types";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   AlertCircle,
@@ -64,13 +66,6 @@ type Complaint = {
   date: string;
   serviceCenterId?: string;
   serviceCenterName?: string;
-};
-
-type ServiceCenter = {
-  id: number;
-  name: string;
-  status: string;
-  address?: string;
   location?: string;
 };
 
@@ -82,7 +77,7 @@ interface ComplaintForm {
   phone: string;
   complaint: string;
   severity: "Low" | "Medium" | "High" | "Critical";
-  serviceCenterId?: number;
+  serviceCenterId?: string;
 }
 
 const INITIAL_COMPLAINT_FORM: ComplaintForm = {
@@ -273,12 +268,22 @@ export default function Complaints() {
   const complaintCustomerDropdownRef = useRef<HTMLDivElement>(null);
 
   // Service centers for complaint assignment
-  const [availableServiceCenters] = useState<ServiceCenter[]>(() => {
-    if (typeof window !== "undefined") {
-      return safeStorage.getItem<ServiceCenter[]>("serviceCenters", []);
+  const [availableServiceCenters, setAvailableServiceCenters] = useState<ServiceCenter[]>([]);
+
+  useEffect(() => {
+    const fetchServiceCenters = async () => {
+      try {
+        const centers = await serviceCenterService.getAll();
+        setAvailableServiceCenters(centers);
+      } catch (error) {
+        console.error("Error fetching service centers:", error);
+      }
+    };
+    
+    if (isCallCenter) {
+       fetchServiceCenters();
     }
-    return [];
-  });
+  }, [isCallCenter]);
 
   // Load complaints from storage or use default
   const [complaints, setComplaints] = useState<Complaint[]>(() => {
@@ -287,7 +292,6 @@ export default function Complaints() {
     }
     return [];
   });
-
   // Customer search hook for complaint form
   const customerSearch = useCustomerSearch();
   const customerSearchResults: CustomerWithVehicles[] = customerSearch.results as CustomerWithVehicles[];
@@ -375,7 +379,7 @@ export default function Complaints() {
         customer.vehicles && customer.vehicles.length > 0 ? formatVehicleString(customer.vehicles[0]) : "";
 
       // Auto-suggest nearest service center for call center users
-      let suggestedServiceCenterId: number | undefined = undefined;
+      let suggestedServiceCenterId: string | undefined = undefined;
       // TODO: Implement service center recommendation based on customer location
 
       setComplaintForm((prev) => ({
@@ -1241,7 +1245,7 @@ export default function Complaints() {
                         onChange={(e) =>
                           setComplaintForm({
                             ...complaintForm,
-                            serviceCenterId: e.target.value ? Number(e.target.value) : undefined,
+                            serviceCenterId: e.target.value || undefined,
                           })
                         }
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
@@ -1250,7 +1254,7 @@ export default function Complaints() {
                         <option value="">Select Service Center</option>
                         {availableServiceCenters.map((center) => (
                           <option key={center.id} value={center.id}>
-                            {center.name} - {center.location}
+                            {center.name} - {center.city || center.address || ""}
                           </option>
                         ))}
                       </select>

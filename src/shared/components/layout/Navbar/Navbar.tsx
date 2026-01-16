@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Menu, LogOut, Search, Building, User, Package, X, ArrowRight, LucideIcon } from "lucide-react";
+import { Menu, LogOut, Search, Building, User, Package, X, ArrowRight, LucideIcon, Wrench, FileText, Calendar } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/shared/hooks";
 import { useDebounce } from "@/shared/hooks";
@@ -143,6 +143,109 @@ export function Navbar({ open, setOpen, isLoggedIn = true }: NavbarProps) {
           });
         }
       });
+
+      // If we are logged in, also search for customers via API as a fallback or parallel
+      if (isLoggedIn && query.trim().length >= 2) {
+
+        // Dynamic imports to split code bundle
+        const dependencies = Promise.all([
+          import("@/features/customers/services/customer.service"),
+          import("@/features/job-cards/services/jobCard.service"),
+          import("@/features/invoices/services/invoices.service"),
+          import("@/features/appointments/services/appointments.service"),
+          import("@/app/(service-center)/sc/customers/utils/search.utils")
+        ]);
+
+        dependencies.then(([
+          { customerService },
+          { jobCardService },
+          { invoicesService },
+          { appointmentsService },
+          { detectSearchType }
+        ]) => {
+          const searchType = detectSearchType(query);
+
+          // Execute all searches in parallel
+          Promise.allSettled([
+            customerService.search(query, searchType),
+            jobCardService.getAll({ search: query, limit: 5 }), // Assuming backend supports search param
+            invoicesService.getAll({ search: query, limit: 5 } as any),
+            appointmentsService.getAll({ search: query, limit: 5 })
+          ]).then((outcomes) => {
+            const newResults: SearchResult[] = [];
+
+            // 1. Customers
+            if (outcomes[0].status === 'fulfilled' && outcomes[0].value) {
+              outcomes[0].value.forEach(c => {
+                newResults.push({
+                  type: "Customer",
+                  id: `cust-${c.id}`,
+                  title: c.name,
+                  subtitle: `${c.phone} • ${c.cityState || 'No Location'}`,
+                  icon: User,
+                  href: `/sc/customers/${c.id}`,
+                  color: "text-orange-600"
+                });
+              });
+            }
+
+            // 2. Job Cards
+            if (outcomes[1].status === 'fulfilled' && Array.isArray(outcomes[1].value)) {
+              outcomes[1].value.forEach(jc => {
+                newResults.push({
+                  type: "Job Card",
+                  id: `jc-${jc.id}`,
+                  title: jc.jobCardNumber || `Job Card #${jc.id.toString().slice(0, 8)}`,
+                  subtitle: `${(typeof jc.vehicle === 'string' ? jc.vehicle : jc.vehicle?.registration) || 'No Vehicle'} • ${jc.status}`,
+                  icon: Wrench,
+                  href: `/sc/job-cards/${jc.id}`,
+                  color: "text-blue-600"
+                });
+              });
+            }
+
+            // 3. Invoices
+            if (outcomes[2].status === 'fulfilled' && Array.isArray(outcomes[2].value)) {
+              outcomes[2].value.forEach(inv => {
+                const invoiceNumber = inv.invoiceNumber || `INV-${inv.id.toString().slice(0, 6)}`;
+                newResults.push({
+                  type: "Invoice",
+                  id: `inv-${inv.id}`,
+                  title: invoiceNumber,
+                  subtitle: `Amount: ${inv.grandTotal || inv.amount || 'N/A'} • ${inv.status}`,
+                  icon: FileText,
+                  href: `/sc/invoices`,
+                  color: "text-green-600"
+                });
+              });
+            }
+
+            // 4. Appointments
+            if (outcomes[3].status === 'fulfilled' && Array.isArray(outcomes[3].value)) {
+              outcomes[3].value.forEach(apt => {
+                newResults.push({
+                  type: "Appointment",
+                  id: `apt-${apt.id}`,
+                  title: `Appointment: ${apt.customer?.name || 'Unknown'}`,
+                  subtitle: `${new Date(apt.appointmentDate).toLocaleDateString()} • ${apt.serviceType}`,
+                  icon: Calendar,
+                  href: `/sc/appointments`,
+                  color: "text-purple-600"
+                });
+              });
+            }
+
+            if (newResults.length > 0) {
+              setSearchResults(prev => {
+                const currentIds = new Set(prev.map(r => r.id));
+                const uniqueNew = newResults.filter(r => !currentIds.has(r.id));
+                return [...prev, ...uniqueNew];
+              });
+              setShowResults(true);
+            }
+          });
+        }).catch(err => console.error("Global search failed", err));
+      }
     }
 
     setSearchResults(results);

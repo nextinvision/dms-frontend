@@ -452,7 +452,8 @@ export default function JobCardFormModal({
       } catch (apiError: any) {
         console.error("Quotation creation failed:", apiError);
         console.error("Error response:", apiError.response?.data);
-        const errorMessage = apiError.response?.data?.message || apiError.message || "Unknown error";
+        const { formatApiErrorMessage } = require("@/shared/utils/api-validation.utils");
+        const errorMessage = formatApiErrorMessage(apiError);
         throw new Error(`Quotation creation failed: ${errorMessage}`);
       }
 

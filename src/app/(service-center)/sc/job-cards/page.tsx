@@ -603,14 +603,6 @@ export default function JobCards() {
           />
         )}
 
-
-        {filteredJobs.length === 0 && (
-          <div className="bg-white rounded-xl md:rounded-2xl shadow-md p-6 md:p-12 text-center">
-            <FileText className="mx-auto text-gray-400 mb-3 md:mb-4" size={48} />
-            <h3 className="text-lg md:text-xl font-semibold text-gray-700 mb-1 md:mb-2">No Job Cards Found</h3>
-            <p className="text-gray-500 text-sm md:text-base">No job cards match the current filter criteria.</p>
-          </div>
-        )}
       </div>
 
       {/* Job Card Details Modal */}

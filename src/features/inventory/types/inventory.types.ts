@@ -99,9 +99,11 @@ export interface Part {
 
   // Pricing - Purchase
   costPrice?: number;        // Purchase Price
+  purchasePrice?: string;    // Purchase Price as string
   pricePreGst?: number;      // Pre GST Amount To Us
   gstRateInput?: number;     // GST Rate Input %
   gstInput?: number;         // GST Input Amount
+  gstAmount?: number;        // GST Amount
 
   // Pricing - Sale
   price?: number;            // Legacy alias for unitPrice
@@ -115,6 +117,8 @@ export interface Part {
   labourName?: string;       // Associated Labour Name
   labourCode?: string;       // Associated Labour Code
   labourWorkTime?: string;   // Work Time (e.g., 0.3M)
+  estimatedLabour?: string;  // Estimated labour cost
+  estimatedLabourWorkTime?: string; // Estimated labour work time
   labourRate?: number;       // Labour Rate
   labourGstRate?: number;    // Labour GST Rate %
   labourPrice?: number;      // Labour Price including GST
@@ -157,9 +161,11 @@ export interface PartFormData {
 
   // Pricing - Purchase
   costPrice?: number;
+  purchasePrice?: string;    // Purchase price as string
   pricePreGst?: number;
   gstRateInput?: number;
   gstInput?: number;
+  gstAmount?: number;        // GST amount
 
   // Pricing - Sale
   price?: number;
@@ -173,6 +179,8 @@ export interface PartFormData {
   labourName?: string;
   labourCode?: string;
   labourWorkTime?: string;
+  estimatedLabour?: string;       // Estimated labour cost
+  estimatedLabourWorkTime?: string; // Estimated labour work time
   labourRate?: number;
   labourGstRate?: number;
   labourPrice?: number;

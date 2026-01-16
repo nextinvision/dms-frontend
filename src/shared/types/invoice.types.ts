@@ -45,6 +45,7 @@ export interface ServiceCenterInvoiceItem {
  */
 export interface EnhancedServiceCenterInvoiceItem {
   name: string;
+  hsnSacCode?: string; // HSN/SAC code for the item
   unitPrice: number;
   quantity: number;
   taxableAmount: number;
@@ -63,7 +64,7 @@ export interface ServiceCenterInvoiceDetails {
   address: string;
   city?: string;
   state: string;
-  pincode?: string;
+  pincode?: string; // Note: Prisma uses pinCode but we normalize to pincode for frontend
   gstNumber: string;
   panNumber: string;
   phone?: string;
@@ -103,6 +104,7 @@ export interface ServiceCenterInvoice {
   id: string;
   invoiceNumber?: string; // Proper sequential numbering (e.g., INV-SC001-2025-0001)
   jobCardId?: string;
+  jobCardNumber?: string; // Job card number for display
   customerId?: string;
   vehicleId?: string;
   customerName: string;

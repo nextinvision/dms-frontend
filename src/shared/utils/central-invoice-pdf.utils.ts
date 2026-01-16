@@ -3,6 +3,9 @@
  * Converts Invoice (from parts issues) to PDF format
  */
 
+import React from "react";
+import { pdf } from "@react-pdf/renderer";
+import { InvoicePDFDocument } from "@/shared/components/invoice/InvoicePDFDocument";
 import type { Invoice } from "@/shared/types/invoice.types";
 import type { ServiceCenterInvoice } from "@/shared/types/invoice.types";
 import { generateInvoiceHTML } from "./invoicePDF.utils";
@@ -13,7 +16,7 @@ import { generateInvoiceHTML } from "./invoicePDF.utils";
 export function convertInvoiceToServiceCenterInvoice(invoice: Invoice): ServiceCenterInvoice {
   // Calculate GST if not provided (assume 18% if missing)
   const defaultGstRate = 18;
-  
+
   // Map items with GST calculations
   const items = invoice.items.map(item => {
     const unitPrice = item.unitPrice;
@@ -70,7 +73,7 @@ export function convertInvoiceToServiceCenterInvoice(invoice: Invoice): ServiceC
     totalIgst: 0,
     totalTax: totalTax,
     grandTotal: grandTotal,
-    notes: invoice.notes,
+    termsAndConditions: invoice.notes ? [invoice.notes] : [],
     createdBy: invoice.createdBy || invoice.issuedBy,
     enhancedItems: items.map(item => ({
       name: item.name,
@@ -107,47 +110,100 @@ export function generateCentralInvoiceHTML(invoice: Invoice): string {
 }
 
 /**
- * Download invoice as PDF
+ * Download invoice as PDF using React-PDF
  */
-export function downloadCentralInvoicePDF(invoice: Invoice): void {
+export async function downloadCentralInvoicePDF(invoice: Invoice): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const invoiceHTML = generateCentralInvoiceHTML(invoice);
+  try {
+    // Convert Invoice to ServiceCenterInvoice format
+    const serviceCenterInvoice = convertInvoiceToServiceCenterInvoice(invoice);
 
-  // Open a new window with the invoice content
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(invoiceHTML);
-    printWindow.document.close();
-    // Wait for content to load, then trigger print dialog
-    setTimeout(() => {
-      printWindow.print();
-    }, 250);
-  } else {
-    alert("Please allow popups to download the invoice");
+    // Generate PDF blob using React-PDF
+    const blob = await pdf(
+      React.createElement(InvoicePDFDocument, { invoice: serviceCenterInvoice }) as any
+    ).toBlob();
+
+    // Create download link
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Invoice-${invoice.invoiceNumber || invoice.id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Clean up
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("Failed to generate PDF:", error);
+    // Fallback to HTML print if PDF generation fails
+    const invoiceHTML = generateCentralInvoiceHTML(invoice);
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(invoiceHTML);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    } else {
+      alert("Please allow popups to download the invoice");
+    }
   }
 }
 
 /**
- * Print invoice directly
+ * Print invoice using React-PDF
  */
-export function printCentralInvoice(invoice: Invoice): void {
+export async function printCentralInvoice(invoice: Invoice): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const invoiceHTML = generateCentralInvoiceHTML(invoice);
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(invoiceHTML);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
+  try {
+    const { pdf } = await import("@react-pdf/renderer");
+    const { InvoicePDFDocument } = await import("@/shared/components/invoice/InvoicePDFDocument");
+    const React = await import("react");
+
+    // Convert Invoice to ServiceCenterInvoice format
+    const serviceCenterInvoice = convertInvoiceToServiceCenterInvoice(invoice);
+
+    // Generate PDF blob using React-PDF for proper text-based PDF
+    const blob = await pdf(
+      React.createElement(InvoicePDFDocument, { invoice: serviceCenterInvoice }) as any
+    ).toBlob();
+
+    // Open PDF in new window/tab for printing
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+
+    if (printWindow) {
+      // Wait for PDF to load, then trigger print dialog
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.print();
+          // Clean up URL after a delay
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+          }, 1000);
+        }, 500);
+      };
+    } else {
+      // Fallback: if popup blocked
+      alert("Popup blocked. Please allow popups to print, or use Download PDF instead.");
+      URL.revokeObjectURL(url);
+    }
+  } catch (error) {
+    console.error("Failed to generate PDF for printing:", error);
+    // Fallback to HTML print
+    const invoiceHTML = generateCentralInvoiceHTML(invoice);
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(invoiceHTML);
+      printWindow.document.close();
       setTimeout(() => {
-        if (!printWindow.closed) {
-          printWindow.close();
-        }
-      }, 2000);
-    }, 500);
+        printWindow.focus();
+        printWindow.print();
+      }, 500);
+    }
   }
 }
 

@@ -12,6 +12,7 @@ import { validatePhone, validateEmail, cleanPhone } from "@/shared/utils/validat
 import { initialCustomerForm } from "../constants/form.constants";
 import type { NewCustomerForm, CustomerWithVehicles, UserRole } from "@/shared/types";
 import { staticServiceCenters } from "@/shared/types";
+import { customerService } from "@/features/customers/services/customer.service";
 
 export interface UseCustomerFormReturn {
   newCustomerForm: NewCustomerForm;
@@ -33,7 +34,13 @@ export interface UseCustomerFormReturn {
     setSelectedCustomer: (customer: CustomerWithVehicles) => void,
     setShowCreateForm: (show: boolean) => void,
     setShowCreateCustomer: (show: boolean) => void,
-    setValidationError: (error: string) => void
+    onSuccess?: () => void
+  ) => Promise<CustomerWithVehicles | null>;
+  handleUpdateCustomer: (
+    customerId: string,
+    showToast: (message: string, type: "success" | "error") => void,
+    setCustomer: (customer: CustomerWithVehicles) => void,
+    closeModal: () => void
   ) => Promise<CustomerWithVehicles | null>;
 }
 
@@ -145,14 +152,13 @@ export function useCustomerForm(
       setSelectedCustomer: (customer: CustomerWithVehicles) => void,
       setShowCreateForm: (show: boolean) => void,
       setShowCreateCustomer: (show: boolean) => void,
-      setValidationError: (error: string) => void
+      onSuccess?: () => void
     ): Promise<CustomerWithVehicles | null> => {
       const { errors, hasErrors } = validateCustomerForm();
 
       // Check permission before creating customer
       const canCreateNewCustomer = canCreateCustomer(userRole);
       if (!canCreateNewCustomer) {
-        setValidationError("You do not have permission to create new customers.");
         showToast("You do not have permission to create new customers.", "error");
         return null;
       }
@@ -161,11 +167,10 @@ export function useCustomerForm(
 
       if (hasErrors) {
         const errorCount = Object.keys(errors).length;
-        setValidationError(`Please fill ${errorCount} mandatory field${errorCount > 1 ? "s" : ""} to continue`);
+        showToast(`Please fill ${errorCount} mandatory field${errorCount > 1 ? "s" : ""} to continue`, "error");
         return null;
       }
 
-      setValidationError("");
       setFieldErrors({});
 
       const serviceCenterContext = getServiceCenterContext();
@@ -193,9 +198,11 @@ export function useCustomerForm(
         setShowCreateCustomer(false);
         resetCustomerForm();
         showToast(`Customer created successfully! Customer Number: ${customer.customerNumber}`, "success");
+        // Auto-refresh customer list
+        if (onSuccess) onSuccess();
         return customer;
       } else if (createError) {
-        setValidationError(createError);
+        showToast(createError, "error");
       }
 
       return null;
@@ -217,6 +224,62 @@ export function useCustomerForm(
     resetCustomerForm,
     validateCustomerForm,
     handleSaveNewCustomer,
+    handleUpdateCustomer: useCallback(
+      async (
+        customerId: string,
+        showToast: (message: string, type: "success" | "error") => void,
+        setCustomer: (customer: CustomerWithVehicles) => void,
+        closeModal: () => void,
+        onSuccess?: () => void
+      ): Promise<CustomerWithVehicles | null> => {
+        const { errors, hasErrors } = validateCustomerForm();
+
+        setFieldErrors(errors);
+
+        if (hasErrors) {
+          const errorCount = Object.keys(errors).length;
+          showToast(`Please fill ${errorCount} mandatory field${errorCount > 1 ? "s" : ""} to continue`, "error");
+          return null;
+        }
+
+        setFieldErrors({});
+
+        // Combine city and state into cityState for backend compatibility
+        const cityState = selectedCity && selectedState ? `${selectedCity}, ${selectedState}` : "";
+
+        try {
+          // Prepare update payload
+          const updatePayload: Partial<CustomerWithVehicles> = {
+            name: newCustomerForm.name,
+            phone: cleanPhone(newCustomerForm.phone),
+            whatsappNumber: newCustomerForm.whatsappNumber ? cleanPhone(newCustomerForm.whatsappNumber) : undefined,
+            alternateNumber: newCustomerForm.alternateNumber ? cleanPhone(newCustomerForm.alternateNumber) : undefined,
+            email: newCustomerForm.email,
+            address: newCustomerForm.address,
+            cityState: cityState,
+            pincode: newCustomerForm.pincode,
+            customerType: newCustomerForm.customerType,
+            // Add other fields if necessary
+          };
+
+          const updatedCustomer = await customerService.update(customerId, updatePayload);
+
+          if (updatedCustomer) {
+            setCustomer(updatedCustomer);
+            closeModal();
+            showToast("Customer updated successfully", "success");
+            // Auto-refresh customer list
+            if (onSuccess) onSuccess();
+            return updatedCustomer;
+          }
+        } catch (error: any) {
+          console.error("Failed to update customer:", error);
+          showToast(error.message || "Failed to update customer", "error");
+        }
+        return null;
+      },
+      [newCustomerForm, selectedState, selectedCity, validateCustomerForm, setFieldErrors]
+    ),
   };
 }
 

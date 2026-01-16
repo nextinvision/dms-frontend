@@ -8,6 +8,7 @@ import { Modal } from "../../../components/shared/FormElements";
 import { Button } from "../../../components/shared/Button";
 import type { ServiceCenterInvoice } from "@/shared/types";
 import { downloadInvoice, printInvoice } from "../../utils/invoice.utils";
+import { useToast } from "../../hooks";
 
 export interface InvoiceModalProps {
   isOpen: boolean;
@@ -16,14 +17,24 @@ export interface InvoiceModalProps {
 }
 
 export function InvoiceModal({ isOpen, invoice, onClose }: InvoiceModalProps) {
+  const { showToast, ToastComponent } = useToast();
+
   if (!isOpen || !invoice) return null;
 
-  const handleDownload = () => {
-    downloadInvoice(invoice);
+  const handleDownload = async () => {
+    try {
+      await downloadInvoice(invoice);
+    } catch (error) {
+      console.error("Failed to download invoice:", error);
+    }
   };
 
-  const handlePrint = () => {
-    printInvoice(invoice);
+  const handlePrint = async () => {
+    try {
+      await printInvoice(invoice, showToast);
+    } catch (error) {
+      console.error("Failed to print invoice:", error);
+    }
   };
 
   return (
@@ -34,6 +45,7 @@ export function InvoiceModal({ isOpen, invoice, onClose }: InvoiceModalProps) {
       maxWidth="max-w-4xl"
     >
       <div className="p-6">
+        <ToastComponent />
         {/* Invoice Header */}
         <div className="border-b border-gray-200 pb-4 mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -42,15 +54,14 @@ export function InvoiceModal({ isOpen, invoice, onClose }: InvoiceModalProps) {
               <p className="text-sm text-gray-600 mt-1">Job Card: {invoice.jobCardId}</p>
             </div>
             <span
-              className={`px-4 py-2 rounded-full text-sm font-semibold ${
-                invoice.status === "Paid"
+              className={`px-4 py-2 rounded-full text-sm font-semibold ${invoice.status === "Paid"
                   ? "bg-green-100 text-green-700"
                   : invoice.status === "Partially Paid"
-                  ? "bg-yellow-100 text-yellow-700"
-                  : invoice.status === "Unpaid"
-                  ? "bg-orange-100 text-orange-700"
-                  : "bg-red-100 text-red-700"
-              }`}
+                    ? "bg-yellow-100 text-yellow-700"
+                    : invoice.status === "Unpaid"
+                      ? "bg-orange-100 text-orange-700"
+                      : "bg-red-100 text-red-700"
+                }`}
             >
               {invoice.status}
             </span>

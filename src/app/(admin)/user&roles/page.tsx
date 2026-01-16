@@ -39,32 +39,34 @@ interface UserFormData {
   serviceCenter: string;
 }
 
-// Global Roles configuration
-const GLOBAL_ROLES = ["Super Admin", "Call Center", "Central Inventory Mgr", "Finance Manager"];
+// Global Group Configuration Interface
+interface GlobalGroupConfig {
+  id: string;
+  name: string;
+  role: string;
+  icon: any;
+  description: string;
+}
 
-const GLOBAL_GROUPS = [
-  { id: 'global-admin', name: 'Administration', role: 'Super Admin', icon: ShieldCheck, description: 'Platform oversight & config', theme: 'indigo' },
-  { id: 'global-inventory', name: 'Central Inventory', role: 'Central Inventory Mgr', icon: Box, description: 'Stock & parts management', theme: 'orange' },
-  { id: 'global-call-center', name: 'Call Center', role: 'Call Center', icon: Headset, description: 'Customer support agents', theme: 'cyan' },
+// Global Roles configuration (removed: Super Admin, Call Center, Central Inventory Manager)
+const GLOBAL_ROLES = ["Finance Manager"];
+
+const GLOBAL_GROUPS: GlobalGroupConfig[] = [
+  // Removed global admin, inventory, and call center groups
 ];
 
 const ROLE_MAPPING_UI_TO_BACKEND: Record<string, UserRole> = {
-  "Super Admin": "admin",
   "SC Manager": "sc_manager",
-  "Central Inventory Mgr": "central_inventory_manager",
-  "Call Center": "call_center",
+  "SC Inventory Manager": "inventory_manager",
   "Technician Engineer": "service_engineer",
   "Service Advisor": "service_advisor"
 };
 
 const ROLE_MAPPING_BACKEND_TO_UI: Record<string, string> = {
-  "admin": "Super Admin",
   "sc_manager": "SC Manager",
-  "inventory_manager": "Finance Manager",
-  "call_center": "Call Center",
+  "inventory_manager": "SC Inventory Manager",
   "service_engineer": "Technician Engineer",
-  "service_advisor": "Service Advisor",
-  "central_inventory_manager": "Central Inventory Mgr"
+  "service_advisor": "Service Advisor"
 };
 
 interface UserGroup {
@@ -115,7 +117,7 @@ export default function UsersAndRolesPage() {
     fullName: "",
     email: "",
     password: "",
-    role: "Super Admin",
+    role: "Service Advisor",
     status: "Active",
     serviceCenter: "",
   });
@@ -319,7 +321,7 @@ export default function UsersAndRolesPage() {
   };
 
   const resetForm = () => {
-    setFormData({ fullName: "", email: "", password: "", role: "Super Admin", status: "Active", serviceCenter: "" });
+    setFormData({ fullName: "", email: "", password: "", role: "Service Advisor", status: "Active", serviceCenter: "" });
   };
 
   const confirmDelete = async () => {
@@ -362,8 +364,12 @@ export default function UsersAndRolesPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               {selectedGroup && (
-                <button onClick={() => setSelectedGroup(null)} className="text-slate-400 hover:text-slate-600 transition-colors flex items-center hover:underline">
-                  User Management
+                <button
+                  onClick={() => setSelectedGroup(null)}
+                  className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all border border-slate-200 hover:border-slate-300 shadow-sm hover:shadow"
+                  title="Back to Users and Roles"
+                >
+                  <ArrowLeft size={20} strokeWidth={2.5} />
                 </button>
               )}
               {selectedGroup && <ChevronRight size={16} className="text-slate-300" />}
@@ -618,8 +624,8 @@ export default function UsersAndRolesPage() {
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
               <div className="space-y-4">
-                <InputGroup label="Full Name" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="e.g. Sarah Smith" required />
-                <InputGroup label="Email Address" name="email" value={formData.email} onChange={handleChange} placeholder="name@company.com" type="email" required />
+                <InputGroup label="Full Name" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="e.g. Sarah Smith" autoComplete="name" required />
+                <InputGroup label="Email Address" name="email" value={formData.email} onChange={handleChange} placeholder="name@company.com" type="email" autoComplete="email" required />
 
                 <InputGroup
                   label={editingUser ? "New Password" : "Password"}
@@ -628,6 +634,7 @@ export default function UsersAndRolesPage() {
                   onChange={handleChange}
                   placeholder="••••••••"
                   type="password"
+                  autoComplete={editingUser ? "new-password" : "new-password"}
                   required={!editingUser}
                 />
 
@@ -741,11 +748,12 @@ const ActionButton = ({ icon: Icon, onClick, label, color }: any) => {
   );
 };
 
-const InputGroup = ({ label, type = "text", ...props }: any) => (
+const InputGroup = ({ label, type = "text", autoComplete, ...props }: any) => (
   <div className="space-y-1.5 w-full">
     <label className="text-sm font-medium text-slate-700">{label}</label>
     <input
       type={type}
+      autoComplete={autoComplete}
       className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-300"
       {...props}
     />

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { adminApprovalService } from "@/features/inventory/services/adminApproval.service";
 import { useRole } from "@/shared/hooks";
 import { useToast } from "@/contexts/ToastContext";
@@ -20,6 +20,19 @@ export default function PartsIssueApprovalsPage() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Use refs to track state without causing re-renders in useEffect
+  const isLoadingRef = useRef(false);
+  const isProcessingRef = useRef(false);
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+  
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   // Shared data fetching logic
   const fetchPendingRequestsData = useCallback(async () => {
@@ -32,12 +45,14 @@ export default function PartsIssueApprovalsPage() {
   const fetchPendingRequests = useCallback(async () => {
     try {
       setIsLoading(true);
+      isLoadingRef.current = true;
       await fetchPendingRequestsData();
     } catch (error) {
       console.error("Failed to fetch pending requests:", error);
       showError("Failed to fetch pending requests. Please refresh the page.");
     } finally {
       setIsLoading(false);
+      isLoadingRef.current = false;
     }
   }, [fetchPendingRequestsData, showError]);
 
@@ -55,31 +70,33 @@ export default function PartsIssueApprovalsPage() {
   }, [fetchPendingRequestsData]);
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchPendingRequests();
-      
-      // Auto-refresh polling: Check for updates every 5 seconds
-      const pollInterval = setInterval(() => {
-        // Only poll if page is visible and not currently loading/processing
-        if (document.visibilityState === "visible" && !isLoading && !isProcessing) {
-          fetchPendingRequestsSilently();
-        }
-      }, 5000);
+    if (!isAdmin) return;
+    
+    // Initial fetch
+    fetchPendingRequests();
+    
+    // Auto-refresh polling: Check for updates every 5 seconds
+    const pollInterval = setInterval(() => {
+      // Only poll if page is visible and not currently loading/processing
+      // Use refs instead of state to avoid dependency issues
+      if (document.visibilityState === "visible" && !isLoadingRef.current && !isProcessingRef.current) {
+        fetchPendingRequestsSilently();
+      }
+    }, 5000);
 
-      // Also refresh when page becomes visible
-      const handleVisibilityChange = () => {
-        if (document.visibilityState === "visible" && !isLoading && !isProcessing) {
-          fetchPendingRequestsSilently();
-        }
-      };
-      document.addEventListener("visibilitychange", handleVisibilityChange);
+    // Also refresh when page becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !isLoadingRef.current && !isProcessingRef.current) {
+        fetchPendingRequestsSilently();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-      return () => {
-        clearInterval(pollInterval);
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-      };
-    }
-  }, [isAdmin, isLoading, isProcessing, fetchPendingRequests, fetchPendingRequestsSilently]);
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isAdmin, fetchPendingRequests, fetchPendingRequestsSilently]);
 
   const handleApprove = async (id: string) => {
     if (!isAdmin) {

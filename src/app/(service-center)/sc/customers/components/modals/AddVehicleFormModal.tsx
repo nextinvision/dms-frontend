@@ -21,9 +21,11 @@ export interface AddVehicleFormModalProps {
   onVehicleFormCityChange: (city: string) => void;
   hasInsurance: boolean;
   onHasInsuranceChange: (hasInsurance: boolean) => void;
-  validationError: string;
   onClose: () => void;
   onSubmit: () => Promise<void>;
+  isEditMode?: boolean;
+  updatedBy?: string;
+  updatedAt?: string;
 }
 
 export function AddVehicleFormModal({
@@ -37,9 +39,11 @@ export function AddVehicleFormModal({
   onVehicleFormCityChange,
   hasInsurance,
   onHasInsuranceChange,
-  validationError,
   onClose,
   onSubmit,
+  isEditMode,
+  updatedBy,
+  updatedAt,
 }: AddVehicleFormModalProps) {
   if (!isOpen || !customer) return null;
 
@@ -66,9 +70,25 @@ export function AddVehicleFormModal({
   const defaultCity = getDefaultCity();
 
   return (
-    <Modal title="Add New Vehicle" onClose={onClose}>
+    <Modal title={isEditMode ? "Edit Vehicle Details" : "Add New Vehicle"} onClose={onClose}>
       <div className="p-6 space-y-6">
-        {validationError && <ErrorAlert message={validationError} />}
+        {/* Audit Trail - Only show in edit mode */}
+        {isEditMode && (updatedBy || updatedAt) && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              {updatedBy && (
+                <div>
+                  <span className="font-semibold">Last Updated By:</span> {updatedBy}
+                </div>
+              )}
+              {updatedAt && (
+                <div>
+                  <span className="font-semibold">Last Updated:</span> {new Date(updatedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Customer Information Section - Read-only, Prefilled */}
         <div className="bg-indigo-50 rounded-lg p-4 space-y-4">
@@ -124,8 +144,8 @@ export function AddVehicleFormModal({
                 onChange={(e) => onVehicleFormCityChange(e.target.value)}
                 disabled={!vehicleFormState && !customer.cityState}
                 className={`w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 border ${!vehicleFormState && !customer.cityState
-                    ? "bg-gray-100 border-gray-200 cursor-not-allowed text-gray-400"
-                    : "bg-white focus:ring-indigo-500/20 border-gray-200"
+                  ? "bg-gray-100 border-gray-200 cursor-not-allowed text-gray-400"
+                  : "bg-white focus:ring-indigo-500/20 border-gray-200"
                   }`}
               >
                 <option value="">{(vehicleFormState || customer.cityState) ? "Select City" : "Select State First"}</option>
@@ -294,7 +314,7 @@ export function AddVehicleFormModal({
             Cancel
           </Button>
           <Button onClick={onSubmit} className="flex-1">
-            Add Vehicle
+            {isEditMode ? "Update Vehicle" : "Add Vehicle"}
           </Button>
         </div>
       </div>

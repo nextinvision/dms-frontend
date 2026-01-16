@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Lock, Mail, ChevronDown } from "lucide-react";
@@ -17,10 +17,30 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // Clear any stale auth cookies on mount ONLY if we're actually on login page
+  // This prevents middleware from redirecting based on stale cookies
+  useEffect(() => {
+    // Only clear cookies if we're on the login page and there are stale cookies
+    // Don't interfere with successful logins by clearing on every mount
+    if (typeof window !== 'undefined' && window.location.pathname === '/') {
+      // Check if there are stale cookies that might cause redirects
+      // Only clear if we detect we're stuck on login page with old cookies
+      const token = authService.getToken();
+      // Only clear mock tokens or if explicitly needed
+      if (token === 'mock_token' || token === '') {
+        authService.logout();
+      }
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // Prevent any form bubbling
+    
+    // Clear previous errors
     setError("");
 
+    // Basic validation
     if (!email || !password) {
       setError("Please enter email and password");
       return;
@@ -34,13 +54,53 @@ export default function LoginPage() {
         password,
       });
 
+      // Verify that login actually succeeded - result should have user and token
+      if (!result || !result.user || !result.access_token) {
+        // Clear any stale auth data on invalid response
+        authService.logout();
+        throw new Error("Invalid response from server. Please try again.");
+      }
+
+      // Small delay to ensure cookies are fully set and persisted before redirect
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
       // Redirect to appropriate dashboard based on user role
+      // Use window.location.replace to avoid history entry and prevent back button issues
       const redirectPath = getRedirectPath(result.user.role);
-      router.push(redirectPath);
+      
+      // Prevent any state updates during redirect
+      setIsLoading(false);
+      
+      // Use replace instead of href to avoid adding to history
+      window.location.replace(redirectPath);
+      
+      // Exit early to prevent any further execution
+      return;
+      
     } catch (err: any) {
       console.error("Login error:", err);
-      setError(err.message || "Invalid email or password");
+      
+      // IMMEDIATELY clear any stale auth tokens/cookies on login failure
+      // This must happen BEFORE anything else to prevent middleware redirects
+      authService.logout();
+      
+      // Ensure we're not loading anymore
       setIsLoading(false);
+      
+      // Extract error message properly
+      const errorMessage = err?.response?.data?.message || 
+                          err?.message || 
+                          "Invalid email or password";
+      
+      // Set error message - this will display in the UI
+      setError(errorMessage);
+      
+      // Clear password field on error for security
+      setPassword("");
+      
+      // DO NOT redirect on error - stay on login page
+      // Explicitly return to prevent any further execution
+      return;
     }
   };
 

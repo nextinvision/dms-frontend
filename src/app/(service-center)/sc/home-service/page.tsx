@@ -21,6 +21,7 @@ import type { HomeService, HomeServiceStatus, HomeServiceFilterType } from "@/sh
 import { homeServiceService, HomeServiceResponse } from "@/features/home-service/services/home-service.service";
 import { apiClient } from "@/core/api/client";
 import { API_ENDPOINTS } from "@/config/api.config";
+import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 
 // Helper to map backend status to frontend status
 const mapBackendStatusToFrontend = (status: string): HomeServiceStatus => {
@@ -101,7 +102,8 @@ export default function HomeService() {
   useEffect(() => {
     const fetchEngineers = async () => {
       try {
-        const serviceCenterId = localStorage.getItem('serviceCenterId') || '';
+        const context = getServiceCenterContext();
+        const serviceCenterId = context.serviceCenterId || '';
         const params = serviceCenterId ? `?role=service_engineer&serviceCenterId=${serviceCenterId}` : '?role=service_engineer';
         const response = await apiClient.get(`${API_ENDPOINTS.USERS}${params}`) as any;
         const data = Array.isArray(response.data) ? response.data : (response.data?.data || []);
@@ -122,7 +124,8 @@ export default function HomeService() {
   const fetchHomeServices = async () => {
     try {
       setIsLoading(true);
-      const serviceCenterId = localStorage.getItem('serviceCenterId') || '';
+      const context = getServiceCenterContext();
+      const serviceCenterId = context.serviceCenterId || '';
       const params: any = {};
       if (serviceCenterId) params.serviceCenterId = serviceCenterId;
       if (filter !== 'all') {
@@ -150,7 +153,8 @@ export default function HomeService() {
 
   const fetchStats = async () => {
     try {
-      const serviceCenterId = localStorage.getItem('serviceCenterId') || undefined;
+      const context = getServiceCenterContext();
+      const serviceCenterId = context.serviceCenterId || undefined;
       const statsData = await homeServiceService.getStats(serviceCenterId);
       setStats({
         scheduled: statsData.scheduled,
@@ -204,9 +208,10 @@ export default function HomeService() {
 
     try {
       setIsSubmitting(true);
-      const serviceCenterId = localStorage.getItem('serviceCenterId');
+      const context = getServiceCenterContext();
+      const serviceCenterId = context.serviceCenterId;
       if (!serviceCenterId) {
-        alert("Service Center ID not found. Please login again.");
+        alert("Service Center ID not found. Please ensure you are logged in and associated with a service center.");
         return;
       }
 
@@ -216,7 +221,7 @@ export default function HomeService() {
       // Extract numeric cost from string
       const costValue = parseFloat(scheduleForm.estimatedCost.replace(/[₹,]/g, ''));
 
-      await homeServiceService.create({
+      const newService = await homeServiceService.create({
         serviceCenterId,
         customerName: scheduleForm.customerName,
         phone: scheduleForm.phone,
@@ -232,7 +237,7 @@ export default function HomeService() {
 
       alert("Home service scheduled successfully!");
 
-      // Reset form and close modal
+      // Reset form and close modal first
       setScheduleForm({
         customerName: "",
         phone: "",
@@ -248,9 +253,44 @@ export default function HomeService() {
       });
       setShowScheduleModal(false);
 
-      // Refresh data
-      await fetchHomeServices();
-      await fetchStats();
+      // Close modal and reset form first
+      setShowScheduleModal(false);
+      setScheduleForm({
+        customerName: "",
+        phone: "",
+        vehicle: "",
+        registration: "",
+        address: "",
+        serviceType: "",
+        scheduledDate: "",
+        scheduledTime: "",
+        engineer: "",
+        estimatedCost: "",
+        serviceCenterId: "",
+      });
+
+      // Optimistically add the new service to the list if it matches the current filter
+      try {
+        const newServiceMapped = mapBackendToFrontend(newService);
+        const statusMatches = filter === 'all' || 
+                              filter === 'scheduled' || 
+                              newServiceMapped.status.toLowerCase().replace(' ', '_') === filter;
+        
+        if (statusMatches) {
+          setHomeServices(prev => [newServiceMapped, ...prev]);
+        }
+      } catch (e) {
+        console.warn("Could not optimistically add service:", e);
+      }
+      
+      // Refresh data to get the updated list from server (this will override the optimistic update)
+      // Use a small delay to ensure the modal is closed first
+      setTimeout(async () => {
+        await Promise.all([
+          fetchHomeServices(),
+          fetchStats()
+        ]);
+      }, 100);
     } catch (error: any) {
       console.error("Failed to create home service:", error);
       alert(error?.message || "Failed to schedule home service. Please try again.");

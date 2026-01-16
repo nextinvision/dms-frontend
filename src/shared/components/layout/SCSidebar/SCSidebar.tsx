@@ -44,11 +44,11 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
     { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
     { name: "Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
-     { name: "Quotations", icon: FileText, href: "/sc/quotations" },
+    { name: "Quotations", icon: FileText, href: "/sc/quotations" },
     { name: "Leads", icon: Users, href: "/sc/leads" },
     { name: "Workshop", icon: Wrench, href: "/sc/workshop" },
     { name: "Inventory", icon: Package, href: "/sc/inventory" },
-  
+
     { name: "Home Service", icon: Truck, href: "/sc/home-service" },
     { name: "Invoices", icon: DollarSign, href: "/sc/invoices" },
     { name: "Technicians", icon: Users, href: "/sc/technicians" },
@@ -112,6 +112,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
     name: (isMounted && userInfo?.name) ? userInfo.name : "SC Manager",
     role: (isMounted && userInfo?.role) ? userInfo.role : "SC Manager",
     initials: (isMounted && userInfo?.initials) ? userInfo.initials : "SC",
+    center: (isMounted && userInfo?.serviceCenterName) ? userInfo.serviceCenterName : "Pune Phase 1",
   };
 
   const handleLogout = () => {
@@ -138,7 +139,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
         isOpen ? "md:w-64" : "md:w-20"
       )}
     >
-      <nav className="mt-2 flex flex-col flex-grow overflow-y-auto px-2 py-2">
+      <nav className="mt-2 flex flex-col flex-grow overflow-y-auto px-2 py-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
         {menu.length > 0 && menu.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href;
@@ -189,6 +190,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 truncate">{user.name}</p>
                 <p className="text-xs text-gray-500 truncate">{user.role}</p>
+                <p className="text-xs text-gray-500 truncate">Center: {user.center}</p>
               </div>
             </div>
             <button

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Upload, X, Image as ImageIcon } from "lucide-react";
 import type { CheckInSlipFormData } from "@/shared/types/check-in-slip.types";
 // import { useUpload } from "@/shared/hooks/useUpload"; // This hook was not actually used, useCloudinaryUpload was

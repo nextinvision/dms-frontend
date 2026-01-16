@@ -42,6 +42,7 @@ import type { Appointment } from "@/app/(service-center)/sc/components/appointme
 import type { AppointmentForm as AppointmentFormType } from "@/app/(service-center)/sc/components/appointment/types";
 import { getInitialAppointmentForm, formatTime } from "@/app/(service-center)/sc/components/appointment/utils";
 import { detectSearchType, getSearchTypeLabel } from "./utils/search.utils";
+import { validateAppointmentData, convertToISODate, formatApiErrorMessage, isValidUUID } from "@/shared/utils/api-validation.utils";
 // Extracted Hooks
 import {
   useModalState,
@@ -147,8 +148,6 @@ export default function CustomerFind() {
     setVehicleFormCity,
     hasInsurance,
     setHasInsurance,
-    validationError: vehicleValidationError,
-    setValidationError: setVehicleValidationError,
     resetVehicleForm,
     handleSaveVehicle,
   } = vehicleForm;
@@ -165,6 +164,7 @@ export default function CustomerFind() {
   const [appointmentForm, setAppointmentForm] = useState<Partial<AppointmentFormType>>(() => getInitialAppointmentForm({
     assignedServiceAdvisor: isServiceAdvisor && userInfo?.name ? userInfo.name : "",
   }));
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
   const [pickupAddressDifferent, setPickupAddressDifferent] = useState<boolean>(false);
   const [pickupState, setPickupState] = useState<string>("");
   const [pickupCity, setPickupCity] = useState<string>("");
@@ -221,6 +221,8 @@ export default function CustomerFind() {
 
   // Hooks for data fetching
   const { results: searchResults, loading: searchLoading, search: performSearch, clear: clearSearch } = useCustomerSearch();
+
+  // Memoize filtered search results to prevent unnecessary recalculations
   const filteredSearchResults = useMemo(() => {
     if (!shouldFilterByServiceCenter || searchResults.length === 0) return searchResults;
     return searchResults.filter(
@@ -238,13 +240,20 @@ export default function CustomerFind() {
       }
       // Assuming getRecent supports filters as implemented in step 1 using standard getAll
       const data = await customerService.getRecent(10, filters);
-      setRecentCustomers(data);
-    } catch (error) {
+      setRecentCustomers(data || []);
+    } catch (error: any) {
       console.error("Failed to fetch recent customers", error);
+      // Show user-friendly error message for 500 errors
+      const errorMessage = formatApiErrorMessage(error);
+      if (error?.response?.status === 500) {
+        showToast(`Failed to load customers: ${errorMessage}`, "error");
+      }
+      // Set empty array to prevent UI crashes
+      setRecentCustomers([]);
     } finally {
       setLoadingRecent(false);
     }
-  }, [isCallCenter, serviceCenterFilterId]);
+  }, [isCallCenter, serviceCenterFilterId, showToast]);
 
   // Initial fetch
   useEffect(() => {
@@ -325,13 +334,13 @@ export default function CustomerFind() {
 
   const handleResetVehicleForm = useCallback(() => {
     resetVehicleForm();
-    setVehicleValidationError("");
   }, [resetVehicleForm]);
 
   const resetAppointmentForm = useCallback(() => {
     setAppointmentForm(getInitialAppointmentForm({
       assignedServiceAdvisor: isServiceAdvisor && userInfo?.name ? userInfo.name : "",
     }));
+    setEditingAppointmentId(null); // Reset editing state
     setPickupState("");
     setPickupCity("");
     setDropState("");
@@ -342,31 +351,59 @@ export default function CustomerFind() {
 
   // Helper to initialize appointment form with customer and optional vehicle data
   const initializeAppointmentForm = useCallback((customer: CustomerWithVehicles, vehicle?: Vehicle | null) => {
-    const vehicleString = vehicle
-      ? `${vehicle.vehicleMake} ${vehicle.vehicleModel} (${vehicle.vehicleYear})`
-      : (customer.vehicles && customer.vehicles.length > 0
-        ? formatVehicleString(customer.vehicles[0])
-        : "");
+    // Determine which vehicle to use
+    let vehicleToUse: Vehicle | null = null;
+    if (vehicle) {
+      vehicleToUse = vehicle;
+    } else if (customer.vehicles && customer.vehicles.length > 0) {
+      vehicleToUse = customer.vehicles[0];
+    }
+
+    // Format vehicle string
+    const vehicleString = vehicleToUse
+      ? `${vehicleToUse.vehicleMake || ""} ${vehicleToUse.vehicleModel || ""} ${vehicleToUse.vehicleYear ? `(${vehicleToUse.vehicleYear})` : ""}`.trim()
+      : "";
+
+    // Also format using formatVehicleString as fallback
+    const formattedVehicleString = vehicleToUse
+      ? formatVehicleString(vehicleToUse)
+      : "";
+
+    // Use formattedVehicleString if available, otherwise use manual format
+    const finalVehicleString = formattedVehicleString || vehicleString;
+
+    // Get service center from context or first available center
+    let serviceCenterName = "";
+    let serviceCenterId = "";
+
+    if (serviceCenterContext.serviceCenterName && serviceCenterContext.serviceCenterId) {
+      serviceCenterName = serviceCenterContext.serviceCenterName;
+      serviceCenterId = typeof serviceCenterContext.serviceCenterId === 'number'
+        ? serviceCenterContext.serviceCenterId.toString()
+        : serviceCenterContext.serviceCenterId;
+    } else if (staticServiceCenters.length > 0) {
+      // Fallback to first available service center
+      serviceCenterName = staticServiceCenters[0].name;
+      serviceCenterId = (staticServiceCenters[0] as any)?.serviceCenterId || staticServiceCenters[0]?.id?.toString() || "";
+    }
 
     setAppointmentForm({
       ...getInitialAppointmentForm({
         assignedServiceAdvisor: isServiceAdvisor && userInfo?.name ? userInfo.name : "",
       }),
-      customerName: customer.name,
-      phone: customer.phone,
-      vehicle: vehicleString,
+      customerName: customer.name || "",
+      phone: customer.phone || "",
+      vehicle: finalVehicleString,
+      customerId: customer.id || "",
+      vehicleId: vehicleToUse?.id || "",
       serviceType: "",
+      serviceCenterName: serviceCenterName,
+      serviceCenterId: serviceCenterId,
     });
 
-    // Set selected vehicle if provided, otherwise set first vehicle if available
-    if (vehicle) {
-      setSelectedVehicle(vehicle);
-    } else if (customer.vehicles && customer.vehicles.length > 0) {
-      setSelectedVehicle(customer.vehicles[0]);
-    } else {
-      setSelectedVehicle(null);
-    }
-  }, [setAppointmentForm]);
+    // Set selected vehicle
+    setSelectedVehicle(vehicleToUse);
+  }, [setAppointmentForm, isServiceAdvisor, userInfo, serviceCenterContext, staticServiceCenters]);
 
   // Modal close handlers - defined once
   const closeCustomerFormHandler = useCallback(() => {
@@ -374,14 +411,24 @@ export default function CustomerFind() {
     setValidationError("");
     setFieldErrors({});
     resetCustomerForm();
-  }, [createFormModal, resetCustomerForm]);
+    // Clear search query to show recent customers list again
+    setSearchQuery("");
+    clearSearch();
+  }, [createFormModal, resetCustomerForm, clearSearch]);
 
   const closeVehicleFormHandler = useCallback(() => {
     addVehicleModal.close();
-    setVehicleValidationError("");
     resetVehicleForm();
+    const wasOpeningAppointment = shouldOpenAppointmentAfterVehicleAdd;
     setShouldOpenAppointmentAfterVehicleAdd(false);
-  }, [addVehicleModal, resetVehicleForm, setVehicleValidationError]);
+    // Only clear selectedCustomer and search if we're not opening appointment after (to show list again)
+    if (!wasOpeningAppointment) {
+      setSelectedCustomer(null);
+      setSelectedVehicle(null);
+      setSearchQuery("");
+      clearSearch();
+    }
+  }, [addVehicleModal, resetVehicleForm, shouldOpenAppointmentAfterVehicleAdd, clearSearch]);
 
   const closeAppointmentFormHandler = useCallback(() => {
     // Clean up file URLs before closing
@@ -402,6 +449,7 @@ export default function CustomerFind() {
         assignedServiceAdvisor: isServiceAdvisor && userInfo?.name ? userInfo.name : "",
       });
     });
+    setEditingAppointmentId(null); // Reset editing state
     appointmentModal.close();
     setValidationError("");
     setAppointmentFieldErrors({});
@@ -411,7 +459,12 @@ export default function CustomerFind() {
     setDropCity("");
     setPickupAddressDifferent(false);
     setDropSameAsPickup(false);
-  }, [appointmentModal]);
+    // Clear selected customer and vehicle, and reset search to show recent customers list again
+    setSelectedCustomer(null);
+    setSelectedVehicle(null);
+    setSearchQuery("");
+    clearSearch();
+  }, [appointmentModal, isServiceAdvisor, userInfo, clearSearch]);
 
   // Modal close handlers (using extracted handlers)
   const closeCustomerForm = closeCustomerFormHandler;
@@ -444,24 +497,32 @@ export default function CustomerFind() {
       rolePermissions.userRole,
       serviceCenterFilterId,
       showToast,
-      (c) => router.push(`/sc/customers/${c.id}`), // Navigate on success
+      setSelectedCustomer, // Set the selected customer
       (show: boolean) => {
         if (show) createFormModal.open();
         else createFormModal.close();
       },
       setShowCreateCustomer,
-      setValidationError
+      () => {
+        // Auto-refresh customer list
+        fetchRecentCustomers();
+      }
     );
     if (customer) {
       createFormModal.close();
+      // Navigate to customer detail page after successful creation
+      router.push(`/sc/customers/${customer.id}`);
     }
   }, [
     handleSaveNewCustomer,
     rolePermissions.userRole,
     serviceCenterFilterId,
     showToast,
+    setSelectedCustomer,
     createFormModal,
-    router
+    setShowCreateCustomer,
+    router,
+    fetchRecentCustomers
   ]);
 
   // Show create customer if search returned no results
@@ -508,7 +569,7 @@ export default function CustomerFind() {
         />
 
         {/* Recent Customers Section - Always show when no customer selected and not creating */}
-        {!selectedCustomer && !createFormModal.isOpen && searchQuery.length < 2 && (
+        {!selectedCustomer && !createFormModal.isOpen && !addVehicleModal.isOpen && !vehicleDetailsModal.isOpen && !appointmentModal.isOpen && searchQuery.length < 2 && (
           <RecentCustomersTable
             recentCustomers={recentCustomers}
             isCallCenter={isCallCenter}
@@ -555,6 +616,7 @@ export default function CustomerFind() {
               if (show) addVehicleModal.open();
               else addVehicleModal.close();
             }}
+            loading={loadingRecent}
           />
         )}
 
@@ -580,7 +642,7 @@ export default function CustomerFind() {
           onWhatsappSameAsMobileChange={setWhatsappSameAsMobile}
           fieldErrors={fieldErrors}
           onFieldErrorChange={setFieldErrors}
-          validationError={validationError}
+
           isLoading={false}
           onSubmit={async () => {
             await handleSaveNewCustomerWrapper();
@@ -602,7 +664,7 @@ export default function CustomerFind() {
           onVehicleFormCityChange={setVehicleFormCity}
           hasInsurance={hasInsurance}
           onHasInsuranceChange={setHasInsurance}
-          validationError={vehicleValidationError}
+
           onClose={closeVehicleForm}
           onSubmit={async () => {
             if (!selectedCustomer) return;
@@ -637,8 +699,12 @@ export default function CustomerFind() {
             editingFeedbackRating={editingFeedbackRating}
             onClose={() => {
               vehicleDetailsModal.close();
+              // Clear selected vehicle and customer, and reset search to show recent customers list again
               setSelectedVehicle(null);
+              setSelectedCustomer(null);
               setServiceHistory([]);
+              setSearchQuery("");
+              clearSearch();
             }}
             onScheduleAppointment={() => {
               vehicleDetailsModal.close();
@@ -659,45 +725,156 @@ export default function CustomerFind() {
           initialFormData={appointmentForm}
           onClose={closeAppointmentForm}
           onSubmit={async (form: AppointmentFormType) => {
-            // Map service center name to ID for proper filtering
-            const selectedServiceCenter = form.serviceCenterName
-              ? staticServiceCenters.find((center) => center.name === form.serviceCenterName)
-              : null;
-            const serviceCenterId = (selectedServiceCenter as any)?.serviceCenterId || selectedServiceCenter?.id?.toString() || null;
-            const serviceCenterName = form.serviceCenterName || null;
-            const assignedServiceCenter = form.serviceCenterName || null;
+            // Validate required fields
+            if (!selectedCustomer?.id) {
+              showToast("Customer ID is missing. Please select a customer.", "error");
+              return;
+            }
 
-            // Clean up file URLs before saving
-            const appointmentData: any = {
-              customerName: form.customerName,
-              vehicle: form.vehicle,
-              phone: form.phone,
+            if (!selectedVehicle?.id) {
+              showToast("Vehicle ID is missing. Please select a vehicle.", "error");
+              return;
+            }
+
+            // Get service center ID - prefer form selection, fallback to user's service center context
+            let serviceCenterId: string | null = null;
+
+            // First, try to get from form selection
+            if (form.serviceCenterName) {
+              const selectedServiceCenter = staticServiceCenters.find((center) => center.name === form.serviceCenterName);
+              serviceCenterId = (selectedServiceCenter as any)?.serviceCenterId || selectedServiceCenter?.id?.toString() || null;
+            }
+
+            // Fallback: Try to get from form's serviceCenterId field
+            if (!serviceCenterId && form.serviceCenterId) {
+              serviceCenterId = typeof form.serviceCenterId === 'number'
+                ? form.serviceCenterId.toString()
+                : form.serviceCenterId;
+            }
+
+            // Fallback to service center context from logged-in user
+            if (!serviceCenterId && serviceCenterContext.serviceCenterId) {
+              const contextId = typeof serviceCenterContext.serviceCenterId === 'number'
+                ? serviceCenterContext.serviceCenterId.toString()
+                : serviceCenterContext.serviceCenterId;
+
+              // If context ID is a UUID, use it directly
+              if (isValidUUID(contextId)) {
+                serviceCenterId = contextId;
+              } else {
+                // If it's not a UUID (e.g., numeric ID), try to find matching service center
+                const matchingCenter = staticServiceCenters.find((center: any) =>
+                  center.id?.toString() === contextId ||
+                  (center as any).serviceCenterId?.toString() === contextId ||
+                  center.name === serviceCenterContext.serviceCenterName
+                );
+                if (matchingCenter) {
+                  serviceCenterId = (matchingCenter as any)?.serviceCenterId || matchingCenter?.id?.toString() || null;
+                }
+              }
+            }
+
+            // Final fallback: Use first available service center if none found
+            if (!serviceCenterId && staticServiceCenters.length > 0) {
+              const firstCenter = staticServiceCenters[0];
+              serviceCenterId = (firstCenter as any)?.serviceCenterId || firstCenter?.id?.toString() || null;
+            }
+
+            // If still no service center ID, show error
+            if (!serviceCenterId) {
+              showToast("Service Center ID is required. Please select a service center in the form or ensure your user account is associated with a service center.", "error");
+              return;
+            }
+
+            // Validate it's a valid UUID
+            if (!isValidUUID(serviceCenterId)) {
+              // If not a UUID, it might be a numeric ID - show error and ask user to select from dropdown
+              showToast("Invalid Service Center ID. Please select a service center from the dropdown.", "error");
+              return;
+            }
+
+            // Convert date to ISO format
+            const appointmentDate = convertToISODate(form.date);
+
+            // Validate all required fields
+            const validation = validateAppointmentData({
+              customerId: selectedCustomer.id.toString(),
+              vehicleId: selectedVehicle.id.toString(),
+              serviceCenterId,
               serviceType: form.serviceType,
-              date: form.date,
-              time: formatTime(form.time),
-              duration: `${form.duration} hours`,
-              status: "Confirmed",
-              customerType: selectedCustomer?.customerType,
-              // Customer Contact & Address Fields
-              whatsappNumber: form.whatsappNumber,
-              alternateNumber: form.alternateNumber,
-              email: form.email,
-              address: form.address,
-              cityState: form.cityState,
-              pincode: form.pincode,
+              appointmentDate,
+              appointmentTime: form.time,
+            });
+
+            if (!validation.valid) {
+              showToast(validation.errors.join("; "), "error");
+              return;
+            }
+
+            // Prepare documentation files array (not just counts)
+            const documentationFiles: any = {};
+            if (form.customerIdProof?.urls && form.customerIdProof.urls.length > 0) {
+              documentationFiles.customerIdProof = form.customerIdProof.metadata?.map((meta: any, idx: number) => ({
+                url: form.customerIdProof?.urls[idx] || meta.url || '',
+                publicId: meta.publicId || '',
+                filename: meta.filename || `id-proof-${idx}.pdf`,
+                format: meta.format || 'pdf',
+                bytes: meta.bytes || 0,
+                width: meta.width,
+                height: meta.height,
+              })) || [];
+            }
+            if (form.vehicleRCCopy?.urls && form.vehicleRCCopy.urls.length > 0) {
+              documentationFiles.vehicleRCCopy = form.vehicleRCCopy.metadata?.map((meta: any, idx: number) => ({
+                url: form.vehicleRCCopy?.urls[idx] || meta.url || '',
+                publicId: meta.publicId || '',
+                filename: meta.filename || `rc-copy-${idx}.pdf`,
+                format: meta.format || 'pdf',
+                bytes: meta.bytes || 0,
+                width: meta.width,
+                height: meta.height,
+              })) || [];
+            }
+            if (form.warrantyCardServiceBook?.urls && form.warrantyCardServiceBook.urls.length > 0) {
+              documentationFiles.warrantyCardServiceBook = form.warrantyCardServiceBook.metadata?.map((meta: any, idx: number) => ({
+                url: form.warrantyCardServiceBook?.urls[idx] || meta.url || '',
+                publicId: meta.publicId || '',
+                filename: meta.filename || `warranty-${idx}.pdf`,
+                format: meta.format || 'pdf',
+                bytes: meta.bytes || 0,
+                width: meta.width,
+                height: meta.height,
+              })) || [];
+            }
+            if (form.photosVideos?.urls && form.photosVideos.urls.length > 0) {
+              documentationFiles.photosVideos = form.photosVideos.metadata?.map((meta: any, idx: number) => ({
+                url: form.photosVideos?.urls[idx] || meta.url || '',
+                publicId: meta.publicId || '',
+                filename: meta.filename || `photo-${idx}.jpg`,
+                format: meta.format || 'jpg',
+                bytes: meta.bytes || 0,
+                width: meta.width,
+                height: meta.height,
+                duration: meta.duration,
+              })) || [];
+            }
+
+            // Build appointment data according to backend DTO
+            const appointmentData: any = {
+              customerId: selectedCustomer.id, // Required UUID
+              vehicleId: selectedVehicle.id, // Required UUID
+              serviceCenterId: serviceCenterId, // Required UUID
+              serviceType: form.serviceType, // Required
+              appointmentDate: appointmentDate!, // Required - backend expects ISO date string (validated above)
+              appointmentTime: formatTime(form.time) || form.time, // Required
               customerComplaint: form.customerComplaint,
               previousServiceHistory: form.previousServiceHistory,
               estimatedServiceTime: form.estimatedServiceTime,
-              estimatedCost: form.estimatedCost,
-              estimationCost: (form as any).estimationCost,
-              odometerReading: form.odometerReading,
+              estimatedCost: form.estimatedCost ? Number(form.estimatedCost) : undefined,
               estimatedDeliveryDate: form.estimatedDeliveryDate,
               assignedServiceAdvisor: form.assignedServiceAdvisor,
               assignedTechnician: form.assignedTechnician,
-              assignedServiceCenter: assignedServiceCenter,
-              serviceCenterId: serviceCenterId,
-              serviceCenterName: serviceCenterName,
-              pickupDropRequired: form.pickupDropRequired,
+              pickupDropRequired: form.pickupDropRequired || false,
               pickupAddress: form.pickupAddress,
               pickupState: (form as any).pickupState,
               pickupCity: (form as any).pickupCity,
@@ -707,24 +884,65 @@ export default function CustomerFind() {
               dropCity: (form as any).dropCity,
               dropPincode: (form as any).dropPincode,
               preferredCommunicationMode: form.preferredCommunicationMode,
-              documentationFiles: {
-                customerIdProof: form.customerIdProof?.urls?.length || 0,
-                vehicleRCCopy: form.vehicleRCCopy?.urls?.length || 0,
-                warrantyCardServiceBook: form.warrantyCardServiceBook?.urls?.length || 0,
-                photosVideos: form.photosVideos?.urls?.length || 0,
-              },
+              odometerReading: form.odometerReading,
+              duration: form.duration ? `${form.duration} hours` : undefined,
+              documentationFiles: Object.keys(documentationFiles).length > 0 ? documentationFiles : undefined,
             };
 
-            // Create new appointment via API
+            // Create or update appointment via API
             try {
-              await appointmentsService.create(appointmentData);
-              showToast(`Appointment scheduled successfully! Customer: ${form.customerName} | Vehicle: ${form.vehicle} | Service: ${form.serviceType} | Date: ${form.date} | Time: ${formatTime(form.time)}`, "success");
+              console.log("[Appointment] Sending payload:", appointmentData);
+
+              // Determine if we're editing (check both state and form data)
+              let appointmentIdToUpdate = editingAppointmentId || (form as any).id || (form as any).appointmentId;
+
+              // If no appointment ID found, check if vehicle already has an active appointment
+              // If so, we should update it instead of creating a new one
+              if (!appointmentIdToUpdate && selectedVehicle?.id) {
+                try {
+                  // Fetch appointments for this vehicle
+                  const allAppointments = await appointmentsService.getAll({
+                    vehicleId: selectedVehicle.id
+                  });
+
+                  // Find the most recent active appointment for this vehicle
+                  const activeAppointment = Array.isArray(allAppointments)
+                    ? allAppointments.find((apt: any) =>
+                      (apt.vehicleId === selectedVehicle.id || apt.vehicle?.id === selectedVehicle.id) &&
+                      apt.status &&
+                      !['CANCELLED', 'COMPLETED'].includes(apt.status.toUpperCase())
+                    )
+                    : null;
+
+                  if (activeAppointment?.id) {
+                    appointmentIdToUpdate = activeAppointment.id;
+                    console.log("[Appointment] Found existing active appointment, will update:", appointmentIdToUpdate);
+                  }
+                } catch (error) {
+                  // If we can't fetch appointments, proceed with create
+                  console.warn("[Appointment] Could not check for existing appointments:", error);
+                }
+              }
+
+              if (appointmentIdToUpdate) {
+                // Update existing appointment
+                await appointmentsService.update(appointmentIdToUpdate, appointmentData);
+                showToast(`Appointment updated successfully! Customer: ${form.customerName} | Vehicle: ${form.vehicle} | Service: ${form.serviceType} | Date: ${form.date} | Time: ${formatTime(form.time)}`, "success");
+              } else {
+                // Create new appointment
+                await appointmentsService.create(appointmentData);
+                showToast(`Appointment scheduled successfully! Customer: ${form.customerName} | Vehicle: ${form.vehicle} | Service: ${form.serviceType} | Date: ${form.date} | Time: ${formatTime(form.time)}`, "success");
+              }
+
+              // Refresh recent customers to show updated data
+              fetchRecentCustomers();
 
               // Close modal and reset form
               closeAppointmentForm();
-            } catch (error) {
+            } catch (error: any) {
               console.error("Failed to schedule appointment", error);
-              showToast("Failed to schedule appointment. Please try again.", "error");
+              const errorMessage = formatApiErrorMessage(error);
+              showToast(errorMessage, "error");
             }
           }}
           canAccessCustomerType={canAccessCustomerType}

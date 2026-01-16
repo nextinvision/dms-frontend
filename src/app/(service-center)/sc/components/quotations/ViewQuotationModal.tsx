@@ -1,3 +1,4 @@
+import React from "react";
 import {
     X,
     Printer,
@@ -9,8 +10,11 @@ import {
     ArrowRight,
     ShieldCheck,
     ShieldX,
-    MessageCircle
+    MessageCircle,
+    Download
 } from "lucide-react";
+import { pdf } from "@react-pdf/renderer";
+import { QuotationPDFDocument } from "../../../../../components/quotations/QuotationPDFDocument";
 import type { QuotationItem } from "@/shared/types";
 
 // View Quotation Modal - Proforma Invoice Template
@@ -26,6 +30,25 @@ export function ViewQuotationModal({
     isServiceAdvisor,
     isServiceManager,
 }: any) {
+    const [signatureUrl, setSignatureUrl] = React.useState<string | undefined>(undefined);
+
+    React.useEffect(() => {
+        const fetchSignature = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) return;
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://api.42evservice.cloud'}/system-settings`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const settings = await res.json();
+                    const sig = settings.find((s: any) => s.key === 'invoices.signature_url');
+                    if (sig) setSignatureUrl(sig.value);
+                }
+            } catch (e) { console.error(e); }
+        };
+        fetchSignature();
+    }, []);
     // Mock service center details (in production, fetch from service center data)
     const serviceCenter = quotation.serviceCenter || {
         name: "42 EV Tech & Services",
@@ -60,11 +83,81 @@ export function ViewQuotationModal({
                     </h2>
                     <div className="flex gap-2">
                         <button
-                            onClick={() => window.print()}
+                            onClick={async () => {
+                                try {
+                                    // Generate PDF blob using React-PDF for proper text-based PDF
+                                    const blob = await pdf(
+                                        React.createElement(QuotationPDFDocument, {
+                                            quotation,
+                                            serviceCenter,
+                                            serviceAdvisor,
+                                            signatureUrl,
+                                        }) as any
+                                    ).toBlob();
+
+                                    // Open PDF in new window/tab for printing
+                                    const url = URL.createObjectURL(blob);
+                                    const printWindow = window.open(url, '_blank');
+
+                                    if (printWindow) {
+                                        // Wait for PDF to load, then trigger print dialog
+                                        printWindow.onload = () => {
+                                            setTimeout(() => {
+                                                printWindow.print();
+                                                // Clean up URL after a delay
+                                                setTimeout(() => {
+                                                    URL.revokeObjectURL(url);
+                                                }, 1000);
+                                            }, 500);
+                                        };
+                                    } else {
+                                        alert("Popup blocked. Please allow popups to print, or use Download PDF instead.");
+                                        URL.revokeObjectURL(url);
+                                    }
+                                } catch (error) {
+                                    console.error("Failed to generate PDF for printing:", error);
+                                    // Fallback to old print method if PDF generation fails
+                                    window.print();
+                                }
+                            }}
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm inline-flex items-center gap-2"
                         >
                             <Printer size={16} />
-                            Print/Download
+                            Print
+                        </button>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    // Generate PDF blob using React-PDF
+                                    const blob = await pdf(
+                                        React.createElement(QuotationPDFDocument, {
+                                            quotation,
+                                            serviceCenter,
+                                            serviceAdvisor,
+                                            signatureUrl,
+                                        }) as any
+                                    ).toBlob();
+
+                                    // Create download link
+                                    const url = URL.createObjectURL(blob);
+                                    const link = document.createElement("a");
+                                    link.href = url;
+                                    link.download = `${quotation.documentType}-${quotation.quotationNumber}.pdf`;
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+
+                                    // Clean up
+                                    URL.revokeObjectURL(url);
+                                } catch (error) {
+                                    console.error("Failed to generate PDF:", error);
+                                    alert("Failed to download PDF. Please try again.");
+                                }
+                            }}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm inline-flex items-center gap-2"
+                        >
+                            <Download size={16} />
+                            Download PDF
                         </button>
                         <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                             <X size={24} />
@@ -199,25 +292,32 @@ export function ViewQuotationModal({
                         <div className="flex justify-between items-start">
                             {/* Company Logo & Details */}
                             <div className="flex-1">
-                                <div className="mb-4">
-                                    {/* Logo placeholder - in production, use actual logo */}
-                                    <div className="w-32 h-20 bg-gray-200 rounded flex items-center justify-center mb-3">
-                                        <Building2 className="text-gray-400" size={40} />
+                                <div className="mb-4 flex items-start gap-4">
+                                    {/* Logo */}
+                                    <div className="flex-shrink-0">
+                                        <img
+                                            src="/42ev.png"
+                                            alt="42 EV TECH & SERVICES"
+                                            className="h-20 w-auto object-contain"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).style.display = 'none';
+                                            }}
+                                        />
                                     </div>
-                                </div>
-                                <div className="space-y-1 text-sm">
-                                    <h3 className="text-xl font-bold text-gray-900">{serviceCenter.name}</h3>
-                                    <p className="text-gray-700">{serviceCenter.address}</p>
-                                    <p className="text-gray-700">
-                                        {serviceCenter.city}, {serviceCenter.state} - {serviceCenter.pincode}
-                                    </p>
-                                    <p className="text-gray-700">Phone: {serviceCenter.phone}</p>
-                                    {serviceCenter.panNumber && (
-                                        <p className="text-gray-700">PAN: {serviceCenter.panNumber}</p>
-                                    )}
-                                    {serviceCenter.gstNumber && (
-                                        <p className="text-gray-700">GST: {serviceCenter.gstNumber}</p>
-                                    )}
+                                    <div className="space-y-1 text-sm">
+                                        <h3 className="text-xl font-bold text-gray-900">{serviceCenter.name}</h3>
+                                        <p className="text-gray-700">{serviceCenter.address}</p>
+                                        <p className="text-gray-700">
+                                            {serviceCenter.city}, {serviceCenter.state} - {serviceCenter.pincode}
+                                        </p>
+                                        <p className="text-gray-700">Phone: {serviceCenter.phone}</p>
+                                        {serviceCenter.panNumber && (
+                                            <p className="text-gray-700">PAN: {serviceCenter.panNumber}</p>
+                                        )}
+                                        {serviceCenter.gstNumber && (
+                                            <p className="text-gray-700">GST: {serviceCenter.gstNumber}</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -530,6 +630,12 @@ export function ViewQuotationModal({
 
                     {/* Footer */}
                     <div className="mt-8 pt-6 border-t-2 border-gray-300 text-center text-xs text-gray-500">
+                        {signatureUrl && (
+                            <div className="mb-4 flex flex-col items-center">
+                                <p className="font-bold text-gray-900 mb-2">AUTHORIZED SIGNATORY:</p>
+                                <img src={signatureUrl} alt="Signature" className="h-10 object-contain" />
+                            </div>
+                        )}
                         <p>This is a {quotation.documentType.toLowerCase()}. Terms and conditions apply.</p>
                         <p className="mt-1">For queries, please contact: {serviceCenter.phone}</p>
                     </div>
@@ -578,38 +684,35 @@ export function ViewQuotationModal({
                     </button>
 
                     {/* Service Advisor Actions (shown for all roles for now so feature is visible) */}
-                    {(
-                        <>
-                            {quotation.status?.toUpperCase() === "DRAFT" && onSendToCustomer && (
+                    <>
+                        {quotation.status?.toUpperCase() === "DRAFT" && onSendToCustomer && (
+                            <button
+                                onClick={() => onSendToCustomer(quotation.id)}
+                                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
+                            >
+                                <MessageCircle size={18} />
+                                Send to Customer (WhatsApp)
+                            </button>
+                        )}
+                        {quotation.status?.toUpperCase() === "SENT_TO_CUSTOMER" && onCustomerApproval && onCustomerRejection && (
+                            <>
                                 <button
-                                    onClick={() => onSendToCustomer(quotation.id)}
+                                    onClick={() => onCustomerRejection(quotation.id)}
+                                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium inline-flex items-center gap-2"
+                                >
+                                    <UserX size={18} />
+                                    Customer Rejected
+                                </button>
+                                <button
+                                    onClick={() => onCustomerApproval(quotation.id)}
                                     className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
                                 >
-                                    <MessageCircle size={18} />
-                                    Send to Customer (WhatsApp)
+                                    <UserCheck size={18} />
+                                    Customer Approved
                                 </button>
-                            )}
-                            {quotation.status?.toUpperCase() === "SENT_TO_CUSTOMER" && onCustomerApproval && onCustomerRejection && (
-                                <>
-                                    <button
-                                        onClick={() => onCustomerRejection(quotation.id)}
-                                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium inline-flex items-center gap-2"
-                                    >
-                                        <UserX size={18} />
-                                        Customer Rejected
-                                    </button>
-                                    <button
-                                        onClick={() => onCustomerApproval(quotation.id)}
-                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
-                                    >
-                                        <UserCheck size={18} />
-                                        Customer Approved
-                                    </button>
-                                </>
-                            )}
-
-                        </>
-                    )}
+                            </>
+                        )}
+                    </>
 
                     {/* Service Manager Actions */}
 

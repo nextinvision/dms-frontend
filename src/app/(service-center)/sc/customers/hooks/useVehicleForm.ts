@@ -19,8 +19,6 @@ export interface UseVehicleFormReturn {
   setVehicleFormCity: React.Dispatch<React.SetStateAction<string>>;
   hasInsurance: boolean;
   setHasInsurance: React.Dispatch<React.SetStateAction<boolean>>;
-  validationError: string;
-  setValidationError: React.Dispatch<React.SetStateAction<string>>;
   resetVehicleForm: () => void;
   validateVehicleForm: () => { error: string | null };
   handleSaveVehicle: (
@@ -34,6 +32,14 @@ export interface UseVehicleFormReturn {
     setShowScheduleAppointment: (show: boolean) => void,
     setShowVehicleDetails: (show: boolean) => void,
     setShouldOpenAppointmentAfterVehicleAdd: (should: boolean) => void
+  ) => Promise<Vehicle | null>;
+  handleUpdateVehicle: (
+    vehicleId: string,
+    selectedCustomer: CustomerWithVehicles,
+    showToast: (message: string, type: "success" | "error") => void,
+    setSelectedCustomer: (customer: CustomerWithVehicles) => void,
+    setSelectedVehicle: (vehicle: Vehicle | null) => void,
+    closeVehicleForm: () => void
   ) => Promise<Vehicle | null>;
 }
 
@@ -53,14 +59,12 @@ export function useVehicleForm(
   const [vehicleFormState, setVehicleFormState] = useState<string>("");
   const [vehicleFormCity, setVehicleFormCity] = useState<string>("");
   const [hasInsurance, setHasInsurance] = useState<boolean>(false);
-  const [validationError, setValidationError] = useState<string>("");
 
   const resetVehicleForm = useCallback(() => {
     setNewVehicleForm({ ...initialVehicleForm });
     setVehicleFormState("");
     setVehicleFormCity("");
     setHasInsurance(false);
-    setValidationError("");
   }, []);
 
   const validateVehicleForm = useCallback(() => {
@@ -79,7 +83,7 @@ export function useVehicleForm(
 
     if (!validateVIN(newVehicleForm.vin)) {
       return {
-        error: "Invalid VIN format. VIN must be exactly 17 alphanumeric characters (excluding I, O, Q)",
+        error: "Invalid VIN format. VIN must be exactly 17 alphanumeric characters",
       };
     }
 
@@ -106,15 +110,14 @@ export function useVehicleForm(
       initializeAppointmentForm: (customer: CustomerWithVehicles, vehicle: Vehicle) => void,
       setShowScheduleAppointment: (show: boolean) => void,
       setShowVehicleDetails: (show: boolean) => void,
-      setShouldOpenAppointmentAfterVehicleAdd: (should: boolean) => void
+      setShouldOpenAppointmentAfterVehicleAdd: (should: boolean) => void,
+      onSuccess?: () => void
     ): Promise<Vehicle | null> => {
       const { error } = validateVehicleForm();
       if (error) {
-        setValidationError(error);
+        showToast(error, "error");
         return null;
       }
-
-      setValidationError("");
 
       // Persist the vehicle to the repository
       let createdVehicle: Vehicle;
@@ -142,7 +145,7 @@ export function useVehicleForm(
         createdVehicle = await vehicleRepository.create(payload as any);
       } catch (error) {
         console.error("Failed to save vehicle:", error);
-        setValidationError("Failed to save vehicle. Please try again.");
+        showToast("Failed to save vehicle. Please try again.", "error");
         return null;
       }
 
@@ -167,6 +170,9 @@ export function useVehicleForm(
       // Close popup and reset form
       closeVehicleForm();
 
+      // Auto-refresh customer list
+      if (onSuccess) onSuccess();
+
       // If we should open appointment after adding vehicle, do it now
       if (shouldOpenAppointmentAfterVehicleAdd) {
         initializeAppointmentForm(updatedCustomer, createdVehicle);
@@ -180,6 +186,73 @@ export function useVehicleForm(
     [newVehicleForm, hasInsurance, validateVehicleForm]
   );
 
+  const handleUpdateVehicle = useCallback(
+    async (
+      vehicleId: string,
+      selectedCustomer: CustomerWithVehicles,
+      showToast: (message: string, type: "success" | "error") => void,
+      setSelectedCustomer: (customer: CustomerWithVehicles) => void,
+      setSelectedVehicle: (vehicle: Vehicle | null) => void,
+      closeVehicleForm: () => void
+    ): Promise<Vehicle | null> => {
+      const { error } = validateVehicleForm();
+      if (error) {
+        showToast(error, "error");
+        return null;
+      }
+
+      let updatedVehicle: Vehicle;
+      try {
+        const payload = {
+          registration: newVehicleForm.registrationNumber!,
+          vin: newVehicleForm.vin!,
+          vehicleMake: newVehicleForm.vehicleBrand!,
+          vehicleModel: newVehicleForm.vehicleModel!,
+          vehicleYear: newVehicleForm.purchaseDate
+            ? new Date(newVehicleForm.purchaseDate).getFullYear()
+            : new Date().getFullYear(),
+          vehicleColor: newVehicleForm.vehicleColor,
+          variant: newVehicleForm.variant,
+          motorNumber: newVehicleForm.motorNumber,
+          chargerSerialNumber: newVehicleForm.chargerSerialNumber,
+          warrantyStatus: newVehicleForm.warrantyStatus,
+          purchaseDate: newVehicleForm.purchaseDate ? new Date(newVehicleForm.purchaseDate).toISOString() : undefined,
+          insuranceStartDate: hasInsurance && newVehicleForm.insuranceStartDate ? new Date(newVehicleForm.insuranceStartDate).toISOString() : undefined,
+          insuranceEndDate: hasInsurance && newVehicleForm.insuranceEndDate ? new Date(newVehicleForm.insuranceEndDate).toISOString() : undefined,
+          insuranceCompanyName: hasInsurance ? newVehicleForm.insuranceCompanyName : undefined,
+        };
+
+        updatedVehicle = await vehicleRepository.update(vehicleId, payload);
+      } catch (error) {
+        console.error("Failed to update vehicle:", error);
+        showToast("Failed to update vehicle. Please try again.", "error");
+        return null;
+      }
+
+      // Update vehicle in customer's vehicles array
+      const updatedVehicles = (selectedCustomer.vehicles || []).map(v =>
+        v.id === vehicleId || v.id === updatedVehicle.id ? updatedVehicle : v
+      );
+
+      const updatedCustomer: CustomerWithVehicles = {
+        ...selectedCustomer,
+        vehicles: updatedVehicles,
+      };
+
+      // Update selected customer
+      setSelectedCustomer(updatedCustomer);
+      setSelectedVehicle(updatedVehicle);
+
+      showToast("Vehicle updated successfully!", "success");
+
+      // Close popup and reset form
+      closeVehicleForm();
+
+      return updatedVehicle;
+    },
+    [newVehicleForm, hasInsurance, validateVehicleForm]
+  );
+
   return {
     newVehicleForm,
     setNewVehicleForm,
@@ -189,11 +262,10 @@ export function useVehicleForm(
     setVehicleFormCity,
     hasInsurance,
     setHasInsurance,
-    validationError,
-    setValidationError,
     resetVehicleForm,
     validateVehicleForm,
     handleSaveVehicle,
+    handleUpdateVehicle,
   };
 }
 

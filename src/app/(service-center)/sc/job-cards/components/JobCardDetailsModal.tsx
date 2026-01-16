@@ -60,7 +60,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 job.status
                             )}`}
                         >
-                            {job.status}
+                            {job.status.replace(/_/g, ' ')}
                         </span>
                         <span
                             className={`px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium text-white ${getPriorityColor(

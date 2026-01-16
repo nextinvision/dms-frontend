@@ -12,7 +12,8 @@ import {
     AlertTriangle,
     PlusCircle,
     FileText,
-    ArrowLeft
+    ArrowLeft,
+    Edit2
 } from "lucide-react";
 import { useRole } from "@/shared/hooks";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -32,7 +33,8 @@ import {
     AddVehicleFormModal,
     VehicleDetailsModal,
     AppointmentFormModal,
-    InvoiceModal
+    InvoiceModal,
+    CreateCustomerFormModal,
 } from "../components";
 
 // Hooks
@@ -41,7 +43,8 @@ import {
     useToast,
     useServiceHistory,
     useInvoice,
-    useVehicleForm
+    useVehicleForm,
+    useCustomerForm
 } from "../hooks";
 
 import { getInitialAppointmentForm, formatTime } from "@/app/(service-center)/sc/components/appointment/utils";
@@ -64,10 +67,14 @@ export default function CustomerDetailsPage() {
     const vehicleDetailsModal = useModalState(false);
     const appointmentModal = useModalState(false);
     const complaintsModal = useModalState(false);
+
     const invoiceModal = useModalState(false);
+    const editCustomerModal = useModalState(false);
 
     // Selection state
     const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+    const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+    const [isEditingVehicle, setIsEditingVehicle] = useState(false);
     const [shouldOpenAppointmentAfterVehicleAdd, setShouldOpenAppointmentAfterVehicleAdd] = useState<boolean>(false);
     const [appointmentForm, setAppointmentForm] = useState<Partial<AppointmentFormType>>(() => getInitialAppointmentForm({
         assignedServiceAdvisor: isServiceAdvisor && userInfo?.name ? userInfo.name : "",
@@ -93,11 +100,26 @@ export default function CustomerDetailsPage() {
         setVehicleFormCity,
         hasInsurance,
         setHasInsurance,
-        validationError: vehicleValidationError,
-        setValidationError: setVehicleValidationError,
         resetVehicleForm,
+
         handleSaveVehicle,
+        handleUpdateVehicle,
     } = useVehicleForm();
+
+    const {
+        newCustomerForm,
+        setNewCustomerForm,
+        selectedState,
+        setSelectedState,
+        selectedCity,
+        setSelectedCity,
+        whatsappSameAsMobile,
+        setWhatsappSameAsMobile,
+        fieldErrors,
+        setFieldErrors,
+        handleUpdateCustomer,
+        resetCustomerForm,
+    } = useCustomerForm();
 
     // Invoice Hook
     const {
@@ -206,10 +228,9 @@ export default function CustomerDetailsPage() {
 
     const closeVehicleForm = useCallback(() => {
         addVehicleModal.close();
-        setVehicleValidationError("");
         resetVehicleForm();
         setShouldOpenAppointmentAfterVehicleAdd(false);
-    }, [addVehicleModal, resetVehicleForm, setVehicleValidationError]);
+    }, [addVehicleModal, resetVehicleForm]);
 
     const closeAppointmentForm = useCallback(() => {
         // Clean up file URLs
@@ -271,6 +292,30 @@ export default function CustomerDetailsPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
+                            <Button onClick={() => {
+                                setIsEditingCustomer(true);
+                                setNewCustomerForm({
+                                    name: customer.name,
+                                    phone: customer.phone,
+                                    whatsappNumber: customer.whatsappNumber,
+                                    alternateNumber: customer.alternateNumber,
+                                    email: customer.email,
+                                    address: customer.address,
+                                    pincode: customer.pincode,
+                                    customerType: customer.customerType,
+                                    // Handle cityState split
+                                });
+                                if (customer.cityState) {
+                                    const parts = customer.cityState.split(",");
+                                    if (parts.length >= 2) {
+                                        setSelectedCity(parts[0]?.trim() || "");
+                                        setSelectedState(parts[1]?.trim() || "");
+                                    }
+                                }
+                                editCustomerModal.open();
+                            }} variant="secondary" icon={Edit2}>
+                                Edit
+                            </Button>
                             <Button onClick={() => complaintsModal.open()} variant="warning" icon={AlertTriangle}>
                                 Complaints
                             </Button>
@@ -422,6 +467,36 @@ export default function CustomerDetailsPage() {
                                                 View Details
                                             </Button>
 
+                                            <Button
+                                                onClick={() => {
+                                                    setSelectedVehicle(vehicle);
+                                                    setIsEditingVehicle(true);
+                                                    setNewVehicleForm({
+                                                        vehicleBrand: vehicle.vehicleMake,
+                                                        vehicleModel: vehicle.vehicleModel,
+                                                        registrationNumber: vehicle.registration,
+                                                        vin: vehicle.vin,
+                                                        vehicleColor: vehicle.vehicleColor,
+                                                        variant: vehicle.variant,
+                                                        motorNumber: vehicle.motorNumber,
+                                                        chargerSerialNumber: vehicle.chargerSerialNumber,
+                                                        purchaseDate: vehicle.purchaseDate ? new Date(vehicle.purchaseDate).toISOString().split('T')[0] : undefined,
+                                                        warrantyStatus: vehicle.warrantyStatus,
+                                                        insuranceStartDate: vehicle.insuranceStartDate ? new Date(vehicle.insuranceStartDate).toISOString().split('T')[0] : undefined,
+                                                        insuranceEndDate: vehicle.insuranceEndDate ? new Date(vehicle.insuranceEndDate).toISOString().split('T')[0] : undefined,
+                                                        insuranceCompanyName: vehicle.insuranceCompanyName,
+                                                    });
+                                                    setHasInsurance(!!vehicle.insuranceStartDate); // Simple check
+                                                    addVehicleModal.open();
+                                                }}
+                                                size="sm"
+                                                variant="secondary"
+                                                icon={Edit2}
+                                                className="px-4 py-2"
+                                            >
+                                                Edit
+                                            </Button>
+
                                             {/* Allow scheduling only when vehicle is not already under active service */}
                                             {vehicle.currentStatus !== "Active Job Card" ? (
                                                 <Button
@@ -485,21 +560,70 @@ export default function CustomerDetailsPage() {
                 onVehicleFormCityChange={setVehicleFormCity}
                 hasInsurance={hasInsurance}
                 onHasInsuranceChange={setHasInsurance}
-                validationError={vehicleValidationError}
+
+
                 onClose={closeVehicleForm}
+                isEditMode={isEditingVehicle}
                 onSubmit={async () => {
                     if (!customer) return;
-                    await handleSaveVehicle(
-                        customer,
+
+                    if (isEditingVehicle && selectedVehicle) {
+                        await handleUpdateVehicle(
+                            selectedVehicle.id.toString(),
+                            customer,
+                            showToast,
+                            setCustomer,
+                            setSelectedVehicle,
+                            closeVehicleForm
+                        );
+                        setIsEditingVehicle(false);
+                    } else {
+                        await handleSaveVehicle(
+                            customer,
+                            showToast,
+                            setCustomer, // Updates local customer state
+                            setSelectedVehicle,
+                            closeVehicleForm,
+                            shouldOpenAppointmentAfterVehicleAdd,
+                            initializeAppointmentForm,
+                            (show) => show ? appointmentModal.open() : appointmentModal.close(),
+                            (show) => show ? vehicleDetailsModal.open() : vehicleDetailsModal.close(),
+                            setShouldOpenAppointmentAfterVehicleAdd
+                        );
+                    }
+                }}
+            />
+
+            <CreateCustomerFormModal
+                isOpen={editCustomerModal.isOpen}
+                onClose={() => {
+                    editCustomerModal.close();
+                    setIsEditingCustomer(false);
+                    resetCustomerForm();
+                }}
+                formData={newCustomerForm}
+                onFormChange={setNewCustomerForm}
+                selectedState={selectedState}
+                onStateChange={setSelectedState}
+                selectedCity={selectedCity}
+                onCityChange={setSelectedCity}
+                whatsappSameAsMobile={whatsappSameAsMobile}
+                onWhatsappSameAsMobileChange={setWhatsappSameAsMobile}
+                fieldErrors={fieldErrors}
+                onFieldErrorChange={setFieldErrors}
+
+                isLoading={false}
+                isEditMode={true}
+                onSubmit={async () => {
+                    if (!customer) return;
+                    await handleUpdateCustomer(
+                        customer.id.toString(),
                         showToast,
-                        setCustomer, // Updates local customer state
-                        setSelectedVehicle,
-                        closeVehicleForm,
-                        shouldOpenAppointmentAfterVehicleAdd,
-                        initializeAppointmentForm,
-                        (show) => show ? appointmentModal.open() : appointmentModal.close(),
-                        (show) => show ? vehicleDetailsModal.open() : vehicleDetailsModal.close(),
-                        setShouldOpenAppointmentAfterVehicleAdd
+                        setCustomer,
+                        () => {
+                            editCustomerModal.close();
+                            setIsEditingCustomer(false);
+                        }
                     );
                 }}
             />

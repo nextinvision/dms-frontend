@@ -20,47 +20,14 @@ export default function ViewInvoiceModal({
   onClose,
   onSendToCustomer,
 }: ViewInvoiceModalProps) {
-  const handlePrint = () => {
-    const invoiceHTML = generateInvoiceHTML(invoice);
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(invoiceHTML);
-      printWindow.document.close();
-      setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-        setTimeout(() => {
-          if (!printWindow.closed) {
-            printWindow.close();
-          }
-        }, 2000);
-      }, 500);
-    }
-  };
-
-  const handleDownloadPDF = () => {
-    const invoiceHTML = generateInvoiceHTML(invoice);
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(invoiceHTML);
-      printWindow.document.close();
-      setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-        setTimeout(() => {
-          if (!printWindow.closed) {
-            printWindow.close();
-          }
-        }, 2000);
-      }, 500);
-    }
-  };
-
+  // ViewInvoiceModal just wraps InvoicePDF component which handles print/download
+  // No need for separate handlers here
   return (
     <InvoicePDF
       invoice={invoice}
       onClose={onClose}
       showActions={true}
+      onSendToCustomer={onSendToCustomer}
     />
   );
 }

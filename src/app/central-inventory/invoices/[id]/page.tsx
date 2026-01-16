@@ -92,9 +92,13 @@ export default function InvoiceDetailPage() {
     }
   }, [invoiceId, showError]);
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!invoice) return;
-    downloadCentralInvoicePDF(invoice);
+    try {
+      await downloadCentralInvoicePDF(invoice);
+    } catch (error) {
+      console.error("Failed to download PDF:", error);
+    }
   };
 
   if (isLoading) {

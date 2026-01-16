@@ -24,31 +24,39 @@ class AuthService {
      */
     async login(credentials: LoginCredentials): Promise<LoginResponse> {
         try {
-            console.log('[Auth Service] Attempting login with:', credentials.email);
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[Auth Service] Attempting login with:', credentials.email);
+            }
 
             const response = await apiClient.post<any>('/auth/login', credentials);
 
-            console.log('[Auth Service] Raw API response:', response);
-            console.log('[Auth Service] Response data:', response.data);
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[Auth Service] Raw API response:', response);
+                console.log('[Auth Service] Response data:', response.data);
+            }
 
             // Check if response has the expected structure
-            if (!response.data) {
+            // API client unwraps the response, so response.data should contain { access_token, user }
+            if (!response || !response.data) {
                 console.error('[Auth Service] No data in response:', response);
                 throw new Error('Invalid response structure: missing data field');
             }
 
-            if (!response.data.access_token) {
-                console.error('[Auth Service] No access_token in response.data:', response.data);
+            // Handle wrapped response from backend (backend returns { data: { access_token, user } })
+            const responseData = response.data.data || response.data;
+            
+            if (!responseData.access_token) {
+                console.error('[Auth Service] No access_token in response:', { response, responseData });
                 throw new Error('Invalid response: missing access_token');
             }
 
-            if (!response.data.user) {
-                console.error('[Auth Service] No user in response.data:', response.data);
+            if (!responseData.user) {
+                console.error('[Auth Service] No user in response:', { response, responseData });
                 throw new Error('Invalid response: missing user data');
             }
 
             // Map Backend User Extended Details to Frontend UserInfo
-            const backendUser = response.data.user;
+            const backendUser = responseData.user;
             const user: UserInfo = {
                 id: backendUser.id,
                 email: backendUser.email,
@@ -62,21 +70,27 @@ class AuthService {
                     : '??'
             };
 
-            console.log('[Auth Service] Mapped user:', user);
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[Auth Service] Mapped user:', user);
+            }
 
             // Store the real token
-            Cookies.set('auth_token', response.data.access_token, { expires: 7 });
-            console.log('[Auth Service] Token stored in cookie');
+            Cookies.set('auth_token', responseData.access_token, { expires: 7 });
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[Auth Service] Token stored in cookie');
+            }
 
             const loginResponse: LoginResponse = {
-                access_token: response.data.access_token,
+                access_token: responseData.access_token,
                 user
             };
 
             // Update auth store
             const { setAuth } = useAuthStore.getState();
             setAuth(user.role, user);
-            console.log('[Auth Service] Auth store updated');
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[Auth Service] Auth store updated');
+            }
 
             return loginResponse;
         } catch (error: any) {
@@ -95,6 +109,16 @@ class AuthService {
      * Logout and clear authentication
      */
     logout() {
+        // Aggressively clear cookies by both removing and setting to empty with max-age: 0
+        // This ensures middleware sees them as cleared
+        Cookies.remove('auth_token', { path: '/' });
+        Cookies.remove('auth_role', { path: '/' });
+        
+        // Also set to empty with immediate expiration as a fallback
+        Cookies.set('auth_token', '', { expires: new Date(0), path: '/' });
+        Cookies.set('auth_role', '', { expires: new Date(0), path: '/' });
+        
+        // Also clear from store
         const { clearAuth } = useAuthStore.getState();
         clearAuth();
     }

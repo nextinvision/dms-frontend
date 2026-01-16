@@ -167,44 +167,104 @@ export function generateInvoiceHTML(invoice: ServiceCenterInvoice): string {
 }
 
 /**
- * Download invoice as PDF by opening print dialog
+ * Download invoice as PDF using React-PDF
  * @param invoice - Invoice data
  */
-export function downloadInvoice(invoice: ServiceCenterInvoice): void {
+export async function downloadInvoice(invoice: ServiceCenterInvoice): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const invoiceHTML = generateInvoiceHTML(invoice);
+  try {
+    const { pdf } = await import("@react-pdf/renderer");
+    const { InvoicePDFDocument } = await import("@/shared/components/invoice/InvoicePDFDocument");
+    const React = await import("react");
 
-  // Open a new window with the invoice content
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(invoiceHTML);
-    printWindow.document.close();
-    // Wait for content to load, then trigger print dialog
-    setTimeout(() => {
-      printWindow.print();
-    }, 250);
-  } else {
-    alert("Please allow popups to download the invoice");
+    // Generate PDF blob using React-PDF
+    const blob = await pdf(
+      React.createElement(InvoicePDFDocument, { invoice }) as any
+    ).toBlob();
+
+    // Create download link
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Invoice-${invoice.invoiceNumber || invoice.id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Clean up
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("Failed to generate PDF:", error);
+    // Fallback to HTML print
+    const invoiceHTML = generateInvoiceHTML(invoice);
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(invoiceHTML);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    }
   }
 }
 
 /**
- * Print invoice directly
+ * Print invoice using React-PDF
  * @param invoice - Invoice data
  */
-export function printInvoice(invoice: ServiceCenterInvoice): void {
+export async function printInvoice(
+  invoice: ServiceCenterInvoice,
+  showToast?: (message: string, type: "success" | "error") => void
+): Promise<void> {
   if (typeof window === "undefined") return;
-  
-  const invoiceHTML = generateInvoiceHTML(invoice);
-  
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(invoiceHTML);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-    }, 250);
+
+  try {
+    const { pdf } = await import("@react-pdf/renderer");
+    const { InvoicePDFDocument } = await import("@/shared/components/invoice/InvoicePDFDocument");
+    const React = await import("react");
+
+    // Generate PDF blob using React-PDF for proper text-based PDF
+    const blob = await pdf(
+      React.createElement(InvoicePDFDocument, { invoice }) as any
+    ).toBlob();
+
+    // Open PDF in new window/tab for printing
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+
+    if (printWindow) {
+      // Wait for PDF to load, then trigger print dialog
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.print();
+          // Clean up URL after a delay
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+          }, 1000);
+        }, 500);
+      };
+    } else {
+      // Fallback: if popup blocked, try download instead
+      if (showToast) {
+        showToast("Popup blocked. Please allow popups to print, or use Download PDF instead.", "error");
+      } else {
+        console.warn("Popup blocked. Please allow popups to print.");
+      }
+      URL.revokeObjectURL(url);
+    }
+  } catch (error) {
+    console.error("Failed to generate PDF for printing:", error);
+    // Fallback to HTML print
+    const invoiceHTML = generateInvoiceHTML(invoice);
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(invoiceHTML);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    }
   }
 }
 

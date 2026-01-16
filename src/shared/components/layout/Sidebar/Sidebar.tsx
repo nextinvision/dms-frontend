@@ -1,13 +1,5 @@
 "use client";
 import {
-  Home,
-  Building,
-  Users,
-  Package,
-  DollarSign,
-  FileText,
-  AlertCircle,
-  ClipboardList,
   LogOut,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -15,6 +7,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { useState, useEffect } from "react";
 import { useRole } from "@/shared/hooks";
+import { ADMIN_MENU_ITEMS } from "@/shared/constants/menu-items";
 // safeStorage import removed
 
 export interface SidebarProps {
@@ -22,16 +15,7 @@ export interface SidebarProps {
   setOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
 }
 
-const menu = [
-  { name: "Dashboard", icon: Home, href: "/dashboard" },
-  { name: "Service Centers", icon: Building, href: "/servicecenters" },
-  { name: "Users & Roles", icon: Users, href: "/user&roles" },
-  { name: "Inventory", icon: Package, href: "/inventory" },
-  { name: "Finance", icon: DollarSign, href: "/finance" },
-  { name: "Reports", icon: FileText, href: "/reports" },
-  { name: "Complaints", icon: AlertCircle, href: "/complaints" },
-  { name: "Audit Logs", icon: ClipboardList, href: "/audit-logs" },
-];
+const menu = ADMIN_MENU_ITEMS;
 
 export function Sidebar({ open, setOpen }: SidebarProps) {
   const pathname = usePathname();

@@ -21,9 +21,11 @@ export interface CreateCustomerFormModalProps {
   onWhatsappSameAsMobileChange: (same: boolean) => void;
   fieldErrors: Record<string, string>;
   onFieldErrorChange: (errors: Record<string, string>) => void;
-  validationError: string;
   isLoading: boolean;
   onSubmit: () => void;
+  isEditMode?: boolean;
+  updatedBy?: string;
+  updatedAt?: string;
 }
 
 export function CreateCustomerFormModal({
@@ -39,15 +41,34 @@ export function CreateCustomerFormModal({
   onWhatsappSameAsMobileChange,
   fieldErrors,
   onFieldErrorChange,
-  validationError,
   isLoading,
   onSubmit,
+  isEditMode,
+  updatedBy,
+  updatedAt,
 }: CreateCustomerFormModalProps) {
   if (!isOpen) return null;
 
   return (
-    <Modal title="Create New Customer" subtitle="Fill in the customer details below" onClose={onClose} maxWidth="max-w-3xl">
+    <Modal title={isEditMode ? "Edit Customer Details" : "Create New Customer"} subtitle={isEditMode ? "Update customer information below" : "Fill in the customer details below"} onClose={onClose} maxWidth="max-w-3xl">
       <div className="p-6 space-y-4">
+        {/* Audit Trail - Only show in edit mode */}
+        {isEditMode && (updatedBy || updatedAt) && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              {updatedBy && (
+                <div>
+                  <span className="font-semibold">Last Updated By:</span> {updatedBy}
+                </div>
+              )}
+              {updatedAt && (
+                <div>
+                  <span className="font-semibold">Last Updated:</span> {new Date(updatedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <FormInput
           label="Full Name"
           required
@@ -164,8 +185,8 @@ export function CreateCustomerFormModal({
             rows={3}
             placeholder="House / Flat, Street, Area, City, State, Pincode"
             className={`w-full px-4 py-2.5 rounded-lg focus:bg-white focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 resize-none ${fieldErrors.address
-                ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
-                : "bg-gray-50/50 focus:ring-indigo-500/20 border border-gray-200"
+              ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
+              : "bg-gray-50/50 focus:ring-indigo-500/20 border border-gray-200"
               }`}
           />
           {fieldErrors.address && (
@@ -191,8 +212,8 @@ export function CreateCustomerFormModal({
                 }
               }}
               className={`w-full px-4 py-2.5 rounded-lg focus:bg-white focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 ${fieldErrors.state
-                  ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
-                  : "bg-gray-50/50 focus:ring-indigo-500/20 border border-gray-200"
+                ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
+                : "bg-gray-50/50 focus:ring-indigo-500/20 border border-gray-200"
                 }`}
             >
               <option value="">Select State</option>
@@ -223,10 +244,10 @@ export function CreateCustomerFormModal({
               }}
               disabled={!selectedState}
               className={`w-full px-4 py-2.5 rounded-lg focus:bg-white focus:ring-2 focus:outline-none text-gray-900 transition-all duration-200 ${!selectedState
-                  ? "bg-gray-100 border border-gray-200 cursor-not-allowed text-gray-400"
-                  : fieldErrors.city
-                    ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
-                    : "bg-gray-50/50 focus:ring-indigo-500/20 border border-gray-200"
+                ? "bg-gray-100 border border-gray-200 cursor-not-allowed text-gray-400"
+                : fieldErrors.city
+                  ? "bg-red-50 border-2 border-red-300 focus:ring-red-500/20 focus:border-red-500"
+                  : "bg-gray-50/50 focus:ring-indigo-500/20 border border-gray-200"
                 }`}
             >
               <option value="">{selectedState ? "Select City" : "Select State First"}</option>
@@ -275,19 +296,6 @@ export function CreateCustomerFormModal({
           </select>
         </div>
 
-        {validationError && <ErrorAlert message={validationError} />}
-
-        {Object.keys(fieldErrors).length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-sm font-semibold text-red-800 mb-2">Please fill the following mandatory fields:</p>
-            <ul className="list-disc list-inside space-y-1 text-sm text-red-700">
-              {Object.entries(fieldErrors).map(([field, error]) => (
-                <li key={field}>{error}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         <div className="flex gap-3 pt-4 border-t border-gray-200">
           <Button onClick={onClose} variant="secondary" className="flex-1">
             Cancel
@@ -299,7 +307,7 @@ export function CreateCustomerFormModal({
                 Creating...
               </>
             ) : (
-              "Create Customer"
+              isEditMode ? "Update Customer" : "Create Customer"
             )}
           </Button>
         </div>

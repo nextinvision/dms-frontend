@@ -62,6 +62,8 @@ export { INITIAL_DOCUMENTATION_FILES } from '@/shared/types/documentation.types'
 
 export interface AppointmentForm {
   id?: string | number; // Optional ID for edit mode
+  customerId?: string | number;
+  vehicleId?: string | number;
   customerName: string;
   vehicle: string;
   phone: string;
@@ -119,9 +121,15 @@ export interface AppointmentForm {
   insuranceEndDate?: string;
   insuranceCompanyName?: string;
   vehicleColor?: string;
+
+  // Audit Trail
+  updatedBy?: string;
+  updatedAt?: string;
 }
 
 export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
+  customerId: undefined,
+  vehicleId: undefined,
   customerName: "",
   vehicle: "",
   phone: "",

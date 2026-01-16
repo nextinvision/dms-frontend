@@ -12,27 +12,39 @@ import type { CustomerSearchType } from "@/shared/types";
 export function detectSearchType(query: string): CustomerSearchType {
   const trimmed = query.trim();
 
-  // Check for customer number pattern (CUST-YYYY-XXXX) - allow partial matches
-  if (/^CUST-/i.test(trimmed)) {
-    return "customerNumber";
-  }
-
-  // Check for VIN (typically 17 alphanumeric characters) - allow partial matches
-  if (/^[A-HJ-NPR-Z0-9]{8,}$/i.test(trimmed)) {
-    return "vin";
-  }
-
-  // Check for vehicle registration (typically 2 letters, 2 digits, 2 letters, 4 digits) - allow partial matches
-  if (/^[A-Z]{2}\d{2}/i.test(trimmed) || /^[A-Z]{2}\d{2}[A-Z]{2}/i.test(trimmed)) {
-    return "vehicleNumber";
-  }
-
-  // Check for email - allow partial matches (contains @)
+  // Check for email - matches if contains @
   if (trimmed.includes("@")) {
     return "email";
   }
 
+  // Check for customer number pattern (CUST-YYYY-XXXX)
+  if (/^CUST-/i.test(trimmed)) {
+    return "customerNumber";
+  }
+
+  // Check for standard Vehicle Number patterns first (e.g., MH12, MH-12, MH 12 AB 1234)
+  // Matches start with 2 letters followed by numbers, optional separators
+  if (/^[A-Z]{2}[ -]?\d{1,2}/i.test(trimmed)) {
+    return "vehicleNumber";
+  }
+
+  // Check for VIN (17 chars is standard, but we allow 10+ alphanumeric for partial VINs)
+  // VINs typically don't have I, O, Q, but we'll use broad alphanumeric
+  if (/^[A-Z0-9]{10,17}$/i.test(trimmed) && !/\s/.test(trimmed)) {
+    return "vin";
+  }
+
+  // Check generally for mixed alphanumeric (letters + numbers) -> likely Vehicle Number or partial VIN
+  // This catches cases like "AB1234" which might be part of a plate
+  const hasLetters = /[a-zA-Z]/.test(trimmed);
+  const hasNumbers = /\d/.test(trimmed);
+  if (hasLetters && hasNumbers) {
+    // If very long and no spaces, lean towards VIN, otherwise Vehicle Number
+    return trimmed.length > 10 && !/\s/.test(trimmed) ? "vin" : "vehicleNumber";
+  }
+
   // Check for phone - allow partial numbers (3+ digits)
+  // Only if it looks like a phone number (mostly digits)
   const cleanedPhone = trimmed.replace(/[\s-+().]/g, "").replace(/^91/, "");
   if (/^\d{3,}$/.test(cleanedPhone)) {
     return "phone";

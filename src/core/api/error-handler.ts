@@ -43,6 +43,23 @@ export function parseApiError(error: any): ApiError {
 
     const { status, data } = error.response;
 
+    // Handle NestJS validation error format
+    // Backend returns: { statusCode: 400, message: "Validation failed", errors: [...] }
+    if (data?.errors && Array.isArray(data.errors)) {
+        // Join validation errors into a readable message
+        const validationMessages = data.errors
+            .map((err: string | any) => typeof err === 'string' ? err : err.message || JSON.stringify(err))
+            .join('; ');
+        
+        return {
+            message: data.message || 'Validation failed',
+            code: data.code || `HTTP_${status}`,
+            status,
+            errors: data.errors,
+            validationMessage: validationMessages,
+        };
+    }
+
     // Handle different error formats
     if (data?.message) {
         return {
@@ -70,6 +87,7 @@ export function parseApiError(error: any): ApiError {
         message: defaultMessages[status] || 'An unexpected error occurred.',
         code: `HTTP_${status}`,
         status,
+        errors: data?.errors || data,
     };
 }
 

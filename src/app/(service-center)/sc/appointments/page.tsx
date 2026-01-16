@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useCallback } from "react";
+import { Suspense, useCallback, useMemo } from "react";
 import { Calendar } from "lucide-react";
 import dynamic from "next/dynamic";
 import { AppointmentGrid, Toast } from "../components/appointments";
@@ -81,8 +81,9 @@ function AppointmentsContent() {
     clearAppointmentCustomerSearch,
     detailCustomer,
     // updateStoredJobCard removed - backend API only
-    appointmentsState: { setAppointments },
+    appointmentsState: { setRawAppointments: setAppointments },
     setCheckInSlipData,
+    loading,
   } = useAppointmentLogic();
 
   const router = useRouter();
@@ -92,18 +93,29 @@ function AppointmentsContent() {
   const canEditCustomerInformation = canEditCustomerInfo(userRole);
   const canEditVehicleInformation = canEditVehicleInfo(userRole);
 
-  const getJobCardId = useCallback((appointmentId: number | string): string | null => {
-    if (typeof window === "undefined") return null;
+  // Optimize job card lookup
+  const jobCardLookup = useMemo(() => {
+    if (typeof window === "undefined") return new Map<string, string>();
     try {
+      // Assuming migrateAllJobCards is necessary to get the latest state
       const jobCards = migrateAllJobCards();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const jobCard = jobCards.find((card: any) => card.sourceAppointmentId === appointmentId);
-      return jobCard?.id || null;
+      const map = new Map<string, string>();
+      jobCards.forEach((card: any) => {
+        if (card.sourceAppointmentId) {
+          map.set(card.sourceAppointmentId.toString(), card.id);
+        }
+      });
+      return map;
     } catch (error) {
-      console.error("Error finding job card:", error);
-      return null;
+      console.error("Error creating job card lookup:", error);
+      return new Map<string, string>();
     }
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount. 
+  // If job cards change often, we might need a signal to re-run, but for now this is much better than per-row.
+
+  const getJobCardId = useCallback((appointmentId: number | string): string | null => {
+    return jobCardLookup.get(appointmentId.toString()) || null;
+  }, [jobCardLookup]);
 
   const handleOpenNewAppointment = useCallback(() => {
     if (!canCreateNewAppointment) {
@@ -245,14 +257,21 @@ function AppointmentsContent() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-md p-6">
-          <AppointmentGrid
-            appointments={visibleAppointments}
-            onAppointmentClick={handleAppointmentClick}
-            onDeleteAppointment={handleDeleteAppointment}
-            onOpenJobCard={handleOpenJobCard}
-            getJobCardId={getJobCardId}
-            isCallCenter={isCallCenter}
-          />
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">Loading appointments...</p>
+            </div>
+          ) : (
+            <AppointmentGrid
+              appointments={visibleAppointments}
+              onAppointmentClick={handleAppointmentClick}
+              onDeleteAppointment={handleDeleteAppointment}
+              onOpenJobCard={handleOpenJobCard}
+              getJobCardId={getJobCardId}
+              isCallCenter={isCallCenter}
+            />
+          )}
         </div>
       </div>
 
@@ -293,7 +312,7 @@ function AppointmentsContent() {
           initialFormData={appointmentFormData}
           onClose={handleCloseAppointmentForm}
           onSubmit={handleSubmitAppointmentForm}
-          onSubmitWithFiles={handleSubmitAppointmentFormWithFiles}
+          onSubmitWithFiles={handleSubmitAppointmentFormWithFiles as any}
           canAccessCustomerType={true} // Simplify logic for now
           canAccessVehicleInfo={true}
           existingAppointments={appointments.filter(apt => apt.id !== selectedAppointment?.id)}

@@ -228,7 +228,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         {/* Status */}
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(job.status)}`}>
-                                                {job.status}
+                                                {job.status.replace(/_/g, ' ')}
                                             </span>
                                             {hasRequest && (
                                                 <span className="ml-2 px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium border border-orange-200">

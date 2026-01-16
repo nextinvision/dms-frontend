@@ -1,4 +1,5 @@
 import { getApiUrl } from '@/config/api.config';
+import Cookies from 'js-cookie';
 
 export interface UploadOptions {
   folder?: string;
@@ -33,6 +34,11 @@ export async function uploadFile(
   return new Promise<UploadResult>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
+
+    const token = Cookies.get('auth_token');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {

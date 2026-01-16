@@ -6,7 +6,9 @@ import type { UserRole } from './shared/types/auth.types';
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
-    // Public paths
+    // Public paths - allow access without auth
+    // NOTE: Don't clear cookies on login page here - let the client-side handle it
+    // to avoid interfering with successful login redirects
     if (pathname === '/' || pathname.startsWith('/_next') || pathname.includes('/api/') || pathname.includes('.')) {
         return NextResponse.next();
     }

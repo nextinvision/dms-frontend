@@ -40,6 +40,7 @@ export default function PartsMasterPage() {
   const [uploadProgress, setUploadProgress] = useState<{
     success: number;
     failed: number;
+    merged?: number;
     errors: string[];
   } | null>(null);
   const [formData, setFormData] = useState<PartsMasterFormData>(getInitialFormData());
@@ -92,9 +93,9 @@ export default function PartsMasterPage() {
       // Map form data to PartFormData (only includes fields with data)
       const partData = mapFormDataToPartFormData(formData);
 
-       // Inject Service Center ID for new parts if missing (required by backend)
+      // Inject Service Center ID for new parts if missing (required by backend)
       if (!partData.serviceCenterId && serviceCenterId) {
-        partData.serviceCenterId = serviceCenterId;
+        partData.serviceCenterId = String(serviceCenterId);
       }
 
       // At minimum, require partName for identification
@@ -103,15 +104,53 @@ export default function PartsMasterPage() {
         return;
       }
 
+      // Store previous state for rollback
+      const previousParts = parts;
+      let updatedPart: Part;
+
       if (editingPart) {
-        await partsMasterService.update(editingPart.id, partData);
+        // Optimistic update for edit
+        updatedPart = {
+          ...editingPart,
+          ...partData,
+          updatedAt: new Date().toISOString(),
+        };
+        const updatedParts = parts.map((p) => (p.id === editingPart.id ? updatedPart : p));
+        setParts(updatedParts);
+        setFilteredParts(updatedParts);
+
+        // Close modal immediately
+        setShowModal(false);
+        setEditingPart(null);
+        resetForm();
+
+        // Call service in background
+        try {
+          await partsMasterService.update(editingPart.id, partData);
+        } catch (error) {
+          // Rollback on error
+          console.error("Failed to update part:", error);
+          setParts(previousParts);
+          setFilteredParts(previousParts);
+          alert(error instanceof Error ? error.message : "Failed to update part. Please try again.");
+        }
       } else {
-        await partsMasterService.create(partData);
+        // For new parts, close modal and call service
+        // (We can't optimistically create because we need the generated ID)
+        setShowModal(false);
+        resetForm();
+
+        try {
+          const newPart = await partsMasterService.create(partData);
+          // Add to UI after successful creation
+          const updatedParts = [...parts, newPart];
+          setParts(updatedParts);
+          setFilteredParts(updatedParts);
+        } catch (error) {
+          console.error("Failed to create part:", error);
+          alert(error instanceof Error ? error.message : "Failed to create part. Please try again.");
+        }
       }
-      setShowModal(false);
-      setEditingPart(null);
-      resetForm();
-      fetchParts();
     } catch (error) {
       console.error("Failed to save part:", error);
       alert(error instanceof Error ? error.message : "Failed to save part. Please try again.");
@@ -126,11 +165,20 @@ export default function PartsMasterPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this part?")) {
+      // Optimistic update: Remove from UI immediately
+      const previousParts = parts;
+      const updatedParts = parts.filter((p) => p.id !== id);
+      setParts(updatedParts);
+      setFilteredParts(filteredParts.filter((p) => p.id !== id));
+
       try {
+        // Call service in background
         await partsMasterService.delete(id);
-        fetchParts();
       } catch (error) {
+        // Rollback on error
         console.error("Failed to delete part:", error);
+        setParts(previousParts);
+        setFilteredParts(previousParts);
         alert("Failed to delete part. Please try again.");
       }
     }
@@ -742,6 +790,11 @@ export default function PartsMasterPage() {
                     <span className="text-green-600 font-medium">
                       Success: {uploadProgress.success}
                     </span>
+                    {uploadProgress.merged && uploadProgress.merged > 0 && (
+                      <span className="text-blue-600 font-medium">
+                        Merged: {uploadProgress.merged}
+                      </span>
+                    )}
                     <span className="text-red-600 font-medium">
                       Failed: {uploadProgress.failed}
                     </span>

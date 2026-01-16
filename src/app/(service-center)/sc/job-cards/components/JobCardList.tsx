@@ -87,7 +87,7 @@ const JobCardList = React.memo<JobCardListProps>(({
                                         job.status
                                     )}`}
                                 >
-                                    {job.status}
+                                    {job.status.replace(/_/g, ' ')}
                                 </span>
                                 <span
                                     className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${getPriorityColor(

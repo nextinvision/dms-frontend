@@ -42,7 +42,10 @@ class ApiClient {
 
     let url: string;
 
+    // Only log in development mode
+    if (process.env.NODE_ENV === 'development') {
     console.log('[API Client] Building URL with baseURL:', this.baseURL);
+    }
 
     // ✅ Absolute base URL (http / https)
     if (this.baseURL.startsWith('http')) {
@@ -76,7 +79,10 @@ class ApiClient {
         }
     }
 
+    // Only log in development mode
+    if (process.env.NODE_ENV === 'development') {
     console.log('[API Client] Final URL:', url);
+    }
     return url;
 }
 
@@ -192,6 +198,31 @@ class ApiClient {
                 const contentType = response.headers.get('content-type');
                 let responseData: any;
 
+                // For error responses, capture the full response body before checking content type
+                if (!response.ok) {
+                    const text = await response.text();
+                    try {
+                        // Try to parse as JSON first
+                        responseData = JSON.parse(text);
+                    } catch (e) {
+                        // If not JSON, treat as text error message
+                        responseData = { message: text.substring(0, 500) };
+                    }
+                    
+                    // Throw error with full response data
+                    throw {
+                        response: {
+                            status: response.status,
+                            statusText: response.statusText,
+                            data: responseData,
+                            headers: Object.fromEntries(response.headers.entries())
+                        },
+                        message: responseData.message || responseData.error || `HTTP ${response.status}: ${response.statusText}`,
+                        status: response.status
+                    };
+                }
+
+                // Handle successful responses
                 if (contentType && contentType.includes('application/json')) {
                     try {
                         responseData = await response.json();
@@ -262,6 +293,19 @@ class ApiClient {
 
                 // Parse and throw error
                 const errorInfo = handleApiError(error);
+                
+                // Log detailed error information for debugging (dev mode only)
+                if (process.env.NODE_ENV === 'development') {
+                    console.error('[API Client] Request failed:', {
+                        url,
+                        method,
+                        error: errorInfo,
+                        originalError: error,
+                        response: error?.response,
+                        responseData: error?.response?.data,
+                    });
+                }
+                
                 throw new ApiError(errorInfo.message, errorInfo.status, errorInfo.code, errorInfo.errors);
             }
         }

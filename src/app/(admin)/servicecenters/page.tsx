@@ -127,7 +127,7 @@ export default function ServiceCentersPage() {
     e.preventDefault();
 
     // Validation
-    if (!form.name.trim() || !form.code.trim() || !form.address.trim() || !form.city.trim() || !form.state.trim() || !form.pinCode.trim()) {
+    if (!form.name.trim() || !form.code.trim() || !form.address.trim() || !form.city.trim() || !form.state.trim() || !form.pinCode.trim() || !form.phone.trim()) {
       toast.error("Please fill all required fields!");
       return;
     }
@@ -440,12 +440,15 @@ export default function ServiceCentersPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-sm font-medium text-gray-600">Phone</label>
+                      <label className="text-sm font-medium text-gray-600">
+                        Phone <span className="text-red-500">*</span>
+                      </label>
                       <input
                         type="tel"
                         value={form.phone}
                         onChange={(e) => setForm({ ...form, phone: e.target.value })}
                         className="w-full border text-black border-gray-300 rounded-lg px-3 py-2 mt-1 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
                       />
                     </div>
 
@@ -661,7 +664,7 @@ export default function ServiceCentersPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (activeStep === 1 && (!form.name || !form.code || !form.address || !form.city || !form.state || !form.pinCode)) {
+                      if (activeStep === 1 && (!form.name || !form.code || !form.address || !form.city || !form.state || !form.pinCode || !form.phone)) {
                         toast.error("Please fill all required fields in Basic Details");
                         return;
                       }

@@ -4,19 +4,8 @@ import {
   FileText,
   PlusCircle,
   Search,
-  Filter,
-  Eye,
-  Send,
-  CheckCircle,
-  XCircle,
   Clock,
-  User,
-  Car,
-  Building2,
-  Calculator,
-  FileCheck,
-  ArrowRight,
-  X,
+  Eye,
   Trash2,
   Edit,
   Download,
@@ -2375,32 +2364,40 @@ Please keep this slip safe for vehicle collection.`;
 
         {/* Search and Filters Card */}
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200/60 p-5 mb-8">
-          <div className="flex flex-col xl:flex-row gap-5">
-            <div className="flex-1 relative group">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
-              <input
-                type="text"
-                placeholder="Find by number, customer, or registration..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 focus:outline-none transition-all placeholder:text-slate-400 font-medium"
-              />
+          <div className="flex flex-col xl:flex-row xl:items-center gap-5">
+            {/* Search */}
+            <div className="flex-1 flex justify-center xl:justify-start">
+              <div className="relative group w-full xl:max-w-3xl">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
+                <input
+                  type="text"
+                  placeholder="Find by number, customer, or registration..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-4 text-base bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 focus:outline-none transition-all placeholder:text-slate-400 font-semibold"
+                />
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-50 rounded-2xl border border-slate-200">
-              {(["all", "DRAFT", "SENT_TO_CUSTOMER", "CUSTOMER_APPROVED", "CUSTOMER_REJECTED", "SENT_TO_MANAGER", "MANAGER_APPROVED", "MANAGER_REJECTED"] as QuotationFilterType[]).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${filter === f
-                    ? "bg-white text-blue-600 shadow-sm border border-blue-100"
-                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                    }`}
-                >
-                  {f === "all"
-                    ? "All Statuses"
-                    : f.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ")}
-                </button>
-              ))}
+
+            {/* Filters dropdown */}
+            <div className="w-full xl:w-64">
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                Filter by status
+              </label>
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as QuotationFilterType)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold text-slate-700 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="DRAFT">Draft</option>
+                <option value="SENT_TO_CUSTOMER">Sent to Customer</option>
+                <option value="CUSTOMER_APPROVED">Customer Approved</option>
+                <option value="CUSTOMER_REJECTED">Customer Rejected</option>
+                <option value="SENT_TO_MANAGER">Sent to Manager</option>
+                <option value="MANAGER_APPROVED">Manager Approved</option>
+                <option value="MANAGER_REJECTED">Manager Rejected</option>
+              </select>
             </div>
           </div>
         </div>

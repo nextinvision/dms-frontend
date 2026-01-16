@@ -70,7 +70,13 @@ export default function StockIssuePage() {
 
         // Fetch available stock
         const stock = await centralInventoryRepository.getAllStock();
-        setAvailableStock(stock.filter((s) => s.stockQuantity > 0));
+        // Filter stock items that have quantity > 0
+        // CentralStock uses currentQty, but some stock types might use stockQuantity
+        const availableStockItems = stock.filter((s: any) => {
+          const qty = s.currentQty ?? s.stockQuantity ?? 0;
+          return qty > 0;
+        });
+        setAvailableStock(availableStockItems);
 
         // Parse initial items from query params if available
         // If poId is provided, calculate remaining quantities from existing parts issues
@@ -120,7 +126,7 @@ export default function StockIssuePage() {
                       fromStock: stockItem.id,
                       quantity: item.quantity, // Remaining quantity
                       unitPrice: item.unitPrice || stockItem.unitPrice || 0,
-                      availableQty: stockItem.stockQuantity || 0,
+                      availableQty: (stockItem as any).currentQty ?? (stockItem as any).stockQuantity ?? 0,
                     };
                   }
                   return null;
@@ -137,17 +143,45 @@ export default function StockIssuePage() {
           try {
             const items = JSON.parse(decodeURIComponent(itemsParam));
             
-            // Validate each item exists in central inventory with BOTH partNumber AND partName match
+            console.log('[Stock Issue] Parsed items from URL:', items);
+            console.log('[Stock Issue] Available stock count:', stock.length);
+            console.log('[Stock Issue] Sample stock item:', stock[0]);
+            
+            // Log all stock items to help debug matching
+            console.log('[Stock Issue] All stock items:', stock.map((s: any) => ({
+              id: s.id,
+              partId: s.partId,
+              partName: s.partName,
+              partNumber: s.partNumber
+            })));
+            
+            // Validate each item exists in central inventory
+            // Try matching by partId first, then partNumber, then partName
             const validatedItems = items.map((item: any) => {
+              console.log(`[Stock Issue] Matching item:`, {
+                partId: item.partId,
+                partNumber: item.partNumber,
+                partName: item.partName
+              });
+              
               // Find matching stock item using utility function
+              // Pass partId, partNumber, and partName for flexible matching
               const match = findMatchingPartInStock(
-                { partNumber: item.partNumber, partName: item.partName },
+                { 
+                  partId: item.partId,
+                  partNumber: item.partNumber, 
+                  partName: item.partName 
+                },
                 stock
               );
               
+              console.log(`[Stock Issue] Match result:`, match);
+              
               // If part found with both matches, return autofilled data
               if (match.matched && match.matchedPart) {
-                const stockItem = match.matchedPart;
+                const stockItem = match.matchedPart as any;
+                // CentralStock uses currentQty, but check both fields for compatibility
+                const availableQty = stockItem.currentQty ?? stockItem.stockQuantity ?? 0;
                 return {
                   partId: stockItem.id,
                   partName: stockItem.partName,
@@ -156,14 +190,14 @@ export default function StockIssuePage() {
                   fromStock: stockItem.id,
                   quantity: item.quantity || 0, // This should already be remaining quantity from PO page
                   unitPrice: item.unitPrice || stockItem.unitPrice || 0,
-                  availableQty: stockItem.stockQuantity || 0,
+                  availableQty: availableQty,
                 };
               }
               
               // Part not found - return null to filter out
               console.warn(
-                `Part not found in Central Inventory: ${item.partName || 'Unknown'}${item.partNumber ? ` (${item.partNumber})` : ''}. ` +
-                `Both part number and part name must match exactly.`
+                `Part not found in Central Inventory: ${item.partName || 'Unknown'}${item.partNumber ? ` (${item.partNumber})` : ''}${item.partId ? ` [ID: ${item.partId}]` : ''}. ` +
+                `Could not match by ID, part number, or part name.`
               );
               return null;
             });
@@ -177,14 +211,14 @@ export default function StockIssuePage() {
               // All parts were invalid - show message
               showError(
                 "None of the requested parts were found in Central Inventory. " +
-                "Both part number and part name must match exactly. Please select parts manually."
+                "Please select parts manually from the list."
               );
             } else if (mappedItems.length < items.length) {
               // Some parts were invalid
               const invalidCount = items.length - mappedItems.length;
               showError(
-                `${invalidCount} part(s) were not found in Central Inventory. ` +
-                "Please select the missing parts manually."
+                `${invalidCount} part(s) could not be automatically matched in Central Inventory. ` +
+                "Please select the missing parts manually from the dropdown."
               );
             }
             

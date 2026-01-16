@@ -35,7 +35,7 @@ export interface MenuItem {
 }
 
 export const ADMIN_MENU_ITEMS: MenuItem[] = [
-  { name: "Dashboard", icon: Home, href: "/dashboarda" },
+  { name: "Dashboard", icon: Home, href: "/dashboard" },
   { name: "Service Centers", icon: Building, href: "/servicecenters" },
   { name: "Users & Roles", icon: Users, href: "/user&roles" },
   { name: "Roles & Permissions", icon: Shield, href: "/roles-permissions" },

@@ -17,6 +17,7 @@ import { convertAppointmentToFormData, formatVehicleString } from "../utils";
 import { SERVICE_CENTER_CODE_MAP, TOAST_DURATION, JOB_CARD_STORAGE_KEY } from "../constants";
 import type { AppointmentRecord, ToastType, CustomerArrivalStatus } from "../types";
 import type { CustomerWithVehicles, Vehicle } from "@/shared/types";
+import type { JobCard } from "@/shared/types/job-card.types";
 import type { AppointmentForm as AppointmentFormType } from "../../components/appointment/types";
 import type { CreateAppointmentDto, UpdateAppointmentDto } from "@/features/appointments/types/appointment.types"; // Added
 import { useCustomerSearch } from "@/app/(service-center)/sc/components/customers";
@@ -77,7 +78,7 @@ export const useAppointmentLogic = () => {
     }, [isServiceAdvisor, userInfo?.name]);
 
     // State
-    const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
+    const [rawAppointments, setRawAppointments] = useState<any[]>([]);
     const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRecord | null>(null);
 
     // Modal States
@@ -97,6 +98,7 @@ export const useAppointmentLogic = () => {
     const [currentJobCardId, setCurrentJobCardId] = useState<string | null>(null);
     const [currentJobCard, setCurrentJobCard] = useState<JobCard | null>(null);
     const [checkInSlipData, setCheckInSlipData] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
 
     // Customer Search Logic
     const customerSearch = useCustomerSearch();
@@ -204,6 +206,7 @@ export const useAppointmentLogic = () => {
     // Helpers
     const loadAppointments = useCallback(async () => {
         try {
+            setLoading(true);
             const params: any = {};
             if (shouldFilterAppointments && serviceCenterContext?.serviceCenterId) {
                 params.serviceCenterId = serviceCenterContext.serviceCenterId;
@@ -212,52 +215,50 @@ export const useAppointmentLogic = () => {
             const response = await appointmentsService.getAll(params) as any;
             const data = response.data || response || []; // Handle {data: [], ...} or [] structure
 
-            // Map backend data to frontend AppointmentRecord
-            const mappedAppointments: AppointmentRecord[] = data.map((apt: any) => ({
-                id: apt.id,
-                customerName: apt.customer?.name || apt.customerName || "Unknown",
-                vehicle: apt.vehicle?.registration
-                    ? `${apt.vehicle.vehicleModel} (${apt.vehicle.registration})`
-                    : (apt.vehicle || "Unknown"),
-                phone: apt.customer?.phone || apt.phone || "",
-                serviceType: apt.serviceType,
-                date: apt.appointmentDate ? new Date(apt.appointmentDate).toISOString().split('T')[0] : "",
-                time: apt.appointmentTime,
-                duration: "1 hour", // Default or fetch if available
-                status: apt.status,
-                customerExternalId: apt.customerId,
-                vehicleExternalId: apt.vehicleId,
-                serviceCenterId: apt.serviceCenterId,
-                serviceCenterName: apt.serviceCenter?.name || apt.serviceCenterName,
-                // Map other fields as necessary from apt properties
-                customerComplaint: apt.customerComplaint,
-                estimatedCost: apt.estimatedCost?.toString(),
-            }));
-
-            setAppointments(mappedAppointments);
+            // Store raw data - mapping will be done via useMemo for better performance
+            setRawAppointments(data);
         } catch (error) {
             console.error("Failed to load appointments:", error);
+            showToast("Failed to load appointments. Please refresh the page.", "error");
             // Fallback or empty state
-            setAppointments([]);
+            setRawAppointments([]);
+        } finally {
+            setLoading(false);
         }
-    }, [shouldFilterAppointments, serviceCenterContext]);
+    }, [shouldFilterAppointments, serviceCenterContext, showToast]);
 
     // Effects
     useEffect(() => {
         loadAppointments();
     }, [loadAppointments]);
 
-    // Derived
+    // Derived - Memoized appointment mapping and filtering for better performance
+    const appointments = useMemo(() => {
+        return rawAppointments.map((apt: any) => ({
+            id: apt.id,
+            customerName: apt.customer?.name || apt.customerName || "Unknown",
+            vehicle: apt.vehicle?.registration
+                ? `${apt.vehicle.vehicleModel} (${apt.vehicle.registration})`
+                : (apt.vehicle || "Unknown"),
+            phone: apt.customer?.phone || apt.phone || "",
+            serviceType: apt.serviceType,
+            date: apt.appointmentDate ? new Date(apt.appointmentDate).toISOString().split('T')[0] : "",
+            time: apt.appointmentTime,
+            duration: "1 hour",
+            status: apt.status,
+            customerExternalId: apt.customerId,
+            vehicleExternalId: apt.vehicleId,
+            serviceCenterId: apt.serviceCenterId,
+            serviceCenterName: apt.serviceCenter?.name || apt.serviceCenterName,
+            customerComplaint: apt.customerComplaint,
+            estimatedCost: apt.estimatedCost?.toString(),
+        }));
+    }, [rawAppointments]);
+
     const visibleAppointments = useMemo(() => {
-        let filtered = shouldFilterAppointments
-            ? filterByServiceCenter(appointments, serviceCenterContext)
-            : appointments;
-
-        // Hide appointments that are IN_PROGRESS (they should appear in job cards instead)
-        filtered = filtered.filter(apt => apt.status !== "IN_PROGRESS");
-
-        return filtered;
-    }, [appointments, serviceCenterContext, shouldFilterAppointments]);
+        // Only filter by status - service center filtering is already done server-side
+        return appointments.filter(apt => apt.status !== "IN_PROGRESS");
+    }, [appointments]);
 
     const availableServiceCenters = useMemo(() => {
         return staticServiceCenters.filter((sc) => sc.status === "Active");
@@ -439,13 +440,26 @@ export const useAppointmentLogic = () => {
             if (!targetSC) {
                 targetSC = serviceCenters.find((sc: any) => sc.code === "SC001");
             }
-            // Absolute fallback
+
+            // Fallback to service center from user context
+            if (!targetSC && serviceCenterContext.serviceCenterId) {
+                const contextId = typeof serviceCenterContext.serviceCenterId === 'number'
+                    ? serviceCenterContext.serviceCenterId.toString()
+                    : serviceCenterContext.serviceCenterId;
+                targetSC = serviceCenters.find((sc: any) =>
+                    sc.id?.toString() === contextId ||
+                    (sc as any).serviceCenterId?.toString() === contextId ||
+                    sc.name === serviceCenterContext.serviceCenterName
+                );
+            }
+
+            // Absolute fallback to first available
             if (!targetSC && serviceCenters.length > 0) targetSC = serviceCenters[0];
 
-            const serviceCenterId = targetSC?.id;
+            const serviceCenterId = targetSC?.id || (targetSC as any)?.serviceCenterId;
 
             if (!serviceCenterId) {
-                showToast("Invalid Service Center configuration. Cannot save.", "error");
+                showToast("Service Center ID is required. Please select a service center or ensure your account is associated with one.", "error");
                 return;
             }
 
@@ -553,15 +567,31 @@ export const useAppointmentLogic = () => {
             const serviceCenters = scResponse.data || [];
 
             let targetSC = serviceCenters.find((sc: any) => sc.name === form.serviceCenterName);
+
+            // Fallback for seed data (SC001) if not found by name
             if (!targetSC) {
                 targetSC = serviceCenters.find((sc: any) => sc.code === "SC001");
             }
+
+            // Fallback to service center from user context
+            if (!targetSC && serviceCenterContext.serviceCenterId) {
+                const contextId = typeof serviceCenterContext.serviceCenterId === 'number'
+                    ? serviceCenterContext.serviceCenterId.toString()
+                    : serviceCenterContext.serviceCenterId;
+                targetSC = serviceCenters.find((sc: any) =>
+                    sc.id?.toString() === contextId ||
+                    (sc as any).serviceCenterId?.toString() === contextId ||
+                    sc.name === serviceCenterContext.serviceCenterName
+                );
+            }
+
+            // Absolute fallback to first available
             if (!targetSC && serviceCenters.length > 0) targetSC = serviceCenters[0];
 
-            const serviceCenterId = targetSC?.id;
+            const serviceCenterId = targetSC?.id || (targetSC as any)?.serviceCenterId;
 
             if (!serviceCenterId) {
-                showToast("Invalid Service Center configuration. Cannot save.", "error");
+                showToast("Service Center ID is required. Please select a service center or ensure your account is associated with one.", "error");
                 return;
             }
 
@@ -643,7 +673,7 @@ export const useAppointmentLogic = () => {
             // Step 2: Now handle actual file uploads to backend for local storage
             if (pendingUploads.length > 0 && createdAppointment?.id) {
                 console.log(`📤 Preparing to send ${pendingUploads.length} file upload(s) to backend for local storage...`);
-                
+
                 // --- Placeholder for actual file upload to a new local storage API endpoint ---
                 // This would involve iterating through pendingUploads, creating FormData,
                 // and sending it to an endpoint that handles saving files to dms-data.
@@ -1023,7 +1053,7 @@ export const useAppointmentLogic = () => {
         isServiceAdvisor,
         userInfo,
         userRole,
-        appointmentsState: { appointments, setAppointments },
+        appointmentsState: { appointments, setRawAppointments },
         serviceCenterContext,
         loadAppointments,
         // updateStoredJobCard removed - using backend API only
@@ -1032,5 +1062,6 @@ export const useAppointmentLogic = () => {
         appointmentCustomerSearchLoadingState,
         searchAppointmentCustomer,
         clearAppointmentCustomerSearch,
+        loading,
     };
 };

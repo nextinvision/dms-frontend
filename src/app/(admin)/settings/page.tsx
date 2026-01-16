@@ -1,26 +1,6 @@
 "use client";
 
-import { useState } from "react";
-// Local storage helper
-const safeStorage = {
-  getItem: <T,>(key: string, defaultValue: T): T => {
-    if (typeof window === "undefined") return defaultValue;
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (e) {
-      return defaultValue;
-    }
-  },
-  setItem: <T,>(key: string, value: T): void => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.error(e);
-    }
-  },
-};
+import { useState, useEffect } from "react";
 import {
   Settings as SettingsIcon,
   Mail,
@@ -36,95 +16,228 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle,
+  FileText,
+  Upload,
 } from "lucide-react";
+import { systemSettingsService, SystemSetting } from "@/services/systemSettings.service";
+import { uploadFile } from "@/services/upload.service";
 
-interface Setting {
-  key: string;
-  value: string;
-  category: string;
-  description?: string;
-}
-
-type SettingCategory = "general" | "email" | "sms" | "security" | "notifications" | "integrations" | "billing";
+type SettingCategory = "general" | "whatsapp" | "invoicing" | "email" | "sms" | "security" | "notifications" | "integrations" | "billing";
 
 export default function SettingsPage() {
   const [activeCategory, setActiveCategory] = useState<SettingCategory>("general");
-
-  // Mock settings data (replace with API call)
-  const defaultSettings: Record<string, Setting> = {
-    "app.name": { key: "app.name", value: "DMS System", category: "general", description: "Application Name" },
-    "app.timezone": { key: "app.timezone", value: "Asia/Kolkata", category: "general", description: "Default Timezone" },
-    "app.currency": { key: "app.currency", value: "INR", category: "general", description: "Default Currency" },
-    "email.host": { key: "email.host", value: "smtp.gmail.com", category: "email", description: "SMTP Host" },
-    "email.port": { key: "email.port", value: "587", category: "email", description: "SMTP Port" },
-    "email.from": { key: "email.from", value: "noreply@dms.com", category: "email", description: "From Email Address" },
-    "sms.provider": { key: "sms.provider", value: "twilio", category: "sms", description: "SMS Provider" },
-    "sms.api_key": { key: "sms.api_key", value: "****", category: "sms", description: "SMS API Key" },
-    "security.mfa_enabled": { key: "security.mfa_enabled", value: "false", category: "security", description: "Enable MFA" },
-    "security.password_min_length": { key: "security.password_min_length", value: "8", category: "security", description: "Minimum Password Length" },
-    "security.password_require_uppercase": { key: "security.password_require_uppercase", value: "true", category: "security", description: "Require Uppercase" },
-    "security.password_require_numbers": { key: "security.password_require_numbers", value: "true", category: "security", description: "Require Numbers" },
-    "security.session_timeout": { key: "security.session_timeout", value: "3600", category: "security", description: "Session Timeout (seconds)" },
-    "notifications.email_enabled": { key: "notifications.email_enabled", value: "true", category: "notifications", description: "Enable Email Notifications" },
-    "notifications.sms_enabled": { key: "notifications.sms_enabled", value: "false", category: "notifications", description: "Enable SMS Notifications" },
-    "integrations.api_key": { key: "integrations.api_key", value: "****", category: "integrations", description: "API Key" },
-    "billing.plan": { key: "billing.plan", value: "enterprise", category: "billing", description: "Subscription Plan" },
-  };
-
-  // Use lazy initialization to load settings from localStorage
-  const [settings, setSettings] = useState<Record<string, Setting>>(() => {
-    const storedSettings = safeStorage.getItem<Record<string, { key: string; value: string; category: string; description: string }> | null>("systemSettings", null);
-    return storedSettings || defaultSettings;
-  });
-
+  const [settings, setSettings] = useState<Record<string, SystemSetting>>({});
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
-  const categories = [
-    { id: "general" as SettingCategory, label: "General", icon: Globe },
-    { id: "email" as SettingCategory, label: "Email", icon: Mail },
-    { id: "sms" as SettingCategory, label: "SMS", icon: MessageSquare },
-    { id: "security" as SettingCategory, label: "Security", icon: Shield },
-    { id: "notifications" as SettingCategory, label: "Notifications", icon: Bell },
-    { id: "integrations" as SettingCategory, label: "Integrations", icon: Server },
-    { id: "billing" as SettingCategory, label: "Billing", icon: Database },
-  ];
+  useEffect(() => {
+    fetchSettings();
+    return () => {
+      if (signaturePreview) {
+        URL.revokeObjectURL(signaturePreview);
+      }
+    };
+  }, []);
 
-  const getCategorySettings = () => {
-    return Object.values(settings).filter((s) => s.category === activeCategory);
+  const fetchSettings = async () => {
+    setLoading(true);
+    try {
+      const data = await systemSettingsService.getAll();
+      const settingsMap: Record<string, SystemSetting> = {};
+      data.forEach(s => {
+        settingsMap[s.key] = s;
+      });
+      setSettings(settingsMap);
+    } catch (error) {
+      console.error("Failed to fetch settings:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSettingChange = (key: string, value: string) => {
-    setSettings({
-      ...settings,
-      [key]: { ...settings[key], value },
-    });
+  const handleSettingChange = (key: string, value: string, category: string, description: string) => {
+    setSettings(prev => ({
+      ...prev,
+      [key]: { key, value, category, description }
+    }));
   };
 
   const handleSave = async () => {
-    setLoading(true);
-    // TODO: Replace with API call
-    safeStorage.setItem("systemSettings", settings);
-    setTimeout(() => {
-      setLoading(false);
+    setSaving(true);
+    try {
+      // Ensure we don't send any settings with null/undefined values
+      const settingsToSave = Object.values(settings).map(s => ({
+        ...s,
+        value: s.value || "" // Ensure value is never null
+      }));
+      await systemSettingsService.save(settingsToSave);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    }, 500);
+    } catch (error) {
+      console.error("Failed to save settings:", error);
+      alert("Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleTestEmail = () => {
-    alert("Test email sent! Check your inbox.");
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Create and set local preview immediately
+    const objectUrl = URL.createObjectURL(file);
+    setSignaturePreview(objectUrl);
+
+    setUploading(true);
+    try {
+      const result: any = await uploadFile(file, { folder: 'invoicing' });
+      console.log('[SignatureUpload] Upload result:', JSON.stringify(result, null, 2));
+
+      // Extract the URL from the wrapped response
+      const uploadedUrl = result.data?.url || result.url;
+      console.log('[SignatureUpload] Extracted URL:', uploadedUrl);
+
+      // Update the setting in local state
+      const updatedSettings = {
+        ...settings,
+        "invoices.signature_url": {
+          key: "invoices.signature_url",
+          value: uploadedUrl,
+          category: "invoicing",
+          description: "Admin Signature for Invoices/Quotations"
+        }
+      };
+      console.log('[SignatureUpload] Updated settings:', updatedSettings);
+      setSettings(updatedSettings);
+
+      // Immediately save to database
+      const settingsToSave = Object.values(updatedSettings).map(s => ({
+        ...s,
+        value: s.value || ""
+      }));
+
+      console.log('[SignatureUpload] Saving settings to database:', settingsToSave);
+      await systemSettingsService.save(settingsToSave);
+      console.log('[SignatureUpload] Settings saved successfully');
+
+      // Don't clear the preview - keep showing it so user can see the uploaded signature
+      // URL.revokeObjectURL(objectUrl);
+      // setSignaturePreview(null);
+
+      alert("Signature uploaded and saved successfully!");
+    } catch (error) {
+      console.error("Failed to upload signature:", error);
+      alert("Failed to upload signature");
+      URL.revokeObjectURL(objectUrl);
+      setSignaturePreview(null); // Clear preview on error
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const handleTestSMS = () => {
-    alert("Test SMS sent!");
-  };
+  const categories = [
+    { id: "general" as SettingCategory, label: "General", icon: Globe },
+    { id: "whatsapp" as SettingCategory, label: "WhatsApp", icon: MessageSquare },
+    { id: "invoicing" as SettingCategory, label: "Invoices & PDFs", icon: FileText },
+  ];
 
-  const handleToggleMaintenance = () => {
-    const newMode = !maintenanceMode;
-    setMaintenanceMode(newMode);
-    alert(`Maintenance mode ${newMode ? "enabled" : "disabled"}`);
+  // Helper to get value safely
+  const getValue = (key: string, defaultVal: string = "") => settings[key]?.value || defaultVal;
+
+  const renderContent = () => {
+    switch (activeCategory) {
+      case "general":
+        return (
+          <div className="space-y-4">
+            <div className="border-b border-gray-200 pb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Application Name
+              </label>
+              <input
+                type="text"
+                value={getValue("app.name", "DMS System")}
+                onChange={(e) => handleSettingChange("app.name", e.target.value, "general", "Application Name")}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+          </div>
+        );
+      case "whatsapp":
+        return (
+          <div className="space-y-4">
+            <div className="border-b border-gray-200 pb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Quotation Sharing Message Template
+              </label>
+              <p className="text-xs text-gray-500 mb-2">Available variables: {'{quotationNumber}'}, {'{totalAmount}'}, {'{link}'}</p>
+              <textarea
+                rows={6}
+                value={getValue("whatsapp.quotation_template", "Quotation {quotationNumber}\nTotal: ₹{totalAmount}\n\nView and confirm: {link}")}
+                onChange={(e) => handleSettingChange("whatsapp.quotation_template", e.target.value, "whatsapp", "Quotation Sharing Message Template")}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm"
+              />
+            </div>
+          </div>
+        );
+      case "invoicing":
+        return (
+          <div className="space-y-6">
+            <div className="border-b border-gray-200 pb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Authorized Signature Image
+              </label>
+              <div className="flex items-start gap-4">
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500 mb-2">Upload a transparent PNG signature to be displayed on Invoices and Quotations.</p>
+                  <label className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors ${uploading ? 'opacity-75 cursor-not-allowed' : ''}`}>
+                    {uploading ? (
+                      <RefreshCw size={16} className="animate-spin text-indigo-600" />
+                    ) : (
+                      <Upload size={16} className="text-gray-600" />
+                    )}
+                    <span className="text-gray-700 font-medium">{uploading ? "Uploading..." : "Upload Signature"}</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/png,image/jpeg"
+                      onChange={handleSignatureUpload}
+                      disabled={uploading}
+                    />
+                  </label>
+                  <p className="text-xs text-gray-400 mt-2">Recommended size: 300x150px (PNG)</p>
+                </div>
+                {(signaturePreview || getValue("invoices.signature_url")) && (
+                  <div className="flex flex-col items-center">
+                    <p className="text-xs font-medium text-gray-500 mb-2">Current Signature</p>
+                    <div className="p-2 border border-gray-200 rounded-lg bg-gray-50 shadow-sm">
+                      <img
+                        src={signaturePreview || getValue("invoices.signature_url")}
+                        alt="Signature Preview"
+                        className="h-24 w-auto object-contain bg-white rounded border border-gray-100"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        handleSettingChange("invoices.signature_url", "", "invoicing", "Admin Signature");
+                        setSignaturePreview(null);
+                      }}
+                      className="text-xs text-red-600 mt-2 hover:text-red-800 hover:underline transition-colors"
+                    >
+                      Remove Signature
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      default:
+        return <p className="text-gray-500">Select a category to view settings.</p>;
+    }
   };
 
   return (
@@ -132,28 +245,6 @@ export default function SettingsPage() {
       <div className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 mb-2">System Settings</h1>
         <p className="text-gray-600">Configure application settings and preferences</p>
-      </div>
-
-      {/* Maintenance Mode Toggle */}
-      <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="text-orange-600" size={24} />
-            <div>
-              <h3 className="font-semibold text-gray-800">Maintenance Mode</h3>
-              <p className="text-sm text-gray-600">Enable to put the system in maintenance mode</p>
-            </div>
-          </div>
-          <button
-            onClick={handleToggleMaintenance}
-            className={`px-4 py-2 rounded-lg font-medium transition ${maintenanceMode
-              ? "bg-orange-600 text-white hover:bg-orange-700"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-              }`}
-          >
-            {maintenanceMode ? "Disable" : "Enable"}
-          </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -191,10 +282,10 @@ export default function SettingsPage() {
               </h2>
               <button
                 onClick={handleSave}
-                disabled={loading}
+                disabled={saving || loading}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition flex items-center gap-2 disabled:opacity-50"
               >
-                {loading ? (
+                {saving ? (
                   <>
                     <RefreshCw size={16} className="animate-spin" />
                     Saving...
@@ -213,68 +304,16 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            <div className="space-y-4">
-              {getCategorySettings().map((setting) => (
-                <div key={setting.key} className="border-b border-gray-200 pb-4 last:border-0">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {setting.description || setting.key}
-                  </label>
-                  {setting.key.includes("password") || setting.key.includes("api_key") || setting.key.includes("key") ? (
-                    <input
-                      type="password"
-                      value={setting.value}
-                      onChange={(e) => handleSettingChange(setting.key, e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                      placeholder="Enter value"
-                    />
-                  ) : setting.key.includes("enabled") || setting.key.includes("require") ? (
-                    <select
-                      value={setting.value}
-                      onChange={(e) => handleSettingChange(setting.key, e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                    >
-                      <option value="true">Enabled</option>
-                      <option value="false">Disabled</option>
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={setting.value}
-                      onChange={(e) => handleSettingChange(setting.key, e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                      placeholder="Enter value"
-                    />
-                  )}
-                </div>
-              ))}
-
-              {/* Category-specific actions */}
-              {activeCategory === "email" && (
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <button
-                    onClick={handleTestEmail}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition"
-                  >
-                    Send Test Email
-                  </button>
-                </div>
-              )}
-
-              {activeCategory === "sms" && (
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <button
-                    onClick={handleTestSMS}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition"
-                  >
-                    Send Test SMS
-                  </button>
-                </div>
-              )}
-            </div>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <RefreshCw className="animate-spin text-gray-400" size={32} />
+              </div>
+            ) : (
+              renderContent()
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
-

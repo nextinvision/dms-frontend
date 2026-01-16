@@ -10,7 +10,7 @@ import type { ServiceCenterInvoice, EnhancedServiceCenterInvoiceItem } from "@/s
  * @param invoice - Invoice data
  * @returns HTML string for invoice
  */
-export function generateInvoiceHTML(invoice: ServiceCenterInvoice): string {
+export function generateInvoiceHTML(invoice: ServiceCenterInvoice, signatureUrl?: string): string {
   const serviceCenter = invoice.serviceCenterDetails;
   const customer = invoice.customerDetails;
 
@@ -41,70 +41,65 @@ export function generateInvoiceHTML(invoice: ServiceCenterInvoice): string {
     }
   };
 
-  // Generate items table rows
-  const itemsRows = hasEnhancedItems
+  // Generate items table rows - Updated: Removed HSN/SAC column
+  const itemsRows = hasEnhancedItems && items.length > 0
     ? items
       .map(
-        (item, index) => `
+        (item, index) => {
+          const cgstRate = totalIgst > 0 || item.taxableAmount === 0 ? 0 : Math.round((item.cgstAmount / item.taxableAmount) * 100);
+          const sgstRate = totalIgst > 0 || item.taxableAmount === 0 ? 0 : Math.round((item.sgstAmount / item.taxableAmount) * 100);
+
+          return `
       <tr>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: center;">${index + 1}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px;">${item.name}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: center;">${item.quantity}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">₹${item.unitPrice.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">₹${item.taxableAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: center;">${item.gstRate}%</td>
-        ${totalIgst > 0
-            ? `<td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">₹${item.igstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>`
-            : `
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">₹${item.cgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">₹${item.sgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        `
-          }
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right; font-weight: bold;">₹${item.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; font-size: 11px;">${item.name || "-"}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: center; font-size: 11px;">${(item.quantity || 0).toFixed(2)} pcs</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">₹${(item.unitPrice || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">${totalIgst > 0 ? "-" : `${cgstRate}% (Amt: ₹${(item.cgstAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })})`}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">${totalIgst > 0 ? "-" : `${sgstRate}% (Amt: ₹${(item.sgstAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })})`}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">₹${(item.taxableAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
       </tr>
-    `
+    `;
+        }
       )
       .join("")
-    : invoice.items
-      .map(
-        (item, index) => `
-      <tr>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: center;">${index + 1}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px;">-</td>
-        <td style="border: 1px solid #1f2937; padding: 8px;">${item.name}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: center;">${item.qty}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">-</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">${item.price}</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: center;">-</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">-</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">-</td>
-        <td style="border: 1px solid #1f2937; padding: 8px; text-align: right;">${item.price}</td>
-      </tr>
-    `
-      )
-      .join("");
+    : (invoice.items && Array.isArray(invoice.items) && invoice.items.length > 0)
+      ? invoice.items
+        .map(
+          (item, index) => {
+            const qty = typeof item.qty === 'number' ? item.qty : (typeof item.quantity === 'number' ? item.quantity : 1);
+            const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : 0;
+            const totalAmount = typeof item.totalAmount === 'number' ? item.totalAmount :
+              (typeof item.price === 'string' ? parseFloat(item.price.replace(/[₹,]/g, '')) : 0);
+            const taxableAmount = unitPrice * qty;
+            const gstRate = item.gstRate || 18;
+            const taxAmount = totalAmount - taxableAmount;
+            const cgstAmount = taxAmount / 2;
+            const sgstAmount = taxAmount / 2;
+            const cgstRate = Math.round(gstRate / 2);
+            const sgstRate = Math.round(gstRate / 2);
 
-  const tableHeaders = totalIgst > 0
-    ? `
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: left;">Sr. No.</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: left;">Description</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: center;">Qty</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">Rate</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">Amount</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: center;">GST %</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">IGST</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">Total</th>
-    `
-    : `
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: left;">Sr. No.</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: left;">Description</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: center;">Qty</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">Rate</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">Amount</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: center;">GST %</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">CGST</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">SGST</th>
-      <th style="border: 1px solid #1f2937; padding: 10px; background-color: #f3f4f6; text-align: right;">Total</th>
+            return `
+      <tr>
+        <td style="border: 1px solid #1f2937; padding: 6px; font-size: 11px;">${item.name || "-"}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: center; font-size: 11px;">${qty.toFixed(2)} pcs</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">${unitPrice > 0 ? "₹" + unitPrice.toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "-"}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">${totalIgst > 0 ? "-" : `${cgstRate}% (Amt: ₹${cgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })})`}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">${totalIgst > 0 ? "-" : `${sgstRate}% (Amt: ₹${sgstAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })})`}</td>
+        <td style="border: 1px solid #1f2937; padding: 6px; text-align: right; font-size: 11px;">₹${taxableAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+      </tr>
+    `;
+          }
+        )
+        .join("")
+      : "<tr><td colspan='6' style='border: 1px solid #1f2937; padding: 8px; text-align: center;'>No items found</td></tr>";
+
+  const tableHeaders = `
+      <th style="border: 1px solid #1f2937; padding: 6px; background-color: #f3f4f6; text-align: left; font-size: 11px; font-weight: 600;">Item</th>
+      <th style="border: 1px solid #1f2937; padding: 6px; background-color: #f3f4f6; text-align: center; font-size: 11px; font-weight: 600;">Qty</th>
+      <th style="border: 1px solid #1f2937; padding: 6px; background-color: #f3f4f6; text-align: right; font-size: 11px; font-weight: 600;">Rate</th>
+      <th style="border: 1px solid #1f2937; padding: 6px; background-color: #f3f4f6; text-align: right; font-size: 11px; font-weight: 600;">CGST</th>
+      <th style="border: 1px solid #1f2937; padding: 6px; background-color: #f3f4f6; text-align: right; font-size: 11px; font-weight: 600;">SGST</th>
+      <th style="border: 1px solid #1f2937; padding: 6px; background-color: #f3f4f6; text-align: right; font-size: 11px; font-weight: 600;">Amount</th>
     `;
 
   return `
@@ -227,52 +222,58 @@ export function generateInvoiceHTML(invoice: ServiceCenterInvoice): string {
       <body>
         <div class="header">
           <div class="header-content">
-            <div class="company-info">
-              <div class="company-name">${serviceCenter?.name || invoice.serviceCenterName || "Service Center"}</div>
-              <div style="font-size: 14px; color: #374151; margin-top: 8px;">
-                ${serviceCenter?.address ? `<p>${serviceCenter.address}</p>` : ""}
-                ${serviceCenter?.city || serviceCenter?.state || serviceCenter?.pincode
-      ? `<p>${serviceCenter.city ? `${serviceCenter.city}, ` : ""}${serviceCenter.state || ""}${serviceCenter.pincode ? ` - ${serviceCenter.pincode}` : ""}</p>`
+            <div class="company-info" style="display: flex; align-items: flex-start; gap: 16px;">
+              <div style="flex-shrink: 0;">
+                <img src="/42ev.png" alt="42 EV TECH & SERVICES" style="height: 64px; width: auto; object-fit: contain;" onerror="this.style.display='none';" />
+              </div>
+              <div style="flex: 1;">
+                <div class="company-name" style="text-transform: uppercase;">${serviceCenter?.name || invoice.serviceCenterName || "FORTY TWO EV TECH AND SERVICES PVT LTD"}</div>
+                <div style="font-size: 11px; color: #374151; margin-top: 4px; line-height: 1.3;">
+                  ${serviceCenter?.address ? `<p style="margin: 2px 0;">${serviceCenter.address}</p>` : ""}
+                  ${serviceCenter?.city || serviceCenter?.state || serviceCenter?.pincode
+      ? `<p style="margin: 2px 0;">${serviceCenter.city ? `${serviceCenter.city}, ` : ""}${serviceCenter.state || ""}${serviceCenter.pincode ? ` ${serviceCenter.pincode}` : ""}</p>`
       : ""}
-                ${serviceCenter?.phone ? `<p>Phone: ${serviceCenter.phone}</p>` : ""}
-                ${serviceCenter?.email ? `<p>Email: ${serviceCenter.email}</p>` : ""}
-                ${serviceCenter?.gstNumber ? `<p>GSTIN: ${serviceCenter.gstNumber}</p>` : ""}
-                ${serviceCenter?.panNumber ? `<p>PAN: ${serviceCenter.panNumber}</p>` : ""}
+                  ${serviceCenter?.state ? `<p style="margin: 2px 0;">${serviceCenter.state} ${serviceCenter.pincode || ""}, India</p>` : ""}
+                  ${serviceCenter?.gstNumber ? `<p style="margin: 2px 0;"><strong>GSTIN:</strong> ${serviceCenter.gstNumber}</p>` : ""}
+                </div>
               </div>
             </div>
             <div class="invoice-details">
-              <div class="invoice-type">TAX INVOICE</div>
-              <div style="font-size: 14px; text-align: right;">
-                <p><strong>Invoice No:</strong> ${invoice.invoiceNumber || invoice.id}</p>
-                <p><strong>Date:</strong> ${formatDate(invoice.date)}</p>
-                <p><strong>Due Date:</strong> ${formatDate(invoice.dueDate)}</p>
-                ${invoice.jobCardId ? `<p><strong>Job Card Ref:</strong> ${invoice.jobCardId}</p>` : ""}
-                ${invoice.placeOfSupply ? `<p><strong>Place of Supply:</strong> ${invoice.placeOfSupply}</p>` : ""}
+              <div class="invoice-type" style="font-size: 24px; color: #111827;">TAX INVOICE</div>
+              <div style="font-size: 11px; text-align: right; line-height: 1.4;">
+                <p style="margin: 2px 0;"><strong>Invoice No:</strong> ${invoice.invoiceNumber || invoice.id}</p>
+                <p style="margin: 2px 0;"><strong>Invoice Date:</strong> ${new Date(invoice.date).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }).replace(/\//g, "/")}</p>
+                <p style="margin: 2px 0;"><strong>Terms:</strong> Due on Receipt</p>
+                <p style="margin: 2px 0;"><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }).replace(/\//g, "/")}</p>
+                ${invoice.placeOfSupply ? `<p style="margin: 2px 0;"><strong>Place Of Supply:</strong> ${invoice.placeOfSupply}</p>` : ""}
               </div>
             </div>
           </div>
         </div>
 
         <div class="details-section">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 20px 0;">
             <div>
-              <div class="section-title">Bill To:</div>
-              <div style="font-size: 14px; color: #374151;">
+              <div class="section-title" style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Bill To:</div>
+              <div style="font-size: 11px; color: #374151; line-height: 1.4;">
                 <p style="font-weight: 600; margin-bottom: 4px;">${customer?.name || invoice.customerName}</p>
-                ${customer?.address ? `<p>${customer.address}</p>` : ""}
+                ${customer?.gstNumber ? `<p style="margin: 2px 0;"><strong>Bill To GSTIN:</strong> ${customer.gstNumber}</p>` : ""}
+                ${customer?.address ? `<p style="margin: 2px 0;">${customer.address}</p>` : ""}
                 ${customer?.city || customer?.state || customer?.pincode
-      ? `<p>${customer.city ? `${customer.city}, ` : ""}${customer.state || ""}${customer.pincode ? ` - ${customer.pincode}` : ""}</p>`
+      ? `<p style="margin: 2px 0;">${customer.city ? `${customer.city}, ` : ""}${customer.state || ""}${customer.pincode ? ` ${customer.pincode}` : ""}</p>`
       : ""}
-                ${customer?.phone ? `<p>Phone: ${customer.phone}</p>` : ""}
-                ${customer?.email ? `<p>Email: ${customer.email}</p>` : ""}
-                ${customer?.gstNumber ? `<p>GSTIN: ${customer.gstNumber}</p>` : ""}
-                ${customer?.panNumber ? `<p>PAN: ${customer.panNumber}</p>` : ""}
+                ${customer?.phone ? `<p style="margin: 2px 0;">Phone: ${customer.phone}</p>` : ""}
               </div>
             </div>
             <div>
-              <div class="section-title">Vehicle Details:</div>
-              <div style="font-size: 14px; color: #374151;">
-                <p>${invoice.vehicle}</p>
+              <div class="section-title" style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Ship To:</div>
+              <div style="font-size: 11px; color: #374151; line-height: 1.4;">
+                <p style="font-weight: 600; margin-bottom: 4px;">${customer?.name || invoice.customerName}</p>
+                ${customer?.gstNumber ? `<p style="margin: 2px 0;">(GSTIN ${customer.gstNumber})</p>` : ""}
+                ${customer?.address ? `<p style="margin: 2px 0;">${customer.address}</p>` : ""}
+                ${customer?.city || customer?.state || customer?.pincode
+      ? `<p style="margin: 2px 0;">${customer.city ? `${customer.city}, ` : ""}${customer.state || ""}${customer.pincode ? ` ${customer.pincode}` : ""}</p>`
+      : ""}
               </div>
             </div>
           </div>
@@ -290,55 +291,51 @@ export function generateInvoiceHTML(invoice: ServiceCenterInvoice): string {
         </table>
 
         <div class="totals-table">
-          <table>
+          <table style="font-size: 11px;">
             <tbody>
               <tr>
-                <td style="text-align: right; font-weight: 600;">Subtotal:</td>
-                <td style="text-align: right;">₹${subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right; font-weight: 600; padding: 6px; border: 1px solid #1f2937;">Sub Total:</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">₹${subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
               ${totalCgst > 0
       ? `
               <tr>
-                <td style="text-align: right;">CGST:</td>
-                <td style="text-align: right;">₹${totalCgst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">CGST9 (9%):</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">₹${totalCgst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
               `
       : ""}
               ${totalSgst > 0
       ? `
               <tr>
-                <td style="text-align: right;">SGST:</td>
-                <td style="text-align: right;">₹${totalSgst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-              </tr>
-              `
-      : ""}
-              ${totalIgst > 0
-      ? `
-              <tr>
-                <td style="text-align: right;">IGST:</td>
-                <td style="text-align: right;">₹${totalIgst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-              </tr>
-              `
-      : ""}
-              ${discount > 0
-      ? `
-              <tr>
-                <td style="text-align: right;">Discount:</td>
-                <td style="text-align: right;">-₹${discount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">SGST9 (9%):</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">₹${totalSgst.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
               `
       : ""}
               ${roundOff !== 0
       ? `
               <tr>
-                <td style="text-align: right;">Round Off:</td>
-                <td style="text-align: right;">₹${roundOff.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">Rounding:</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">₹${roundOff.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
               `
       : ""}
               <tr style="background-color: #f3f4f6;">
-                <td style="text-align: right; font-weight: bold; font-size: 16px;">Grand Total:</td>
-                <td style="text-align: right; font-weight: bold; font-size: 16px;">₹${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right; font-weight: bold; padding: 6px; border: 1px solid #1f2937;">Total:</td>
+                <td style="text-align: right; font-weight: bold; padding: 6px; border: 1px solid #1f2937;">₹${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+              </tr>
+              ${invoice.paidAmount && parseFloat(invoice.paidAmount.replace(/[₹,]/g, '')) > 0
+      ? `
+              <tr>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">Payment Made:</td>
+                <td style="text-align: right; padding: 6px; border: 1px solid #1f2937;">(-) ₹${parseFloat(invoice.paidAmount.replace(/[₹,]/g, '')).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+              </tr>
+              `
+      : ""}
+              <tr>
+                <td style="text-align: right; font-weight: 600; padding: 6px; border: 1px solid #1f2937;">Balance Due:</td>
+                <td style="text-align: right; font-weight: 600; padding: 6px; border: 1px solid #1f2937;">₹${((invoice.balance && parseFloat(invoice.balance.replace(/[₹,]/g, ''))) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
               </tr>
             </tbody>
           </table>
@@ -346,18 +343,21 @@ export function generateInvoiceHTML(invoice: ServiceCenterInvoice): string {
 
         ${invoice.amountInWords
       ? `
-        <div class="amount-words">
-          <strong>Amount in Words:</strong> ${invoice.amountInWords}
+        <div style="margin: 16px 0;">
+          <p style="font-size: 11px; color: #374151;"><strong>Total In Words:</strong> ${invoice.amountInWords}</p>
         </div>
         `
       : ""}
+        <div style="margin: 16px 0;">
+          <p style="font-size: 11px; color: #374151; font-style: italic;">Thanks for your business.</p>
+        </div>
 
-        ${invoice.termsAndConditions && invoice.termsAndConditions.length > 0
+        ${invoice.termsAndConditions && Array.isArray(invoice.termsAndConditions) && invoice.termsAndConditions.length > 0
       ? `
         <div class="details-section">
           <div class="section-title">Terms & Conditions:</div>
           <ul style="font-size: 13px; color: #374151; padding-left: 20px;">
-            ${invoice.termsAndConditions.map((term) => `<li style="margin-bottom: 4px;">${term}</li>`).join("")}
+            ${invoice.termsAndConditions.map((term: string) => `<li style="margin-bottom: 4px;">${term}</li>`).join("")}
           </ul>
         </div>
         `
@@ -365,29 +365,24 @@ export function generateInvoiceHTML(invoice: ServiceCenterInvoice): string {
 
         ${invoice.bankDetails
       ? `
-        <div class="details-section">
-          <div class="section-title">Bank Details:</div>
-          <div style="font-size: 14px; color: #374151;">
-            <p><strong>Bank Name:</strong> ${invoice.bankDetails.bankName}</p>
-            <p><strong>Account Number:</strong> ${invoice.bankDetails.accountNumber}</p>
-            <p><strong>IFSC Code:</strong> ${invoice.bankDetails.ifscCode}</p>
-            <p><strong>Branch:</strong> ${invoice.bankDetails.branch}</p>
+        <div class="details-section" style="margin: 20px 0;">
+          <div style="font-size: 11px; color: #374151; line-height: 1.4;">
+            <p style="margin: 2px 0;"><strong>Bank Name:</strong> ${invoice.bankDetails.bankName}</p>
+            ${invoice.bankDetails.branch ? `<p style="margin: 2px 0;"><strong>Address:</strong> ${invoice.bankDetails.branch}</p>` : ""}
+            <p style="margin: 2px 0;"><strong>Account Number:</strong> ${invoice.bankDetails.accountNumber}</p>
+            <p style="margin: 2px 0;"><strong>IFSC Code:</strong> ${invoice.bankDetails.ifscCode}</p>
           </div>
         </div>
         `
       : ""}
 
-        <div class="footer">
-          <div class="signature-section">
-            <div>
-              <p style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">Customer Signature</p>
-              <div class="signature-box"></div>
-            </div>
-            <div>
-              <p style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">Authorized Signatory</p>
-              <div class="signature-box"></div>
-              ${serviceCenter ? `<p style="font-size: 11px; color: #9ca3af; margin-top: 8px;">For ${serviceCenter.name}</p>` : ""}
-            </div>
+
+        <div class="footer" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+          <div style="margin-bottom: 24px; display: flex; flex-direction: column; align-items: flex-start;">
+            <p style="font-size: 11px; font-weight: 600; color: #111827; margin-bottom: 8px; margin-top: 0;">CEO & FOUNDER:</p>
+            <img src="/signature.jpg" alt="Signature" style="display: block; height: 60px; width: 95px; margin-top: 8px; margin-bottom: 12px; object-fit: contain;" onerror="this.style.display='none';" />
+            <p style="font-size: 11px; font-weight: 600; color: #111827; margin-top: 0; margin-bottom: 0;">SAIRAJ AHIWALE</p>
+            <div style="margin-top: 48px; border-bottom: 1px solid #9ca3af; width: 192px;"></div>
           </div>
         </div>
       </body>
