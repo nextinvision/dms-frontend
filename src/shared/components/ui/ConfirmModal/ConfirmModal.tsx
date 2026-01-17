@@ -13,6 +13,7 @@ export interface ConfirmModalProps {
   confirmText?: string;
   cancelText?: string;
   isLoading?: boolean;
+  showCancel?: boolean;
 }
 
 export function ConfirmModal({
@@ -25,6 +26,7 @@ export function ConfirmModal({
   confirmText = "Confirm",
   cancelText = "Cancel",
   isLoading = false,
+  showCancel = true,
 }: ConfirmModalProps) {
   const getIcon = () => {
     switch (type) {
@@ -67,14 +69,16 @@ export function ConfirmModal({
         <h3 className="text-xl font-semibold text-gray-900 mb-2">{title}</h3>
         <p className="text-gray-600 mb-6">{message}</p>
         <div className="flex gap-3 justify-center">
-          <Button
-            onClick={onClose}
-            disabled={isLoading}
-            variant="outline"
-            className="min-w-[100px]"
-          >
-            {cancelText}
-          </Button>
+          {showCancel && (
+            <Button
+              onClick={onClose}
+              disabled={isLoading}
+              variant="outline"
+              className="min-w-[100px]"
+            >
+              {cancelText}
+            </Button>
+          )}
           <Button
             onClick={handleConfirm}
             disabled={isLoading}

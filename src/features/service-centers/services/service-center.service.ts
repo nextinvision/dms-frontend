@@ -18,6 +18,10 @@ class ServiceCenterService {
     async update(id: string, data: UpdateServiceCenterDTO): Promise<ServiceCenter> {
         return serviceCenterRepository.update(id, data as unknown as Partial<ServiceCenter>);
     }
+
+    async delete(id: string): Promise<void> {
+        return serviceCenterRepository.delete(id);
+    }
 }
 
 export const serviceCenterService = new ServiceCenterService();

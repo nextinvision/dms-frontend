@@ -76,6 +76,7 @@ const roleMenus: Record<UserRole, MenuItem[]> = {
     { name: "Dashboard", icon: Home, href: "/sc/dashboard" },
     { name: "Customers", icon: UserCircle, href: "/sc/customers" },
     { name: "Appointments", icon: Calendar, href: "/sc/appointments" },
+    { name: "Active Job Cards", icon: ClipboardList, href: "/sc/job-cards" },
     { name: "Complaints", icon: MessageSquare, href: "/sc/complaints" },
   ],
   admin: [],
@@ -112,7 +113,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
     name: (isMounted && userInfo?.name) ? userInfo.name : "SC Manager",
     role: (isMounted && userInfo?.role) ? userInfo.role : "SC Manager",
     initials: (isMounted && userInfo?.initials) ? userInfo.initials : "SC",
-    center: (isMounted && userInfo?.serviceCenterName) ? userInfo.serviceCenterName : "Pune Phase 1",
+
   };
 
   const handleLogout = () => {
@@ -190,7 +191,7 @@ export function SCSidebar({ open, setOpen, role: roleProp }: SCSidebarProps) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 truncate">{user.name}</p>
                 <p className="text-xs text-gray-500 truncate">{user.role}</p>
-                <p className="text-xs text-gray-500 truncate">Center: {user.center}</p>
+
               </div>
             </div>
             <button

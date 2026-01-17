@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Search, UserPlus, FileText, CheckCircle, ArrowLeft } from "lucide-react";
 import { DocumentsSection } from "./sections/DocumentsSection";
+import { ConfirmModal } from "@/shared/components/ui/ConfirmModal/ConfirmModal";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -75,6 +76,21 @@ export default function JobCardForm({
     const [searching, setSearching] = useState(false);
     const [showCheckInSlip, setShowCheckInSlip] = useState(false);
     const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        type?: "danger" | "warning" | "info" | "success";
+        confirmText?: string;
+        showCancel?: boolean;
+    }>({
+        isOpen: false,
+        title: "",
+        message: "",
+        onConfirm: () => { },
+    });
 
     // Load existing job card if editing
     useEffect(() => {
@@ -224,7 +240,7 @@ export default function JobCardForm({
                 if (activeId && activeId.startsWith('TEMP_')) {
                     try {
                         console.log(`📎 Updating file associations: ${activeId} -> ${savedJobCard.id}`);
-                        
+
                         console.log("✅ File associations updated successfully");
                     } catch (error) {
                         console.error("⚠️ Failed to update file associations:", error);
@@ -266,15 +282,12 @@ export default function JobCardForm({
         setShowCheckInSlip(true);
     };
 
-    const handlePassToManager = async () => {
+    const executePassToManager = async () => {
         if (!jobCardId || !hydratedCard) return;
-
-        if (!confirm("Pass this job card to manager for approval?")) {
-            return;
-        }
 
         try {
             setIsSubmitting(true);
+            setConfirmModal(prev => ({ ...prev, isOpen: false })); // Close confirmation
 
             // Fetch manager for this service center
             const managers = await userRepository.getByRole("sc_manager", serviceCenterId);
@@ -290,14 +303,48 @@ export default function JobCardForm({
                 await jobCardService.passToManager(jobCardId, managers[0].id);
             }
 
-            alert("Job card passed to manager successfully!");
-            router.push("/sc/job-cards");
+            // Success Popup
+            setConfirmModal({
+                isOpen: true,
+                title: "Success",
+                message: "Job card passed to manager successfully!",
+                type: "success",
+                confirmText: "OK",
+                showCancel: false,
+                onConfirm: () => {
+                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                    router.push("/sc/job-cards");
+                }
+            });
         } catch (error: any) {
             console.error("Error passing to manager:", error);
-            alert(error.message || "Failed to pass to manager. Please try again.");
+            // Error Popup
+            setConfirmModal({
+                isOpen: true,
+                title: "Error",
+                message: error.message || "Failed to pass to manager. Please try again.",
+                type: "danger",
+                confirmText: "Close",
+                showCancel: false,
+                onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false }))
+            });
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handlePassToManager = () => {
+        if (!jobCardId || !hydratedCard) return;
+
+        setConfirmModal({
+            isOpen: true,
+            title: "Pass to Manager",
+            message: "Pass this job card to manager for approval?",
+            type: "warning",
+            confirmText: "Yes, Pass to Manager",
+            showCancel: true,
+            onConfirm: executePassToManager
+        });
     };
 
     const handleCreateQuotation = async () => {
@@ -545,6 +592,18 @@ export default function JobCardForm({
                         </div>
                     </div>
                 )}
+
+                {/* Confirmation/Alert Modal */}
+                <ConfirmModal
+                    isOpen={confirmModal.isOpen}
+                    onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                    onConfirm={confirmModal.onConfirm}
+                    title={confirmModal.title}
+                    message={confirmModal.message}
+                    type={confirmModal.type}
+                    confirmText={confirmModal.confirmText}
+                    showCancel={confirmModal.showCancel ?? true}
+                />
             </div>
         </div>
     );

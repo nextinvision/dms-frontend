@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Plus, Search, Filter, CheckCircle, Loader2, UserCheck, X, Clock, User,
-  Wrench, AlertCircle, Package, FileText, Eye, Edit, Car, Calendar
+  Wrench, AlertCircle, Package, FileText, Eye, Edit, Car, Calendar, ClipboardList
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { Modal } from "@/components/ui/Modal/Modal";
@@ -34,6 +34,9 @@ const AssignEngineerModal = dynamic(() => import("./components/AssignEngineerMod
 const StatusUpdateModal = dynamic(() => import("./components/StatusUpdateModal"));
 
 const SERVICE_TYPES = SERVICE_TYPE_OPTIONS;
+
+// Import job card helper functions
+import { getJobCardVehicleDisplay, getJobCardCustomerName } from "@/features/job-cards/utils/job-card-helpers";
 
 // Import JobCardTable component
 const JobCardTable = dynamic(() => import("./components/JobCardTable"), {
@@ -214,6 +217,114 @@ export default function JobCards() {
     return workflow[currentStatus] || [];
   };
 
+
+  // Early return for Call Center View - Read-only status checking
+  if (isCallCenter) {
+    return (
+      <div className="bg-[#f9f9fb] min-h-screen p-4 sm:p-6">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="mb-6">
+            <h1 className="text-2xl sm:text-3xl font-bold text-blue-600 mb-2">Job Card Status Lookup</h1>
+            <p className="text-gray-500">Check service status for customer inquiries</p>
+          </div>
+
+          {/* Search */}
+          <div className="mb-6 bg-white rounded-xl shadow-md p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Search by customer name, phone, vehicle number, or job card number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Status Cards - Read Only */}
+          <div className="bg-white rounded-xl shadow-md p-6">
+
+            {filteredJobs.length === 0 ? (
+              <div className="text-center py-12">
+                <ClipboardList size={48} className="mx-auto mb-3 text-gray-300" />
+                <p className="text-gray-500">
+                  {searchQuery ? "No job cards found matching your search" : "No job cards available"}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredJobs.map((job) => (
+                  <div
+                    key={job.id}
+                    className="p-4 border-2 border-gray-200 rounded-lg bg-gray-50 cursor-not-allowed"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Job Card Number */}
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Job Card #</p>
+                        <p className="font-semibold text-gray-900">{job.jobCardNumber || job.id}</p>
+                      </div>
+
+                      {/* Customer Name */}
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Customer</p>
+                        <p className="font-semibold text-gray-900 truncate">{getJobCardCustomerName(job)}</p>
+                      </div>
+
+                      {/* Vehicle */}
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Vehicle</p>
+                        <p className="font-medium text-gray-700 truncate">
+                          {getJobCardVehicleDisplay(job)}
+                        </p>
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Current Status</p>
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(job.status)}`}>
+                          {job.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Additional Info Row */}
+                    <div className="mt-3 pt-3 border-t border-gray-300 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <Calendar size={14} />
+                        <span>Created: {new Date(job.createdAt || Date.now()).toLocaleDateString()}</span>
+                      </div>
+                      {job.assignedEngineer && (
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <User size={14} />
+                          <span>Engineer: {typeof job.assignedEngineer === 'string' ? job.assignedEngineer : job.assignedEngineer?.name || 'Assigned'}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Info Notice */}
+          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
+              <div>
+                <p className="text-sm font-medium text-blue-900">Information Only</p>
+                <p className="text-sm text-blue-700 mt-1">
+                  This view is for checking service status only. Job cards cannot be edited or modified from this screen.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Early return for Service Engineer (Technician) View
   if (isTechnician) {
@@ -426,31 +537,6 @@ export default function JobCards() {
           </div>
         </div>
 
-        <div className={`flex flex-wrap gap-2 mb-3 ${view === "kanban" ? "px-4 sm:px-6" : ""}`}>
-          <button
-            type="button"
-            onClick={() => setFilter("draft")}
-            className={`rounded-2xl border px-3 py-2 text-xs font-semibold transition ${filter === "draft"
-              ? "border-yellow-400 bg-yellow-400 text-white"
-              : "border-gray-200 bg-white text-gray-600 hover:border-yellow-400"
-              }`}
-          >
-            Drafts ({draftCount})
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilter("pending_approval")}
-            className={`rounded-2xl border px-3 py-2 text-xs font-semibold transition ${filter === "pending_approval"
-              ? "border-purple-400 bg-purple-400 text-white"
-              : "border-gray-200 bg-white text-gray-600 hover:border-purple-400"
-              }`}
-          >
-            Pending Approval ({pendingApprovalCount})
-          </button>
-        </div>
-
-
         {/* Filters */}
         <JobCardFilters
           searchQuery={searchQuery}
@@ -462,6 +548,8 @@ export default function JobCards() {
           filterOptions={filterOptions}
           filterLabelMap={filterLabelMap}
           view={view}
+          draftCount={draftCount}
+          pendingApprovalCount={pendingApprovalCount}
         />
 
         <JobCardActions

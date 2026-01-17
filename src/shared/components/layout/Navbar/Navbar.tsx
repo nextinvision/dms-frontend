@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Menu, LogOut, Search, Building, User, Package, X, ArrowRight, LucideIcon, Wrench, FileText, Calendar } from "lucide-react";
+import { Menu, LogOut, Search, Building, User, Package, X, ArrowRight, LucideIcon, Wrench, FileText, Calendar, Bell } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/shared/hooks";
 import { useDebounce } from "@/shared/hooks";
@@ -30,9 +30,21 @@ export function Navbar({ open, setOpen, isLoggedIn = true }: NavbarProps) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const userDropdownRef = useRef<HTMLDivElement>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
+
+  // Mock notifications - replace with real data from API/store later
+  const [notifications] = useState([
+    { id: 1, title: "New Job Card Assigned", message: "Job Card #JC-001 has been assigned to you", time: "5 min ago", read: false },
+    { id: 2, title: "Parts Request Approved", message: "Your parts request for Battery Pack has been approved", time: "1 hour ago", read: false },
+    { id: 3, title: "Invoice Generated", message: "Invoice #INV-2024-001 has been generated", time: "2 hours ago", read: true },
+    { id: 4, title: "Appointment Reminder", message: "Upcoming appointment tomorrow at 10:00 AM", time: "3 hours ago", read: false },
+  ]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -268,6 +280,12 @@ export function Navbar({ open, setOpen, isLoggedIn = true }: NavbarProps) {
       ) {
         setShowUserDropdown(false);
       }
+      if (
+        notificationRef.current &&
+        !notificationRef.current.contains(event.target as Node)
+      ) {
+        setShowNotifications(false);
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -401,6 +419,73 @@ export function Navbar({ open, setOpen, isLoggedIn = true }: NavbarProps) {
                 className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg p-8 text-center z-50"
               >
                 <p className="text-gray-500 text-sm">No results found for &quot;{searchQuery}&quot;</p>
+              </div>
+            )}
+          </div>
+
+          {/* Notification Bell */}
+          <div className="relative" ref={notificationRef}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative p-2 rounded-lg text-gray-600 hover:text-indigo-600 hover:bg-gray-50 transition-all duration-200 active:scale-95"
+              title="Notifications"
+            >
+              <Bell size={20} strokeWidth={2} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-sm">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl z-50 backdrop-blur-sm overflow-hidden max-h-96">
+                <div className="p-4 bg-gradient-to-br from-gray-50 to-white border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <p className="text-xs text-gray-500 mt-0.5">{unreadCount} unread</p>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length > 0 ? (
+                    notifications.map((notification) => (
+                      <div
+                        key={notification.id}
+                        className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${!notification.read ? 'bg-indigo-50/30' : ''
+                          }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${!notification.read ? 'bg-indigo-600' : 'bg-gray-300'
+                            }`} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-medium text-gray-900 ${!notification.read ? 'font-semibold' : ''
+                              }`}>
+                              {notification.title}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                              {notification.message}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1.5">
+                              {notification.time}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-8 text-center">
+                      <Bell size={32} className="mx-auto text-gray-300 mb-2" />
+                      <p className="text-sm text-gray-500">No notifications</p>
+                    </div>
+                  )}
+                </div>
+                {notifications.length > 0 && (
+                  <div className="p-3 bg-gray-50 border-t border-gray-100">
+                    <button className="w-full text-center text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+                      View all notifications
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "npm run clean && next dev",
+    "build": "npm run clean && next build",
     "clean": "rm -rf .next || rmdir /s /q .next 2>nul || true",
     "build:clean": "npm run clean && npm run build",
     "start": "next start",

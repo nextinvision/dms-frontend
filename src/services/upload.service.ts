@@ -15,6 +15,7 @@ export interface UploadResult {
   createdAt: string;
   bytes: number;
   secureUrl: string;
+  original_filename?: string;
 }
 
 export class UploadError extends Error {

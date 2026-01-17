@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Star, X, Edit, Loader2 } from "lucide-react";
+import { Star, X, Edit, Loader2, Trash2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 import { serviceCenterService } from "@/features/service-centers/services/service-center.service";
@@ -82,6 +82,8 @@ export default function ServiceCentersPage() {
   const [editingCenter, setEditingCenter] = useState<ServiceCenter | null>(null);
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1);
   const [form, setForm] = useState<ServiceCenterForm>(INITIAL_FORM_STATE);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [centerToDelete, setCenterToDelete] = useState<ServiceCenter | null>(null);
 
   // Fetch Service Centers
   const { data: centers = [], isLoading, isError } = useQuery({
@@ -89,16 +91,58 @@ export default function ServiceCentersPage() {
     queryFn: () => serviceCenterService.getAll(),
   });
 
+  // Helper function to extract error messages from backend responses
+  const getErrorMessage = (error: any, defaultMessage: string): string => {
+    // Check for response data message
+    if (error.response?.data?.message) {
+      if (Array.isArray(error.response.data.message)) {
+        // Handle validation error arrays from NestJS
+        return error.response.data.message.join(', ');
+      }
+      return error.response.data.message;
+    }
+
+    // Check for error array (validation errors)
+    if (error.response?.data?.error && Array.isArray(error.response.data.error)) {
+      return error.response.data.error.join(', ');
+    }
+
+    // Check for errors array
+    if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+      return error.response.data.errors.map((e: any) => e.message || e).join(', ');
+    }
+
+    // Check for status-based messages
+    if (error.response?.status === 409) {
+      return 'A service center with this code already exists';
+    }
+
+    if (error.response?.status === 400) {
+      return 'Invalid data provided. Please check all fields';
+    }
+
+    // Fallback to error message or default
+    return error.message || defaultMessage;
+  };
+
   // Create Mutation
   const createMutation = useMutation({
     mutationFn: (data: CreateServiceCenterDTO) => serviceCenterService.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['serviceCenters'] });
-      toast.success("Service center created successfully!");
+      toast.success("✅ Service center created successfully!", {
+        duration: 4000,
+        position: 'top-center',
+      });
       resetForm();
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Failed to create service center");
+      const errorMessage = getErrorMessage(error, "Failed to create service center");
+      toast.error(`❌ ${errorMessage}`, {
+        duration: 6000,
+        position: 'top-center',
+      });
+      console.error("Create service center error:", error);
     }
   });
 
@@ -108,11 +152,46 @@ export default function ServiceCentersPage() {
       serviceCenterService.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['serviceCenters'] });
-      toast.success("Service center updated successfully!");
+      toast.success("✅ Service center updated successfully!", {
+        duration: 4000,
+        position: 'top-center',
+      });
       resetForm();
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Failed to update service center");
+      const errorMessage = getErrorMessage(error, "Failed to update service center");
+      toast.error(`❌ ${errorMessage}`, {
+        duration: 6000,
+        position: 'top-center',
+      });
+      console.error("Update service center error:", error);
+    }
+  });
+
+  // Delete Mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => serviceCenterService.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['serviceCenters'] });
+      toast.success("✅ Service center deleted successfully!", {
+        duration: 4000,
+        position: 'top-center',
+      });
+      setShowDeleteConfirm(false);
+      setCenterToDelete(null);
+    },
+    onError: (error: any) => {
+      const errorMessage = getErrorMessage(
+        error,
+        "Failed to delete service center. It may have associated users, job cards, or other data."
+      );
+      toast.error(`❌ ${errorMessage}`, {
+        duration: 6000,
+        position: 'top-center',
+      });
+      console.error("Delete service center error:", error);
+      setShowDeleteConfirm(false);
+      setCenterToDelete(null);
     }
   });
 
@@ -123,14 +202,128 @@ export default function ServiceCentersPage() {
     setActiveStep(1);
   };
 
+  // Validate step before proceeding
+  const validateStep = (step: number): boolean => {
+    switch (step) {
+      case 1:
+        // Basic Details validation
+        if (!form.name.trim()) {
+          toast.error("⚠️ Please enter center name", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (!form.code.trim()) {
+          toast.error("⚠️ Please enter center code", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        // Check for duplicate code (only when creating new center)
+        if (!editingCenter) {
+          const isDuplicate = centers.some(center => center.code.toUpperCase() === form.code.toUpperCase());
+          if (isDuplicate) {
+            toast.error(`❌ Code "${form.code}" is already in use. Please choose a different code.`, {
+              duration: 5000,
+              position: 'top-center'
+            });
+            return false;
+          }
+        }
+        if (!form.address.trim()) {
+          toast.error("⚠️ Please enter address", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (!form.city.trim()) {
+          toast.error("⚠️ Please enter city", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (!form.state.trim()) {
+          toast.error("⚠️ Please enter state", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (!form.pinCode.trim()) {
+          toast.error("⚠️ Please enter pin code", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (form.pinCode.length !== 6) {
+          toast.error("❌ Pin code must be exactly 6 digits", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (!form.phone.trim()) {
+          toast.error("⚠️ Please enter phone number", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (form.phone.length < 10) {
+          toast.error("❌ Please enter a valid phone number (minimum 10 digits)", {
+            duration: 4000,
+            position: 'top-center'
+          });
+          return false;
+        }
+        return true;
+
+      case 2:
+        // Operational Config validation (optional fields, just warnings)
+        if (form.capacity && Number(form.capacity) <= 0) {
+          toast.error("❌ Capacity must be greater than 0", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (form.technicianCount && Number(form.technicianCount) < 0) {
+          toast.error("❌ Technician count cannot be negative", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (form.serviceRadius && Number(form.serviceRadius) < 0) {
+          toast.error("❌ Service radius cannot be negative", { duration: 4000, position: 'top-center' });
+          return false;
+        }
+        if (form.maxAppointmentsPerDay && Number(form.maxAppointmentsPerDay) <= 0) {
+          toast.error("❌ Max appointments per day must be greater than 0", {
+            duration: 4000,
+            position: 'top-center'
+          });
+          return false;
+        }
+        return true;
+
+      case 3:
+        // Financial Setup validation
+        if (form.gstNumber && form.gstNumber.length !== 15) {
+          toast.error("❌ GST number must be exactly 15 characters", {
+            duration: 4000,
+            position: 'top-center'
+          });
+          return false;
+        }
+        if (form.panNumber && form.panNumber.length !== 10) {
+          toast.error("❌ PAN number must be exactly 10 characters", {
+            duration: 4000,
+            position: 'top-center'
+          });
+          return false;
+        }
+        if (form.bankIFSC && form.bankIFSC.length !== 11) {
+          toast.error("❌ IFSC code must be exactly 11 characters", {
+            duration: 4000,
+            position: 'top-center'
+          });
+          return false;
+        }
+        return true;
+
+      case 4:
+        // Service Capabilities validation (optional)
+        return true;
+
+      default:
+        return true;
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    e.stopPropagation(); // Prevent event bubbling
 
-    // Validation
-    if (!form.name.trim() || !form.code.trim() || !form.address.trim() || !form.city.trim() || !form.state.trim() || !form.pinCode.trim() || !form.phone.trim()) {
-      toast.error("Please fill all required fields!");
-      return;
-    }
+    // Final validation before submission
+    if (!validateStep(1)) return;
+    if (!validateStep(2)) return;
+    if (!validateStep(3)) return;
 
     // Transform form data to DTO
     const payload: CreateServiceCenterDTO = {
@@ -192,6 +385,31 @@ export default function ServiceCentersPage() {
     setShowForm(true);
   };
 
+  // Check if service center can be deleted (no users, no job cards)
+  const canDeleteCenter = (center: ServiceCenter): boolean => {
+    const hasUsers = (center._count?.users || 0) > 0;
+    const hasJobCards = (center._count?.jobCards || 0) > 0;
+    return !hasUsers && !hasJobCards;
+  };
+
+  const handleDeleteClick = (center: ServiceCenter) => {
+    if (!canDeleteCenter(center)) {
+      toast.error("❌ Cannot delete service center with existing users or job cards. Please reassign or remove them first.", {
+        duration: 5000,
+        position: 'top-center'
+      });
+      return;
+    }
+    setCenterToDelete(center);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = () => {
+    if (centerToDelete) {
+      deleteMutation.mutate(centerToDelete.id);
+    }
+  };
+
   // Loading State
   if (isLoading) {
     return (
@@ -238,16 +456,36 @@ export default function ServiceCentersPage() {
                 >
                   {center.name}
                 </h2>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(center);
-                  }}
-                  className="ml-2 p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                  title="Edit Service Center"
-                >
-                  <Edit size={16} />
-                </button>
+                <div className="flex gap-1 ml-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEdit(center);
+                    }}
+                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                    title="Edit Service Center"
+                  >
+                    <Edit size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteClick(center);
+                    }}
+                    disabled={!canDeleteCenter(center)}
+                    className={`p-1.5 rounded-lg transition ${canDeleteCenter(center)
+                      ? "text-red-600 hover:bg-red-50"
+                      : "text-gray-400 cursor-not-allowed opacity-50"
+                      }`}
+                    title={
+                      canDeleteCenter(center)
+                        ? "Delete Service Center"
+                        : "Cannot delete: Has users or job cards"
+                    }
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
               <p className="text-gray-500 text-xs sm:text-sm mb-2 sm:mb-3 break-words">
                 {center.address}, {center.city}
@@ -350,7 +588,16 @@ export default function ServiceCentersPage() {
               {activeStep === 4 && "Service Capabilities"}
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+            <form
+              onSubmit={handleSubmit}
+              onKeyDown={(e) => {
+                // Prevent form submission on Enter key unless on the submit button
+                if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') {
+                  e.preventDefault();
+                }
+              }}
+              className="space-y-3 sm:space-y-4"
+            >
               {/* Step 1: Basic Details */}
               {activeStep === 1 && (
                 <div className="space-y-3 sm:space-y-4">
@@ -380,6 +627,28 @@ export default function ServiceCentersPage() {
                       required
                       disabled={!!editingCenter}
                     />
+                    {!editingCenter && centers.length > 0 && (
+                      <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-xs font-semibold text-blue-800 mb-1">
+                          Existing codes:
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {centers.slice(0, 10).map((center) => (
+                            <span
+                              key={center.id}
+                              className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium"
+                            >
+                              {center.code}
+                            </span>
+                          ))}
+                          {centers.length > 10 && (
+                            <span className="inline-block px-2 py-0.5 text-blue-600 text-xs">
+                              +{centers.length - 10} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -664,8 +933,8 @@ export default function ServiceCentersPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (activeStep === 1 && (!form.name || !form.code || !form.address || !form.city || !form.state || !form.pinCode || !form.phone)) {
-                        toast.error("Please fill all required fields in Basic Details");
+                      // Validate current step before proceeding
+                      if (!validateStep(activeStep)) {
                         return;
                       }
                       setActiveStep((activeStep + 1) as 1 | 2 | 3 | 4);
@@ -689,6 +958,62 @@ export default function ServiceCentersPage() {
                 )}
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && centerToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="text-red-600" size={24} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Delete Service Center</h2>
+                <p className="text-sm text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-gray-700 mb-2">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold text-gray-900">{centerToDelete.name}</span>?
+              </p>
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800">
+                  <strong>Warning:</strong> This will permanently remove all service center data including configuration, settings, and history.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setCenterToDelete(null);
+                }}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium text-sm hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 transition disabled:opacity-50 flex items-center gap-2 min-w-[100px] justify-center"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete"
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -2303,16 +2303,35 @@ Please keep this slip safe for vehicle collection.`;
 
   // Filtered quotations
   const filteredQuotations = quotations.filter((q) => {
-    if (filter !== "all" && q.status !== filter) return false;
+    // Filter by service center - only show quotations for the current service center
+    const normalizedQuotationServiceCenterId = normalizeServiceCenterId(q.serviceCenterId);
+    const normalizedActiveServiceCenterId = normalizeServiceCenterId(activeServiceCenterId || serviceCenterContext.serviceCenterId);
+
+    if (normalizedQuotationServiceCenterId !== normalizedActiveServiceCenterId) {
+      return false;
+    }
+
+    // Filter by status
+    if (filter !== "all" && q.status !== filter) {
+      return false;
+    }
+
+    // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      return (
+      const matchesSearch = (
         q.quotationNumber.toLowerCase().includes(query) ||
         q.customer?.firstName?.toLowerCase().includes(query) ||
+        q.customer?.lastName?.toLowerCase().includes(query) ||
         q.customer?.phone?.includes(query) ||
         q.vehicle?.registration?.toLowerCase().includes(query)
       );
+
+      if (!matchesSearch) {
+        return false;
+      }
     }
+
     return true;
   });
 

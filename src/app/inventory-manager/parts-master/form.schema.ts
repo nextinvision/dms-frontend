@@ -13,6 +13,7 @@ export interface PartsMasterFormData {
   category: string;
   purchasePrice: string;
   description: string;
+  stockQuantity: number; // Initial stock quantity
   minStock: number;
   unit: string;
   // Basic Part Info
@@ -144,6 +145,15 @@ export const PARTS_MASTER_FORM_SCHEMA: FormFieldDefinition[] = [
     type: "textarea",
     section: "basic",
     required: false,
+  },
+  {
+    name: "stockQuantity",
+    label: "Stock Quantity",
+    type: "number",
+    section: "basic",
+    required: false,
+    placeholder: "0",
+    helperText: "Initial stock quantity (leave 0 if out of stock)",
   },
   {
     name: "minStock",
@@ -348,6 +358,7 @@ export function getInitialFormData(): PartsMasterFormData {
     category: "",
     purchasePrice: "",
     description: "",
+    stockQuantity: 0,
     minStock: 0,
     unit: "piece",
     // Basic Part Info

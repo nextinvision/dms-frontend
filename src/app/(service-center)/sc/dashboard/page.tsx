@@ -28,6 +28,7 @@ import { quotationsService } from "@/features/quotations/services/quotations.ser
 import { invoicesService } from "@/features/invoices/services/invoices.service";
 import { inventoryService } from "@/features/inventory/services/inventory.service";
 import { leadsService } from "@/features/leads/services/leads.service";
+import { serviceCenterService } from "@/features/service-centers/services/service-center.service";
 import type { DashboardCard, Alert, QuickAction, UserRole } from "@/shared/types";
 import type { JobCard } from "@/shared/types/job-card.types";
 import type { Quotation } from "@/shared/types/quotation.types";
@@ -80,9 +81,28 @@ interface DashboardStats {
 }
 
 export default function SCDashboard() {
-  const { userRole, userInfo } = useRole();
-  const serviceCenter = userInfo?.serviceCenterName || "Pune Phase 1";
+  const { userRole, userInfo, updateRole } = useRole();
+  const [centerName, setCenterName] = useState(userInfo?.serviceCenterName || "Service Center");
   const serviceCenterId = userInfo?.serviceCenterId || "sc-001";
+
+  useEffect(() => {
+    // If we have an ID but no name (or default name), fetch the real name
+    if (userInfo?.serviceCenterId && (!userInfo.serviceCenterName || userInfo.serviceCenterName === "Service Center")) {
+      serviceCenterService.getById(userInfo.serviceCenterId.toString())
+        .then(center => {
+          if (center && center.name) {
+            setCenterName(center.name);
+            // Update store to persist the name
+            if (userInfo) {
+              updateRole(userRole, { ...userInfo, serviceCenterName: center.name });
+            }
+          }
+        })
+        .catch(err => console.error("Failed to fetch service center name:", err));
+    } else if (userInfo?.serviceCenterName) {
+      setCenterName(userInfo.serviceCenterName);
+    }
+  }, [userInfo?.serviceCenterId, userInfo?.serviceCenterName, userRole, updateRole, userInfo]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -708,7 +728,7 @@ export default function SCDashboard() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Service Center Dashboard</h1>
-            <p className="mt-1 text-sm text-gray-500">Assigned center: {serviceCenter}</p>
+            <p className="mt-1 text-sm text-gray-500">Assigned center: {centerName}</p>
           </div>
           <button
             onClick={fetchDashboardData}

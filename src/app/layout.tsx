@@ -8,6 +8,7 @@ import { useRole } from "@/shared/hooks";
 import type { UserRole } from "@/shared/types";
 import { TopLoadingBar } from "@/components/ui/TopLoadingBar";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { Toaster } from "react-hot-toast";
 import "./globals.css";
 
 interface RootLayoutProps {
@@ -108,11 +109,12 @@ export default function RootLayout({ children }: RootLayoutProps) {
                   </GlobalErrorBoundary>
                 </main>
               </div>
+              <Toaster position="top-center" toastOptions={{ duration: 4000 }} />
             </GlobalErrorBoundary>
           </ToastProvider>
         </TanStackProvider>
       </body>
-    </html>
+    </html >
   );
 }
 

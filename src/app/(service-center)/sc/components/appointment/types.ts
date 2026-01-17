@@ -190,8 +190,16 @@ export const INITIAL_APPOINTMENT_FORM: AppointmentForm = {
 export const DEFAULT_MAX_APPOINTMENTS_PER_DAY = 20;
 
 export const validateAppointmentForm = (form: AppointmentForm, isCallCenter: boolean = false): string | null => {
-  if (!form.customerName || !form.phone || !form.vehicle || !form.serviceType || !form.date || !form.time) {
-    return "Please fill in all required fields.";
+  if (!form.customerName?.trim() ||
+    !form.phone?.trim() ||
+    !form.address?.trim() ||
+    !form.cityState?.trim() ||
+    !form.pincode?.trim() ||
+    !form.vehicle?.trim() ||
+    !form.serviceType?.trim() ||
+    !form.date?.trim() ||
+    !form.time?.trim()) {
+    return "Please fill in all required fields (Name, Phone, Address, City, State, Pincode, Vehicle, Service Type, Date, Time).";
   }
   if (!/^\d{10}$/.test(form.phone.replace(/\s|[-+_]/g, "").replace(/^91/, ""))) {
     return "Please enter a valid 10-digit phone number.";

@@ -162,12 +162,14 @@ const JobCardTable = React.memo<JobCardTableProps>(({
     const SortableHeader = ({ column, label }: { column: string; label: string }) => (
         <th
             onClick={() => handleSort(column)}
-            className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 cursor-pointer hover:bg-gray-100 transition"
+            className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider bg-gradient-to-r from-gray-50 to-gray-100 cursor-pointer hover:from-gray-100 hover:to-gray-200 transition-all border-b border-gray-200"
         >
             <div className="flex items-center gap-2">
                 {label}
                 {sortColumn === column && (
-                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                    <span className="text-blue-600">
+                        {sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </span>
                 )}
             </div>
         </th>
@@ -175,22 +177,34 @@ const JobCardTable = React.memo<JobCardTableProps>(({
 
     if (currentJobs.length === 0) {
         return (
-            <div className="bg-white rounded-xl shadow-md p-12 text-center">
-                <FileText className="mx-auto text-gray-400 mb-4" size={48} />
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">No Job Cards Found</h3>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                <FileText className="mx-auto text-gray-400 mb-4" size={56} />
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">No Job Cards Found</h3>
                 <p className="text-gray-500">No job cards match the current filter criteria.</p>
             </div>
         );
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                        <tr><th className="px-4 py-3 bg-gray-50"></th><SortableHeader column="jobCardNumber" label="Job Card #" /><SortableHeader column="status" label="Status" /><SortableHeader column="priority" label="Priority" /><SortableHeader column="customerName" label="Customer" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Vehicle</th><SortableHeader column="serviceType" label="Service Type" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Engineer</th><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Parts Status</th><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Estimated</th><SortableHeader column="createdAt" label="Created" /><th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">Actions</th></tr>
+                    <thead className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50">
+                        <tr>
+                            <SortableHeader column="jobCardNumber" label="Job Card" />
+                            <SortableHeader column="status" label="Status" />
+                            <SortableHeader column="priority" label="Priority" />
+                            <SortableHeader column="customerName" label="Customer" />
+                            <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">Vehicle</th>
+                            <SortableHeader column="serviceType" label="Service Type" />
+                            <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">Engineer</th>
+                            <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">Parts</th>
+                            <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">Estimated</th>
+                            <SortableHeader column="createdAt" label="Created" />
+                            <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">Actions</th>
+                        </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-gray-100">
                         {sortedJobs.map((job) => {
                             const jobCardId = job.id || job.jobCardNumber;
                             const request = partsRequestsData[jobCardId] || partsRequestsData[job.id] || partsRequestsData[job.jobCardNumber || ""];
@@ -200,60 +214,49 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                             return (
                                 <React.Fragment key={job.id}>
                                     <tr
-                                        className="hover:bg-gray-50 transition cursor-pointer"
+                                        className="hover:bg-blue-50/50 transition-colors duration-150 cursor-pointer group"
                                         onClick={() => onJobClick(job)}
                                     >
-                                        {/* Expand/Collapse */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleRowExpansion(job.id);
-                                                }}
-                                                className="text-gray-400 hover:text-gray-600 transition"
-                                            >
-                                                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                            </button>
-                                        </td>
-
                                         {/* Job Card Number */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <div className="flex items-center gap-2">
-                                                <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
-                                                    {job.jobCardNumber || job.id}
-                                                </span>
-                                            </div>
+                                        <td className="px-6 py-5 whitespace-nowrap">
+                                            <span className="inline-flex items-center px-3.5 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold shadow-sm">
+                                                {job.jobCardNumber || job.id}
+                                            </span>
                                         </td>
 
                                         {/* Status */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(job.status)}`}>
-                                                {job.status.replace(/_/g, ' ')}
-                                            </span>
-                                            {hasRequest && (
-                                                <span className="ml-2 px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium border border-orange-200">
-                                                    Parts Pending
+                                        <td className="px-6 py-5 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border shadow-sm ${getStatusColor(job.status)}`}>
+                                                    {job.status.replace(/_/g, ' ')}
                                                 </span>
-                                            )}
-                                            {request?.inventoryManagerAssigned && (
-                                                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium border border-green-200">
-                                                    ✓ Parts Assigned
-                                                </span>
-                                            )}
+                                                {hasRequest && (
+                                                    <span className="inline-flex items-center px-2.5 py-1 bg-orange-100 text-orange-700 rounded-md text-xs font-medium border border-orange-200">
+                                                        Parts Pending
+                                                    </span>
+                                                )}
+                                                {request?.inventoryManagerAssigned && (
+                                                    <span className="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-700 rounded-md text-xs font-medium border border-green-200">
+                                                        ✓ Parts Assigned
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
 
                                         {/* Priority */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`w-3 h-3 rounded-full ${getPriorityColor(job.priority)}`}></span>
-                                                <span className="text-sm text-gray-700">{job.priority}</span>
+                                        <td className="px-6 py-5 whitespace-nowrap">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className={`w-3 h-3 rounded-full ${getPriorityColor(job.priority)} ring-2 ring-white shadow-sm`}></div>
+                                                <span className="text-sm font-medium text-gray-700">{job.priority}</span>
                                             </div>
                                         </td>
 
                                         {/* Customer */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <div className="flex items-center gap-2">
-                                                <User size={14} className="text-gray-400" />
+                                        <td className="px-6 py-5 whitespace-nowrap">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                                                    <User size={16} className="text-blue-600" />
+                                                </div>
                                                 <span className="text-sm font-medium text-gray-900">
                                                     {getCustomerName(job)}
                                                 </span>
@@ -261,9 +264,11 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         </td>
 
                                         {/* Vehicle */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <div className="flex items-center gap-2">
-                                                <Car size={14} className="text-gray-400" />
+                                        <td className="px-6 py-5 whitespace-nowrap">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                                                    <Car size={16} className="text-purple-600" />
+                                                </div>
                                                 <div className="text-sm">
                                                     <div className="text-gray-900 font-medium">{getJobCardVehicleDisplay(job)}</div>
                                                     <div className="text-gray-500 text-xs">{getRegistration(job)}</div>
@@ -272,36 +277,69 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         </td>
 
                                         {/* Service Type */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <div className="flex items-center gap-2">
-                                                <Wrench size={14} className="text-gray-400" />
-                                                <span className="text-sm text-gray-700">{job.serviceType}</span>
+                                        <td className="px-6 py-5 whitespace-nowrap">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                                                    <Wrench size={16} className="text-green-600" />
+                                                </div>
+                                                <span className="text-sm font-medium text-gray-700">{job.serviceType}</span>
                                             </div>
                                         </td>
 
                                         {/* Engineer */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            {isServiceManager && job.status !== 'COMPLETED' && job.status !== 'INVOICED' ? (
-                                                <select
-                                                    value={job.assignedEngineer && typeof job.assignedEngineer === 'object' ? job.assignedEngineer.id : (engineers.find(e => e.name === job.assignedEngineer)?.id || "")}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        if (val && onDirectAssignEngineer) {
-                                                            onDirectAssignEngineer(job.id, val);
-                                                        }
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="p-1 px-2 text-xs border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-700 w-full"
-                                                    style={{ minWidth: '140px' }}
-                                                >
-                                                    <option value="">Unassigned</option>
-                                                    {engineers.map((eng: any) => (
-                                                        <option key={eng.id} value={eng.id}>
-                                                            {eng.name || `${eng.firstName || ''} ${eng.lastName || ''}`.trim()}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            ) : (
+                                        <td className="px-6 py-5 whitespace-nowrap">
+                                            {isServiceManager && job.status !== 'COMPLETED' && job.status !== 'INVOICED' ? (() => {
+                                                const hasDetails = job.quotation || job.quotationId;
+                                                // Check customer approval
+                                                const isApproved = job.quotation?.customerApproved || (job as any).quotationApproved || false;
+                                                // Can assign if no quotation needed yet OR if quotation exists and is approved
+                                                // BUT usually quotation is created before assignment?
+                                                // Requirement: "until customer approved the quotation manager cant be assigned technician"
+                                                // This implies if quotation exists, it MUST be approved.
+                                                // If no quotation exists yet, can we assign? Assuming yes or no depending on workflow.
+                                                // usually job card created -> assign engineer -> inspection -> quotation. 
+                                                // BUT if workflow is: inspection -> quotaion -> assign repair engineer?
+                                                // The prompt says "until customer approved ... cant be assigned".
+                                                // So if a quotation IS PENDING, we cant assign.
+
+                                                // Let's assume:
+                                                // 1. If no quotation, logic doesn't apply (or allowed).
+                                                // 2. If quotation exists, it must be approved.
+
+                                                const hasQuotation = job.quotation || job.quotationId;
+                                                const canAssign = !hasQuotation || isApproved;
+
+                                                return (
+                                                    <div className="relative group">
+                                                        <select
+                                                            value={job.assignedEngineer && typeof job.assignedEngineer === 'object' ? job.assignedEngineer.id : (engineers.find(e => e.name === job.assignedEngineer)?.id || "")}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                if (val && onDirectAssignEngineer) {
+                                                                    onDirectAssignEngineer(job.id, val);
+                                                                }
+                                                            }}
+                                                            disabled={!canAssign}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className={`p-1 px-2 text-xs border rounded focus:ring-blue-500 focus:border-blue-500 w-full ${!canAssign ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-gray-700 border-gray-300'}`}
+                                                            style={{ minWidth: '140px' }}
+                                                            title={!canAssign ? "Quotation must be approved by customer first" : ""}
+                                                        >
+                                                            <option value="">Unassigned</option>
+                                                            {engineers.map((eng: any) => (
+                                                                <option key={eng.id} value={eng.id}>
+                                                                    {eng.name || `${eng.firstName || ''} ${eng.lastName || ''}`.trim()}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        {!canAssign && (
+                                                            <div className="absolute hidden group-hover:block bottom-full left-0 mb-1 w-max p-1 bg-gray-800 text-white text-[10px] rounded shadow-lg z-10">
+                                                                Quotation pending customer approval
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })() : (
                                                 <span className="text-sm text-gray-700">
                                                     {getAssignedEngineerName(job.assignedEngineer)}
                                                 </span>
@@ -309,7 +347,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         </td>
 
                                         {/* Parts Status */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
+                                        <td className="px-6 py-5 whitespace-nowrap">
                                             {(() => {
                                                 const partsRequest = (job.partsRequests && job.partsRequests.length > 0)
                                                     ? job.partsRequests[0]
@@ -347,7 +385,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         </td>
 
                                         {/* Estimated Cost & Time */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
+                                        <td className="px-6 py-5 whitespace-nowrap">
                                             <div className="text-sm">
                                                 <div className="text-gray-900 font-medium">
                                                     {job.estimatedCost || 'N/A'}
@@ -360,7 +398,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         </td>
 
                                         {/* Created Date */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
+                                        <td className="px-6 py-5 whitespace-nowrap">
                                             <div className="flex items-center gap-2">
                                                 <Calendar size={14} className="text-gray-400" />
                                                 <span className="text-sm text-gray-700">{formatDate(job.createdAt)}</span>
@@ -368,7 +406,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         </td>
 
                                         {/* Actions */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
+                                        <td className="px-6 py-5 whitespace-nowrap">
                                             <div className="flex items-center gap-2">
                                                 {onView && (
                                                     <button
@@ -376,29 +414,94 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                             e.stopPropagation();
                                                             onView(job.id);
                                                         }}
-                                                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                                                        className="p-2.5 text-gray-600 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-150"
                                                         title="View Details"
                                                     >
-                                                        <Eye size={16} />
+                                                        <Eye size={18} />
                                                     </button>
                                                 )}
-                                                {isServiceAdvisor && job.status === "AWAITING_QUOTATION_APPROVAL" && job.isTemporary && onCreateQuotation && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (!hasQuotation?.(job.id)) {
-                                                                onCreateQuotation(job);
+
+                                                {/* Create Quotation Button - Show only for temp job cards WITHOUT warranty items and quotation not created */}
+                                                {isServiceAdvisor && job.isTemporary && !job.quotation && !job.quotationId && onCreateQuotation && (() => {
+                                                    // Check if job has any warranty items
+                                                    const hasWarrantyItems = job.part2?.some((item: any) => item.partWarrantyTag || item.isWarranty) || false;
+
+                                                    // Show Create Quotation only if NO warranty items and NOT passed to manager
+                                                    if (!hasWarrantyItems && !job.passedToManager) {
+                                                        return (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (!hasQuotation?.(job.id)) {
+                                                                        onCreateQuotation(job);
+                                                                    }
+                                                                }}
+                                                                className={`p-2 rounded transition ${hasQuotation?.(job.id)
+                                                                    ? "text-gray-300 cursor-not-allowed"
+                                                                    : "text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"}`}
+                                                                title={hasQuotation?.(job.id) ? "Quotation Already Created" : "Create Quotation"}
+                                                                disabled={hasQuotation?.(job.id)}
+                                                            >
+                                                                <FileText size={16} />
+                                                            </button>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
+
+                                                {/* Pass to Manager Button - Show only for temp job cards WITH warranty items */}
+                                                {isServiceAdvisor && job.isTemporary && onPassToManager && (() => {
+                                                    // Check if job has any warranty items
+                                                    const hasWarrantyItems = job.part2?.some((item: any) => item.partWarrantyTag || item.isWarranty) || false;
+
+                                                    // Get manager review status
+                                                    const managerStatus = (job as any).managerReviewStatus;
+
+                                                    // Show button only if HAS warranty items
+                                                    if (hasWarrantyItems) {
+                                                        // If already passed to manager, show status badge instead
+                                                        if (job.passedToManager) {
+                                                            let statusText = "Sent to Manager";
+                                                            let statusClass = "bg-yellow-100 text-yellow-700 border-yellow-200";
+
+                                                            if (managerStatus === "APPROVED") {
+                                                                statusText = "Manager Approved";
+                                                                statusClass = "bg-green-100 text-green-700 border-green-200";
+                                                            } else if (managerStatus === "REJECTED") {
+                                                                statusText = "Manager Rejected";
+                                                                statusClass = "bg-red-100 text-red-700 border-red-200";
+                                                            } else if (managerStatus === "PENDING") {
+                                                                statusText = "Awaiting Approval";
+                                                                statusClass = "bg-orange-100 text-orange-700 border-orange-200";
                                                             }
-                                                        }}
-                                                        className={`p-2 rounded transition ${hasQuotation?.(job.id)
-                                                            ? "text-gray-300 cursor-not-allowed"
-                                                            : "text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"}`}
-                                                        title={hasQuotation?.(job.id) ? "Quotation Already Created" : "Create Quotation"}
-                                                        disabled={hasQuotation?.(job.id)}
-                                                    >
-                                                        <FileText size={16} />
-                                                    </button>
-                                                )}
+
+                                                            return (
+                                                                <span
+                                                                    className={`px-2 py-1 rounded text-xs font-medium border ${statusClass}`}
+                                                                    title={`Manager review status: ${managerStatus || 'Sent'}`}
+                                                                >
+                                                                    {statusText}
+                                                                </span>
+                                                            );
+                                                        }
+
+                                                        // Show Pass to Manager button
+                                                        return (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onPassToManager(job.id);
+                                                                }}
+                                                                className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition"
+                                                                title="Pass to Manager for Approval"
+                                                            >
+                                                                <ArrowRight size={16} />
+                                                            </button>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
+
                                                 {isServiceAdvisor && job.draftIntake && job.sourceAppointmentId && onEditDraft && (
                                                     <button
                                                         onClick={(e) => {
@@ -409,23 +512,6 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                         title="Edit Draft"
                                                     >
                                                         <Edit size={16} />
-                                                    </button>
-                                                )}
-                                                {isServiceAdvisor && job.status === "CREATED" && onPassToManager && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (!job.passedToManager) {
-                                                                onPassToManager(job.id);
-                                                            }
-                                                        }}
-                                                        className={`p-2 rounded transition ${job.passedToManager
-                                                            ? "text-gray-300 cursor-not-allowed"
-                                                            : "text-purple-600 hover:text-purple-700 hover:bg-purple-50"}`}
-                                                        title={job.passedToManager ? "Already Sent to Manager" : "Pass to Manager"}
-                                                        disabled={job.passedToManager}
-                                                    >
-                                                        <ArrowRight size={16} />
                                                     </button>
                                                 )}
 
@@ -510,7 +596,7 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                         </td>
                                     </tr>
                                     {isExpanded && (
-                                        <tr className="bg-gray-50"><td colSpan={11} className="px-4 py-4"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-white rounded-lg border border-gray-200"><div className="lg:col-span-2"><label className="text-xs font-semibold text-gray-500 uppercase">Description</label><p className="mt-1 text-sm text-gray-700">{job.description || 'No description provided'}</p></div><div><label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-1"><MapPin size={12} />Location</label><p className="mt-1 text-sm text-gray-700">{job.location === 'DOORSTEP' ? 'Home Service' : 'Station'}</p></div>{job.customerType && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Customer Type</label><p className="mt-1 text-sm text-gray-700">{job.customerType}</p></div>)}<div><label className="text-xs font-semibold text-gray-500 uppercase">Vehicle Details</label><p className="mt-1 text-sm text-gray-700">{job.vehicleMake} {job.vehicleModel}</p></div>{job.serviceCenterName && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Service Center</label><p className="mt-1 text-sm text-gray-700">{job.serviceCenterName}</p></div>)}{job.customerArrivalTimestamp && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Customer Arrival</label><p className="mt-1 text-sm text-gray-700">{formatDate(job.customerArrivalTimestamp)}</p></div>)}{job.parts && job.parts.length > 0 && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Parts</label><p className="mt-1 text-sm text-gray-700">{job.parts.length} parts requested</p></div>)}<div className="lg:col-span-3"><label className="text-xs font-semibold text-gray-500 uppercase">Job Card ID</label><p className="mt-1 text-xs text-gray-500 font-mono">{job.id}</p></div></div></td></tr>
+                                        <tr className="bg-gray-50"><td colSpan={10} className="px-4 py-4"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-white rounded-lg border border-gray-200"><div className="lg:col-span-2"><label className="text-xs font-semibold text-gray-500 uppercase">Description</label><p className="mt-1 text-sm text-gray-700">{job.description || 'No description provided'}</p></div><div><label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-1"><MapPin size={12} />Location</label><p className="mt-1 text-sm text-gray-700">{job.location === 'DOORSTEP' ? 'Home Service' : 'Station'}</p></div>{job.customerType && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Customer Type</label><p className="mt-1 text-sm text-gray-700">{job.customerType}</p></div>)}<div><label className="text-xs font-semibold text-gray-500 uppercase">Vehicle Details</label><p className="mt-1 text-sm text-gray-700">{job.vehicleMake} {job.vehicleModel}</p></div>{job.serviceCenterName && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Service Center</label><p className="mt-1 text-sm text-gray-700">{job.serviceCenterName}</p></div>)}{job.customerArrivalTimestamp && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Customer Arrival</label><p className="mt-1 text-sm text-gray-700">{formatDate(job.customerArrivalTimestamp)}</p></div>)}{job.parts && job.parts.length > 0 && (<div><label className="text-xs font-semibold text-gray-500 uppercase">Parts</label><p className="mt-1 text-sm text-gray-700">{job.parts.length} parts requested</p></div>)}<div className="lg:col-span-3"><label className="text-xs font-semibold text-gray-500 uppercase">Job Card ID</label><p className="mt-1 text-xs text-gray-500 font-mono">{job.id}</p></div></div></td></tr>
                                     )}
                                 </React.Fragment>
                             );
@@ -518,22 +604,22 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                     </tbody>
                 </table>
             </div>
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-200">
                 <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                        Showing <span className="font-semibold text-gray-900">{sortedJobs.length}</span> job cards
+                        Showing <span className="font-bold text-gray-900">{sortedJobs.length}</span> job cards
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
+                    <div className="flex items-center gap-5 text-xs font-medium text-gray-600">
                         <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                            <span className="w-3 h-3 rounded-full bg-blue-500 ring-2 ring-blue-200"></span>
                             <span>Normal</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded-full bg-orange-500"></span>
+                            <span className="w-3 h-3 rounded-full bg-orange-500 ring-2 ring-orange-200"></span>
                             <span>High</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                            <span className="w-3 h-3 rounded-full bg-red-500 ring-2 ring-red-200"></span>
                             <span>Urgent</span>
                         </div>
                     </div>

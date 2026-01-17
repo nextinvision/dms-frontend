@@ -501,6 +501,21 @@ export const AppointmentForm = ({
       missingFields.push("Phone Number (invalid format)");
     }
 
+    if (!finalFormData.address?.trim()) {
+      errors.address = "Address is required";
+      missingFields.push("Address");
+    }
+
+    if (!finalFormData.cityState?.trim()) {
+      errors.cityState = "City/State is required";
+      missingFields.push("City/State");
+    }
+
+    if (!finalFormData.pincode?.trim()) {
+      errors.pincode = "Pincode is required";
+      missingFields.push("Pincode");
+    }
+
     if (!finalFormData.vehicle?.trim()) {
       errors.vehicle = "Vehicle is required";
       missingFields.push("Vehicle");
@@ -818,6 +833,55 @@ export const AppointmentForm = ({
         </div>
       )}
 
+      {/* Customer Information Inputs */}
+      <div className="bg-white p-4 rounded-lg border border-gray-200 mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Customer Details</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormInput
+            label="Customer Name *"
+            value={formData.customerName || ""}
+            onChange={(e) => updateFormData({ customerName: e.target.value })}
+            placeholder="Enter customer name"
+            error={fieldErrors.customerName}
+          />
+          <FormInput
+            label="Phone Number *"
+            value={formData.phone || ""}
+            onChange={(e) => updateFormData({ phone: e.target.value })}
+            placeholder="Enter phone number"
+            error={fieldErrors.phone}
+          />
+          <FormInput
+            label="Address *"
+            value={formData.address || ""}
+            onChange={(e) => updateFormData({ address: e.target.value })}
+            placeholder="Enter address"
+            error={fieldErrors.address}
+          />
+          <FormInput
+            label="City / State *"
+            value={formData.cityState || ""}
+            onChange={(e) => updateFormData({ cityState: e.target.value })}
+            placeholder="City, State"
+            error={fieldErrors.cityState}
+          />
+          <FormInput
+            label="Pincode *"
+            value={formData.pincode || ""}
+            onChange={(e) => updateFormData({ pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+            placeholder="Pincode"
+            maxLength={6}
+            error={fieldErrors.pincode}
+          />
+          <FormInput
+            label="Email"
+            value={formData.email || ""}
+            onChange={(e) => updateFormData({ email: e.target.value })}
+            placeholder="Enter email"
+          />
+        </div>
+      </div>
+
       {/* Vehicle Selection */}
       <div>
         {selectedCustomer && selectedCustomer.vehicles && selectedCustomer.vehicles.length > 1 ? (
@@ -1032,13 +1096,15 @@ export const AppointmentForm = ({
                 </div>
               </button>
             </div>
-            <button
-              type="button"
-              onClick={handleAssignNearestServiceCenter}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition whitespace-nowrap"
-            >
-              Assign Nearest
-            </button>
+            {isCallCenter && (
+              <button
+                type="button"
+                onClick={handleAssignNearestServiceCenter}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition whitespace-nowrap"
+              >
+                Assign Nearest
+              </button>
+            )}
           </div>
           {selectedCustomer?.address && nearestServiceCenter && (
             <p className="text-xs text-gray-500">

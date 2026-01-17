@@ -23,8 +23,7 @@ import type { CreateAppointmentDto, UpdateAppointmentDto } from "@/features/appo
 import { useCustomerSearch } from "@/app/(service-center)/sc/components/customers";
 import { type CheckInSlipData, generateCheckInSlipNumber } from "@/components/check-in-slip/CheckInSlip";
 import { migrateAllJobCards } from "@/features/job-cards/utils/migrateJobCards.util";
-// Removed Cloudinary-specific file metadata imports
-// import { FileCategory, RelatedEntityType, saveMultipleFileMetadata } from "@/services/cloudinary/fileMetadata.service";
+import { uploadFile } from "@/services/upload.service";
 
 // Define FileCategory enum locally
 export enum FileCategory {
@@ -99,6 +98,7 @@ export const useAppointmentLogic = () => {
     const [currentJobCard, setCurrentJobCard] = useState<JobCard | null>(null);
     const [checkInSlipData, setCheckInSlipData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [jobCardStatusMap, setJobCardStatusMap] = useState<Map<string, string>>(new Map());
 
     // Customer Search Logic
     const customerSearch = useCustomerSearch();
@@ -212,6 +212,12 @@ export const useAppointmentLogic = () => {
                 params.serviceCenterId = serviceCenterContext.serviceCenterId;
             }
 
+            // Filter for non-arrived customers and sort by creation time (newest first)
+            params.customerArrived = 'false';
+            params.excludeActiveJobCards = 'true';
+            params.sortBy = 'createdAt';
+            params.sortOrder = 'desc';
+
             const response = await appointmentsService.getAll(params) as any;
             const data = response.data || response || []; // Handle {data: [], ...} or [] structure
 
@@ -231,6 +237,31 @@ export const useAppointmentLogic = () => {
     useEffect(() => {
         loadAppointments();
     }, [loadAppointments]);
+
+    // Fetch Job Card Statuses for filtering
+    useEffect(() => {
+        const fetchJobCardStatuses = async () => {
+            try {
+                // Fetch all job cards to build a status map
+                // We use getAll() to ensure we have the latest status
+                const jobCards = await jobCardService.getAll();
+                const map = new Map<string, string>();
+                if (Array.isArray(jobCards)) {
+                    jobCards.forEach((jc: any) => {
+                        // Check for sourceAppointmentId (standard) or appointmentId
+                        const aptId = jc.appointmentId || jc.sourceAppointmentId;
+                        if (aptId) {
+                            map.set(aptId.toString(), jc.status);
+                        }
+                    });
+                }
+                setJobCardStatusMap(map);
+            } catch (error) {
+                console.error("Error fetching job card statuses:", error);
+            }
+        };
+        fetchJobCardStatuses();
+    }, [loading]); // Refresh when appointments reload
 
     // Derived - Memoized appointment mapping and filtering for better performance
     const appointments = useMemo(() => {
@@ -256,9 +287,16 @@ export const useAppointmentLogic = () => {
     }, [rawAppointments]);
 
     const visibleAppointments = useMemo(() => {
-        // Only filter by status - service center filtering is already done server-side
-        return appointments.filter(apt => apt.status !== "IN_PROGRESS");
-    }, [appointments]);
+        // Filter appointments: Show UNTIL the associated job card is INVOICED
+        return appointments.filter(apt => {
+            const jcStatus = jobCardStatusMap.get(apt.id.toString());
+            // If the job card exists and is INVOICED, hide the appointment
+            if (jcStatus === "INVOICED") return false;
+
+            // Otherwise show it (even if IN_PROGRESS, COMPLETED, etc.)
+            return true;
+        });
+    }, [appointments, jobCardStatusMap]);
 
     const availableServiceCenters = useMemo(() => {
         return staticServiceCenters.filter((sc) => sc.status === "Active");
@@ -562,11 +600,87 @@ export const useAppointmentLogic = () => {
         }[]
     ) => {
         try {
-            // Step 1: Create/Update the appointment first (same logic as handleSubmitAppointmentForm)
+            // Step 1: Upload Files to get real URLs
+            const updatedForm = { ...form };
+
+            if (pendingUploads.length > 0) {
+                console.log(`📤 Uploading ${pendingUploads.length} groups of files...`);
+
+                for (const uploadGroup of pendingUploads) {
+                    const { field, files } = uploadGroup;
+                    const uploadedMetadata: DocumentMetadata[] = [];
+
+                    // Upload each file
+                    for (const fileItem of files) {
+                        try {
+                            const result = await uploadFile(fileItem.file, { folder: 'appointments' });
+
+                            // Map to DocumentMetadata with REAL URL from server
+                            // Safely handle potential missing fields from upload response
+                            const serverPublicId = result.publicId;
+                            const serverFilename = typeof serverPublicId === 'string' ? serverPublicId.split('/').pop() : undefined;
+
+                            uploadedMetadata.push({
+                                ...fileItem.metadata,
+                                url: result.secureUrl || result.url || fileItem.metadata.url,
+                                publicId: serverPublicId || fileItem.metadata.publicId, // Use server ID if available, else keep temp
+                                fileId: undefined, // New file
+                                // Ensure other required fields are present
+                                filename: serverFilename || result.original_filename || fileItem.metadata.filename,
+                                format: result.format || fileItem.metadata.format,
+                                bytes: result.bytes || fileItem.metadata.bytes,
+                                uploadedAt: result.createdAt || new Date().toISOString(),
+                            });
+                        } catch (e) {
+                            console.error(`Failed to upload ${fileItem.metadata.filename}`, e);
+                            showToast(`Failed to upload ${fileItem.metadata.filename}. Please try again.`, 'error');
+                            // Abort the entire process if an upload fails to prevent inconsistency
+                            return;
+                        }
+                    }
+
+                    // Update the form field with real metadata
+                    // We need to replace the "blob" metadata for these specific files with the "real" metadata
+                    const currentFieldData = (updatedForm as any)[field];
+                    if (currentFieldData && currentFieldData.metadata) {
+                        // Filter out the temp items (matching by the temporary publicId we assigned)
+                        const pendingIds = new Set(files.map(f => f.metadata.publicId));
+
+                        console.log(`[Upload Debug] Field: ${field}`);
+                        console.log(`[Upload Debug] Pending IDs to replace:`, Array.from(pendingIds));
+                        if (currentFieldData.metadata) {
+                            console.log(`[Upload Debug] Current Metadata IDs:`, currentFieldData.metadata.map((m: any) => m.publicId));
+                        }
+
+                        // Filter existing metadata to exclude any that are in the pending list (based on publicId)
+                        // This removes the "blob" placeholders so we can replace them with real URL items
+                        const existingMetdata = currentFieldData.metadata.filter((m: DocumentMetadata) => !pendingIds.has(m.publicId));
+
+                        (updatedForm as any)[field] = {
+                            ...currentFieldData,
+                            metadata: [...existingMetdata, ...uploadedMetadata],
+                            // Update parallel arrays if they exist (urls, publicIds) though metadata is the source of truth for sending
+                            urls: [...existingMetdata.map((m: any) => m.url), ...uploadedMetadata.map(m => m.url)],
+                            publicIds: [...existingMetdata.map((m: any) => m.publicId), ...uploadedMetadata.map(m => m.publicId)],
+                        };
+
+                        console.log(`[Upload Debug] Updated metadata count: ${((updatedForm as any)[field]).metadata.length}`);
+                    } else {
+                        (updatedForm as any)[field] = {
+                            metadata: uploadedMetadata,
+                            urls: uploadedMetadata.map(m => m.url),
+                            publicIds: uploadedMetadata.map(m => m.publicId),
+                        };
+                    }
+                }
+                console.log("✅ All files uploaded successfully.");
+            }
+
+            // Step 2: Create/Update Appointment with updated form data
             const scResponse = await apiClient.get(API_ENDPOINTS.SERVICE_CENTERS);
             const serviceCenters = scResponse.data || [];
 
-            let targetSC = serviceCenters.find((sc: any) => sc.name === form.serviceCenterName);
+            let targetSC = serviceCenters.find((sc: any) => sc.name === updatedForm.serviceCenterName);
 
             // Fallback for seed data (SC001) if not found by name
             if (!targetSC) {
@@ -601,12 +715,12 @@ export const useAppointmentLogic = () => {
             }
 
             // Resolve Pickup Address
-            let pickupAddress = form.pickupAddress;
-            let pickupCity = (form as any).pickupCity;
-            let pickupState = (form as any).pickupState;
-            let pickupPincode = (form as any).pickupPincode;
+            let pickupAddress = updatedForm.pickupAddress;
+            let pickupCity = (updatedForm as any).pickupCity;
+            let pickupState = (updatedForm as any).pickupState;
+            let pickupPincode = (updatedForm as any).pickupPincode;
 
-            if (form.pickupDropRequired && !pickupAddress && selectedAppointmentCustomer) {
+            if (updatedForm.pickupDropRequired && !pickupAddress && selectedAppointmentCustomer) {
                 pickupAddress = selectedAppointmentCustomer.address;
                 pickupPincode = selectedAppointmentCustomer.pincode;
                 if (selectedAppointmentCustomer.cityState) {
@@ -616,99 +730,78 @@ export const useAppointmentLogic = () => {
                 }
             }
 
+            // SAFETY CHECK: Ensure no blob URLs remain in the payload
+            // Scan updatedForm for any blob URLs in metadata and filter them out if found
+            const fileFields = ['customerIdProof', 'vehicleRCCopy', 'warrantyCardServiceBook', 'photosVideos'];
+            fileFields.forEach(field => {
+                const data = (updatedForm as any)[field];
+                if (data && data.metadata && Array.isArray(data.metadata)) {
+                    const hasBlob = data.metadata.some((m: any) => m.url && m.url.startsWith('blob:'));
+                    if (hasBlob) {
+                        console.warn(`[Upload Warning] Found blob URL in ${field} after upload processing! Filtering it out.`);
+                        // Remove blob entries
+                        data.metadata = data.metadata.filter((m: any) => !m.url || !m.url.startsWith('blob:'));
+                        // Also update urls array if present
+                        if (data.urls) {
+                            data.urls = data.urls.filter((u: string) => !u.startsWith('blob:'));
+                        }
+                    }
+                }
+            });
+
             const basePayload = {
                 customerId: selectedAppointmentCustomer.id.toString(),
                 vehicleId: selectedAppointmentVehicle.id.toString(),
                 serviceCenterId: serviceCenterId.toString(),
-                serviceType: form.serviceType,
-                appointmentDate: new Date(form.date).toISOString(),
-                appointmentTime: form.time,
-                customerComplaint: form.customerComplaint,
-                location: form.location || "STATION",
-                estimatedCost: form.estimatedCost ? parseFloat(form.estimatedCost) : undefined,
+                serviceType: updatedForm.serviceType,
+                appointmentDate: new Date(updatedForm.date).toISOString(),
+                appointmentTime: updatedForm.time,
+                customerComplaint: updatedForm.customerComplaint,
+                location: updatedForm.location || "STATION",
+                estimatedCost: updatedForm.estimatedCost ? parseFloat(updatedForm.estimatedCost) : undefined,
                 uploadedBy: userInfo?.id,
-                // Documentation files - now store metadata directly in appointment payload for backend to process
+                // Documentation files - use updatedForm which has real URLs
                 documentationFiles: {
-                    customerIdProof: form.customerIdProof?.metadata,
-                    vehicleRCCopy: form.vehicleRCCopy?.metadata,
-                    warrantyCardServiceBook: form.warrantyCardServiceBook?.metadata,
-                    photosVideos: form.photosVideos?.metadata,
+                    customerIdProof: updatedForm.customerIdProof?.metadata,
+                    vehicleRCCopy: updatedForm.vehicleRCCopy?.metadata,
+                    warrantyCardServiceBook: updatedForm.warrantyCardServiceBook?.metadata,
+                    photosVideos: updatedForm.photosVideos?.metadata,
                 },
 
                 // Operational details
-                estimatedDeliveryDate: form.estimatedDeliveryDate,
-                assignedServiceAdvisor: form.assignedServiceAdvisor,
-                assignedTechnician: form.assignedTechnician,
-                pickupDropRequired: form.pickupDropRequired,
+                estimatedDeliveryDate: updatedForm.estimatedDeliveryDate,
+                assignedServiceAdvisor: updatedForm.assignedServiceAdvisor,
+                assignedTechnician: updatedForm.assignedTechnician,
+                pickupDropRequired: updatedForm.pickupDropRequired,
                 pickupAddress: pickupAddress,
                 pickupState: pickupState,
                 pickupCity: pickupCity,
                 pickupPincode: pickupPincode,
-                dropAddress: form.dropAddress,
-                dropState: (form as any).dropState,
-                dropCity: (form as any).dropCity,
-                dropPincode: (form as any).dropPincode,
-                preferredCommunicationMode: form.preferredCommunicationMode,
-                previousServiceHistory: form.previousServiceHistory,
-                estimatedServiceTime: form.estimatedServiceTime,
-                odometerReading: form.odometerReading,
-                duration: form.duration?.toString(),
+                dropAddress: updatedForm.dropAddress,
+                dropState: (updatedForm as any).dropState,
+                dropCity: (updatedForm as any).dropCity,
+                dropPincode: (updatedForm as any).dropPincode,
+                preferredCommunicationMode: updatedForm.preferredCommunicationMode,
+                previousServiceHistory: updatedForm.previousServiceHistory,
+                estimatedServiceTime: updatedForm.estimatedServiceTime,
+                odometerReading: updatedForm.odometerReading,
+                duration: updatedForm.duration?.toString(),
             };
-
-            let createdAppointment: any;
 
             if (selectedAppointment) {
                 const updatePayload: UpdateAppointmentDto = {
                     ...basePayload,
                     status: selectedAppointment.status
                 };
-                createdAppointment = await appointmentsService.update(selectedAppointment.id.toString(), updatePayload);
+                await appointmentsService.update(selectedAppointment.id.toString(), updatePayload);
+                showToast(`Appointment updated successfully!`, "success");
             } else {
                 const createPayload: CreateAppointmentDto = {
                     ...basePayload
                 };
-                createdAppointment = await appointmentsService.create(createPayload);
+                await appointmentsService.create(createPayload);
+                showToast(`Appointment scheduled successfully!`, "success");
             }
-
-            // Step 2: Now handle actual file uploads to backend for local storage
-            if (pendingUploads.length > 0 && createdAppointment?.id) {
-                console.log(`📤 Preparing to send ${pendingUploads.length} file upload(s) to backend for local storage...`);
-
-                // --- Placeholder for actual file upload to a new local storage API endpoint ---
-                // This would involve iterating through pendingUploads, creating FormData,
-                // and sending it to an endpoint that handles saving files to dms-data.
-                // For example:
-                for (const uploadGroup of pendingUploads) {
-                    for (const fileData of uploadGroup.files) {
-                        try {
-                            const formData = new FormData();
-                            formData.append('file', fileData.file);
-                            formData.append('category', fileData.category);
-                            formData.append('relatedEntityId', createdAppointment.id.toString());
-                            formData.append('relatedEntityType', 'APPOINTMENT'); // Assuming 'APPOINTMENT' as entity type
-                            formData.append('uploadedBy', userInfo?.id || 'unknown');
-                            // Other metadata from fileData.metadata can also be appended
-
-                            // Example API call (this endpoint needs to exist on backend)
-                            // await apiClient.post('/api/files/upload-local', formData, {
-                            //     headers: { 'Content-Type': 'multipart/form-data' },
-                            // });
-                            console.log(`✅ Simulating upload for file: ${fileData.metadata.filename} (Category: ${fileData.category})`);
-                        } catch (fileError) {
-                            console.error(`Failed to upload file ${fileData.metadata.filename}:`, fileError);
-                        }
-                    }
-                }
-                // --- End Placeholder ---
-                console.log("Local file upload process completed.");
-            }
-
-            showToast(
-                selectedAppointment
-                    ? 'Appointment updated successfully!'
-                    : 'Appointment scheduled successfully!',
-                'success'
-            );
 
             // Invalidate cache and refresh
             apiClient.clearCache();
@@ -720,7 +813,7 @@ export const useAppointmentLogic = () => {
             const msg = error?.response?.data?.message || error.message || "Failed to save appointment. Please try again.";
             showToast(msg, "error");
         }
-    }, [selectedAppointment, selectedAppointmentCustomer, selectedAppointmentVehicle, userInfo, showToast, handleCloseAppointmentForm, loadAppointments]);
+    }, [selectedAppointment, selectedAppointmentCustomer, selectedAppointmentVehicle, userInfo, showToast, handleCloseAppointmentForm, loadAppointments, serviceCenterContext]);
 
     const handleCustomerArrivedFromForm = useCallback(async (form: AppointmentFormType) => {
         if (!selectedAppointment) return;

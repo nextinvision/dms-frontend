@@ -1,8 +1,9 @@
 "use client";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
 import type { Part } from "@/features/inventory/types/inventory.types";
+import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import {
   Package,
   Search,
@@ -21,7 +22,7 @@ import type { InventoryItem, StockStatus, FilterType, StockIndicator } from "@/s
 
 
 interface RequestItem {
-  partId: string | number;
+  partId: string;
   partName: string;
   hsnCode: string;
   partCode?: string;
@@ -38,7 +39,7 @@ export default function SCInventory() {
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
   const [requestItems, setRequestItems] = useState<RequestItem[]>([]);
   const [currentRequest, setCurrentRequest] = useState<{
-    partId: string | number;
+    partId: string;
     partName: string;
     hsnCode: string;
     partCode?: string;
@@ -51,12 +52,32 @@ export default function SCInventory() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Get service center context for filtering
+  const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
+
   useEffect(() => {
     const loadInventory = async () => {
       try {
         setIsLoading(true);
-        // Fetch parts from parts master (inventory manager's database)
-        const parts: Part[] = await partsMasterService.getAll();
+
+        // Get service center ID from context
+        const serviceCenterId = serviceCenterContext.serviceCenterId;
+
+        if (!serviceCenterId) {
+          console.error("No service center ID found in context");
+          setInventory([]);
+          setIsLoading(false);
+          return;
+        }
+
+        // Convert serviceCenterId to string (from string | number | null)
+        const serviceCenterIdStr = typeof serviceCenterId === 'number'
+          ? String(serviceCenterId)
+          : serviceCenterId;
+
+        // Fetch parts from parts master for THIS service center ONLY
+        // This ensures each service center sees only their own inventory
+        const parts: Part[] = await partsMasterService.getAll({ serviceCenterId: serviceCenterIdStr });
 
         // Map Part to InventoryItem format - only include fields that exist in database
         const inventoryItems: InventoryItem[] = parts.map((part) => {
@@ -141,7 +162,7 @@ export default function SCInventory() {
       }
     };
     loadInventory();
-  }, []);
+  }, [serviceCenterContext.serviceCenterId]);
 
   const filteredInventory = inventory.filter((item) => {
     const matchesSearch =
@@ -253,7 +274,7 @@ export default function SCInventory() {
     if (!selectedPart) return;
 
     const newItem: RequestItem = {
-      partId: selectedPart.id,
+      partId: String(selectedPart.id),
       partName: selectedPart.partName,
       hsnCode: selectedPart.hsnCode || "",
       partCode: selectedPart.partCode,
@@ -280,7 +301,7 @@ export default function SCInventory() {
     // If there's a selected part but not added to list, add it first
     if (selectedPart && !requestItems.find((item) => item.partId === selectedPart.id)) {
       const newItem: RequestItem = {
-        partId: selectedPart.id,
+        partId: String(selectedPart.id),
         partName: selectedPart.partName,
         hsnCode: selectedPart.hsnCode ?? "",
         partCode: selectedPart.partCode,
@@ -295,7 +316,7 @@ export default function SCInventory() {
     const finalItems = requestItems.length > 0 ? requestItems : [];
     if (selectedPart && finalItems.length === 0) {
       finalItems.push({
-        partId: selectedPart.id,
+        partId: String(selectedPart.id),
         partName: selectedPart.partName,
         hsnCode: selectedPart.hsnCode ?? "",
         partCode: selectedPart.partCode,
@@ -312,7 +333,7 @@ export default function SCInventory() {
       items: finalItems,
       status: "Pending",
       createdAt: new Date().toISOString(),
-      serviceCenter: "Pune Phase 1", // This would come from user context
+      serviceCenter: serviceCenterContext.serviceCenterName || "Service Center", // This would come from user context
     };
     requests.push(newRequest);
     safeStorage.setItem("partsRequests", requests);
@@ -643,7 +664,7 @@ export default function SCInventory() {
                         setSelectedPart(part || null);
                         if (part) {
                           setCurrentRequest({
-                            partId: part.id,
+                            partId: String(part.id),
                             partName: part.partName,
                             hsnCode: part.hsnCode ?? "",
                             partCode: part.partCode,

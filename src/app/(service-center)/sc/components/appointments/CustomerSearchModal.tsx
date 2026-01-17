@@ -7,7 +7,7 @@ interface CustomerSearchModalProps {
   onClose: () => void;
   searchValue: string;
   onSearchChange: (value: string) => void;
-  onSearch: (value: string, type: "name" | "phone" | "email") => void;
+  onSearch: (value: string, type: "name" | "phone" | "email" | "auto") => void;
   onClearSearch: () => void;
   customers: CustomerWithVehicles[];
   loading: boolean;
@@ -52,7 +52,7 @@ export function CustomerSearchModal({
                 const value = e.target.value;
                 onSearchChange(value);
                 if (value.trim().length >= 2) {
-                  onSearch(value, "name");
+                  onSearch(value, "auto");
                 } else {
                   onClearSearch();
                 }

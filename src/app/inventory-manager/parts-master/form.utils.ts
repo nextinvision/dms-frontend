@@ -38,6 +38,7 @@ export function mapFormDataToPartFormData(formData: PartsMasterFormData): PartFo
     ...(getStringIfNotEmpty(formData.partNumber) && { partNumber: getStringIfNotEmpty(formData.partNumber) }),
     ...(getStringIfNotEmpty(formData.category) && { category: getStringIfNotEmpty(formData.category) }),
     ...(getStringIfNotEmpty(formData.description) && { description: getStringIfNotEmpty(formData.description) }),
+    ...(formData.stockQuantity !== undefined && formData.stockQuantity !== null && { stockQuantity: Number(formData.stockQuantity) || 0 }),
     ...(formData.minStock !== undefined && formData.minStock !== null && { minStockLevel: Number(formData.minStock) || 0 }),
     ...(getStringIfNotEmpty(formData.unit) && { unit: getStringIfNotEmpty(formData.unit) }),
 
@@ -95,6 +96,7 @@ export function mapPartToFormData(part: Part): PartsMasterFormData {
     partNumber: part.partNumber || "",
     category: part.category || "",
     description: part.description || "",
+    stockQuantity: part.stockQuantity || 0,
     minStock: part.minStockLevel || 0,
     unit: part.unit || "piece",
 

@@ -65,12 +65,14 @@ class PartsMasterService {
     };
   }
 
-  async getAll(): Promise<Part[]> {
-    const items = await inventoryService.getAll();
+  async getAll(options?: { serviceCenterId?: string; search?: string }): Promise<Part[]> {
+    // Pass serviceCenterId to inventory service to filter by service center
+    const items = await inventoryService.getAll(options);
     return items.map(this.mapInventoryItemToPart);
   }
 
   async getById(id: string): Promise<Part | null> {
+    // Get all parts without filtering by service center for this lookup
     const parts = await this.getAll();
     return parts.find((p) => p.id === id || p.partId === id || p.partNumber === id) || null;
   }

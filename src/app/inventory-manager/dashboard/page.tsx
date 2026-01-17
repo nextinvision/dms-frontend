@@ -46,7 +46,7 @@ interface QuickAction {
 const mapPartsRequestToFrontend = (req: any): JobCardPartsRequest => {
   const status = req.status;
   // Map COMPLETED to 'approved' for dashboard visual consistency (Green badge)
-  const dashboardStatus = status === 'COMPLETED' ? 'approved' : status === 'REJECTED' ? 'rejected' : 'pending';
+  const dashboardStatus = (status === 'COMPLETED' || status === 'APPROVED') ? 'APPROVED' : status === 'REJECTED' ? 'REJECTED' : 'PENDING';
 
   return {
     id: req.id,
@@ -98,7 +98,7 @@ export default function InventoryManagerDashboard() {
 
         // Fetch recent parts requests (last 5)
         const scContext = getServiceCenterContext();
-        const allRequestsData = await jobCardService.getPendingPartsRequests(scContext.serviceCenterId || undefined);
+        const allRequestsData = await jobCardService.getPendingPartsRequests(scContext.serviceCenterId ? String(scContext.serviceCenterId) : undefined);
         const allRequests = allRequestsData.map(mapPartsRequestToFrontend);
 
         const recent = allRequests
@@ -381,9 +381,9 @@ export default function InventoryManagerDashboard() {
                 {recentRequests.map((request) => (
                   <div
                     key={request.id}
-                    className={`p-4 rounded-lg border ${request.status === "pending"
+                    className={`p-4 rounded-lg border ${request.status === "PENDING"
                       ? "bg-orange-50 border-orange-200"
-                      : request.status === "approved"
+                      : request.status === "APPROVED"
                         ? "bg-green-50 border-green-200"
                         : "bg-red-50 border-red-200"
                       }`}
@@ -396,9 +396,9 @@ export default function InventoryManagerDashboard() {
                           </h4>
                           <Badge
                             variant={
-                              request.status === "pending"
+                              request.status === "PENDING"
                                 ? "warning"
-                                : request.status === "approved"
+                                : request.status === "APPROVED"
                                   ? "success"
                                   : "danger"
                             }
@@ -443,7 +443,7 @@ export default function InventoryManagerDashboard() {
                         ))}
                       </div>
                     </div>
-                    {request.status === "pending" && (
+                    {request.status === "PENDING" && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <p className="text-xs text-gray-600">
                           <span className="font-medium">Requested by:</span> {typeof request.requestedBy === 'object' && request.requestedBy !== null ? (request.requestedBy as any).name || 'Unknown' : request.requestedBy}

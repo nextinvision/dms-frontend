@@ -2,48 +2,25 @@
 import { useState, useEffect, useMemo } from "react";
 import { partsMasterService } from "@/features/inventory/services/partsMaster.service";
 import { Card, CardBody } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { SearchBar } from "@/components/ui/SearchBar";
 import {
-  PlusCircle,
-  Edit,
-  Trash2,
   Package,
   AlertTriangle,
-  Upload,
-  Download,
   CheckCircle,
   TrendingDown,
-  FileSpreadsheet,
-  X
 } from "lucide-react";
-import type { Part, PartFormData } from "@/features/inventory/types/inventory.types";
-import * as XLSX from "xlsx";
-import { PartsMasterForm } from "./PartsMasterForm";
-import { getInitialFormData, type PartsMasterFormData } from "./form.schema";
-import { mapPartToFormData, mapFormDataToPartFormData } from "./form.utils";
+import type { Part } from "@/features/inventory/types/inventory.types";
 import { useRole } from "@/shared/hooks";
+import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 
 export default function PartsMasterPage() {
   const { userInfo } = useRole();
   const [parts, setParts] = useState<Part[]>([]);
   const [filteredParts, setFilteredParts] = useState<Part[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [editingPart, setEditingPart] = useState<Part | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<{
-    success: number;
-    failed: number;
-    merged?: number;
-    errors: string[];
-  } | null>(null);
-  const [formData, setFormData] = useState<PartsMasterFormData>(getInitialFormData());
 
   // Get service center ID from user info (serviceCenter is the ID string)
   const serviceCenterId = userInfo?.serviceCenter || "";
@@ -76,7 +53,18 @@ export default function PartsMasterPage() {
   const fetchParts = async () => {
     try {
       setIsLoading(true);
-      const data = await partsMasterService.getAll();
+
+      // Get service center context and extract ID
+      const scContext = getServiceCenterContext();
+      const serviceCenterId = scContext.serviceCenterId;
+
+      // Convert serviceCenterId to string (from string | number | null)
+      const serviceCenterIdStr = typeof serviceCenterId === 'number'
+        ? String(serviceCenterId)
+        : serviceCenterId || undefined;
+
+      // Fetch parts filtered by service center
+      const data = await partsMasterService.getAll({ serviceCenterId: serviceCenterIdStr });
       setParts(data);
       setFilteredParts(data);
     } catch (error) {
@@ -84,306 +72,6 @@ export default function PartsMasterPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      // Map form data to PartFormData (only includes fields with data)
-      const partData = mapFormDataToPartFormData(formData);
-
-      // Inject Service Center ID for new parts if missing (required by backend)
-      if (!partData.serviceCenterId && serviceCenterId) {
-        partData.serviceCenterId = String(serviceCenterId);
-      }
-
-      // At minimum, require partName for identification
-      if (!partData.partName?.trim()) {
-        alert("Please enter a Part Name to save the part.");
-        return;
-      }
-
-      // Store previous state for rollback
-      const previousParts = parts;
-      let updatedPart: Part;
-
-      if (editingPart) {
-        // Optimistic update for edit
-        updatedPart = {
-          ...editingPart,
-          ...partData,
-          updatedAt: new Date().toISOString(),
-        };
-        const updatedParts = parts.map((p) => (p.id === editingPart.id ? updatedPart : p));
-        setParts(updatedParts);
-        setFilteredParts(updatedParts);
-
-        // Close modal immediately
-        setShowModal(false);
-        setEditingPart(null);
-        resetForm();
-
-        // Call service in background
-        try {
-          await partsMasterService.update(editingPart.id, partData);
-        } catch (error) {
-          // Rollback on error
-          console.error("Failed to update part:", error);
-          setParts(previousParts);
-          setFilteredParts(previousParts);
-          alert(error instanceof Error ? error.message : "Failed to update part. Please try again.");
-        }
-      } else {
-        // For new parts, close modal and call service
-        // (We can't optimistically create because we need the generated ID)
-        setShowModal(false);
-        resetForm();
-
-        try {
-          const newPart = await partsMasterService.create(partData);
-          // Add to UI after successful creation
-          const updatedParts = [...parts, newPart];
-          setParts(updatedParts);
-          setFilteredParts(updatedParts);
-        } catch (error) {
-          console.error("Failed to create part:", error);
-          alert(error instanceof Error ? error.message : "Failed to create part. Please try again.");
-        }
-      }
-    } catch (error) {
-      console.error("Failed to save part:", error);
-      alert(error instanceof Error ? error.message : "Failed to save part. Please try again.");
-    }
-  };
-
-  const handleEdit = (part: Part) => {
-    setEditingPart(part);
-    setFormData(mapPartToFormData(part));
-    setShowModal(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to delete this part?")) {
-      // Optimistic update: Remove from UI immediately
-      const previousParts = parts;
-      const updatedParts = parts.filter((p) => p.id !== id);
-      setParts(updatedParts);
-      setFilteredParts(filteredParts.filter((p) => p.id !== id));
-
-      try {
-        // Call service in background
-        await partsMasterService.delete(id);
-      } catch (error) {
-        // Rollback on error
-        console.error("Failed to delete part:", error);
-        setParts(previousParts);
-        setFilteredParts(previousParts);
-        alert("Failed to delete part. Please try again.");
-      }
-    }
-  };
-
-  const resetForm = () => {
-    setFormData(getInitialFormData());
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    const validTypes = [
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-excel",
-      "text/csv",
-    ];
-    const validExtensions = [".xlsx", ".xls", ".csv"];
-
-    const fileExtension = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
-    if (!validExtensions.includes(fileExtension) && !validTypes.includes(file.type)) {
-      alert("Please upload a valid Excel file (.xlsx, .xls) or CSV file.");
-      return;
-    }
-
-    setUploadFile(file);
-  };
-
-  const handleExcelUpload = async () => {
-    if (!uploadFile) return;
-
-    // Validate service center ID
-    if (!serviceCenterId) {
-      alert("Unable to determine your service center. Please refresh the page and try again.");
-      return;
-    }
-
-    try {
-      setUploadProgress({ success: 0, failed: 0, errors: [] });
-
-      const fileData = await uploadFile.arrayBuffer();
-      const workbook = XLSX.read(fileData, { type: "array" });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData: any[] = XLSX.utils.sheet_to_json(firstSheet);
-
-      // Map Excel columns to PartFormData (matching user's exact headers)
-      const partsData: PartFormData[] = jsonData.map((row: any) => {
-        // Try to match common column names (case-insensitive)
-        const getValue = (keys: string[]) => {
-          for (const key of keys) {
-            const found = Object.keys(row).find(
-              (k) => k.toLowerCase().trim() === key.toLowerCase().trim()
-            );
-            if (found && row[found] !== undefined && row[found] !== null && row[found] !== "") {
-              return row[found];
-            }
-          }
-          return "";
-        };
-
-        // Parse numeric values with proper handling of percentages
-        const parseNumber = (val: any): number => {
-          if (typeof val === 'number') return val;
-          if (typeof val === 'string') {
-            // Remove percentage sign and parse
-            const cleaned = val.replace(/[%₹,\s]/g, '').trim();
-            return parseFloat(cleaned) || 0;
-          }
-          return 0;
-        };
-
-        // Parse boolean (YES/NO/true/false)
-        const parseBoolean = (val: any): boolean => {
-          if (typeof val === 'boolean') return val;
-          if (typeof val === 'string') {
-            return val.toLowerCase() === 'yes' || val.toLowerCase() === 'true';
-          }
-          return false;
-        };
-
-        // Get sale price - try multiple column names
-        const salePricePreGst = parseNumber(getValue(["Sale Price Pre GST", "Sale Price Pre Gst", "sale_price_pre_gst", "Price Pre GST", "pricePreGst"]));
-        const purchasePrice = parseNumber(getValue(["PURCHASE PRICE", "Purchase Price", "purchase_price", "PurchasePrice"]));
-        const totalPrice = parseNumber(getValue(["TOTAL PRICE", "Total Price", "total_price", "TotalPrice"]));
-
-        return {
-          // Basic Part Information
-          oemPartNumber: String(getValue(["OEM PART NUMBER", "OEM Part Number", "oem_part_number", "OemPartNumber"]) || ""),
-          partName: String(getValue(["Part Name", "PartName", "part_name", "Name"]) || ""),
-          partNumber: String(getValue(["Part Number", "PartNumber", "part_number", "Number"]) || ""),
-          originType: String(getValue(["ORIGIN TYPE", "Origin Type", "origin_type", "OriginType"]) || "NEW").replace(/\s*\/\s*/g, '/'),
-          category: String(getValue(["Category", "category", "Category Name"]) || ""),
-          description: String(getValue(["Description", "description", "Desc"]) || ""),
-
-          // Stock Information
-          stockQuantity: 0, // Initial stock is 0 for new parts
-          minStockLevel: parseInt(getValue(["Min Stock", "MinStock", "min_stock", "Min Stock Level"]) || "0") || 0,
-          maxStockLevel: 100, // Default max
-          unit: String(getValue(["Unit", "unit", "UOM"]) || "piece"),
-
-          // Part Details
-          brandName: String(getValue(["Brand Name", "BrandName", "brand_name", "Brand"]) || ""),
-          variant: String(getValue(["Variant", "variation"]) || ""),
-          partType: String(getValue(["Part Type", "PartType", "part_type"]) || ""),
-          color: String(getValue(["Color", "colour", "Colour"]) || ""),
-
-          // Pricing - Purchase
-          costPrice: purchasePrice,
-          pricePreGst: parseNumber(getValue(["Pre GST Amount To Us", "Pre GST Amount", "pricePreGst", "Price Pre Gst To Us"]) || purchasePrice),
-          gstRateInput: parseNumber(getValue(["GST Rate Input", "GstRateInput", "gst_rate_input"])),
-          gstInput: parseNumber(getValue(["GST INPUT", "GST Input", "gst_input", "GstInput"])),
-
-          // Pricing - Sale
-          unitPrice: salePricePreGst > 0 ? salePricePreGst : totalPrice,
-          price: salePricePreGst > 0 ? salePricePreGst : totalPrice,
-          gstRate: parseNumber(getValue(["GST Rate Output", "GstRateOutput", "gst_rate_output"])) || 18,
-          gstRateOutput: parseNumber(getValue(["GST Rate Output", "GstRateOutput", "gst_rate_output"])),
-          totalPrice: totalPrice,
-          totalGst: parseNumber(getValue(["TOTAL GST", "Total GST", "total_gst", "TotalGst"])),
-
-          // Labour Information - using new field names
-          labourName: String(getValue(["Associated Labour Name", "Labour Name", "labourName", "Estimated Labour"]) || ""),
-          labourCode: String(getValue(["Associated Labour Code", "Labour Code", "labourCode"]) || ""),
-          labourWorkTime: String(getValue(["Work Time", "WorkTime", "work_time", "Estimated Labour Work Time"]) || ""),
-          labourRate: parseNumber(getValue(["Labour Rate", "LabourRate", "labour_rate"])),
-          labourGstRate: parseNumber(getValue(["Labour GST Rate", "LabourGstRate", "labour_gst_rate"])),
-          labourPrice: parseNumber(getValue(["LABOUR PRICE", "Labour Price", "labour_price", "LabourPrice"])),
-
-          // Flags
-          highValuePart: parseBoolean(getValue(["High Value Part", "HighValuePart", "high_value_part"])),
-
-          // Service Center (required by backend)
-          serviceCenterId: serviceCenterId,
-        } as PartFormData;
-      });
-
-      // Filter out empty rows (only partName is required)
-      const validPartsData = partsData.filter(
-        (p) => p.partName?.trim()
-      );
-
-      if (validPartsData.length === 0) {
-        alert("No valid parts found in the Excel file. Please check the format.");
-        setUploadFile(null);
-        return;
-      }
-
-      // Upload parts
-      const result = await partsMasterService.bulkCreate(validPartsData);
-      setUploadProgress(result);
-
-      if (result.success > 0) {
-        fetchParts();
-        setTimeout(() => {
-          setShowUploadModal(false);
-          setUploadFile(null);
-          setUploadProgress(null);
-        }, 3000);
-      }
-    } catch (error) {
-      console.error("Failed to upload Excel file:", error);
-      alert("Failed to process Excel file. Please check the format and try again.");
-      setUploadProgress({ success: 0, failed: 0, errors: ["Failed to process file"] });
-    }
-  };
-
-  const downloadTemplate = () => {
-    const templateData = [
-      {
-        "OEM PART NUMBER": "2W_000000000272_003",
-        "Part Name": "COCKPIT TOP SHELL ANTHRACITE",
-        "Part Number": "_003",
-        "ORIGIN TYPE": "OLD/NEW",
-        "Category": "BODY PANEL",
-        "PURCHASE PRICE": 950,
-        "Description": "HMI AND HEADLIGHT COVER",
-        "Min Stock": 2,
-        "Unit": "1",
-        "Brand Name": "OLA ELECTRIC",
-        "Variant": "S1 PRO, S1",
-        "Part Type": "PANEL",
-        "Color": "ANTHRACITE",
-        "Pre GST Amount To Us": 1400,
-        "GST Rate Input": "18%",
-        "Sale Price Pre GST": 1652,
-        "GST Rate Output": "18%",
-        "Associated Labour Name": "TOP COCKIT FITTING",
-        "Associated Labour Code": "LB_000000000121",
-        "Work Time": "0.3M",
-        "Labour Rate": 180,
-        "Labour GST Rate": "18%",
-        "LABOUR PRICE": 212.4,
-        "GST INPUT": 32.4,
-        "TOTAL PRICE": 1864.4,
-        "TOTAL GST": 284.4,
-        "High Value Part": "NO",
-      },
-    ];
-
-    const ws = XLSX.utils.json_to_sheet(templateData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Parts");
-    XLSX.writeFile(wb, "parts_template.xlsx");
   };
 
   const categories = useMemo(() => Array.from(new Set(parts.map((p) => p.category))), [parts]);
@@ -403,31 +91,7 @@ export default function PartsMasterPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-indigo-600">Parts Master</h1>
-            <p className="text-gray-500 mt-1">Manage your parts catalog with bulk upload and search</p>
-          </div>
-          <div className="flex gap-3">
-            <Button
-              onClick={() => {
-                setShowUploadModal(true);
-                setUploadFile(null);
-                setUploadProgress(null);
-              }}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              <Upload size={18} className="mr-2" />
-              Bulk Upload
-            </Button>
-            <Button
-              onClick={() => {
-                setEditingPart(null);
-                resetForm();
-                setShowModal(true);
-              }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              <PlusCircle size={18} className="mr-2" />
-              Add New Part
-            </Button>
+            <p className="text-gray-500 mt-1">View your parts catalog and stock levels</p>
           </div>
         </div>
 
@@ -516,35 +180,10 @@ export default function PartsMasterPage() {
                 </h3>
                 <p className="text-gray-600 mb-4">
                   {parts.length === 0
-                    ? "Get started by adding your first part or uploading a bulk Excel file."
+                    ? "Parts will appear here once added by the Central Inventory Manager."
                     : "Try adjusting your search or filter criteria."}
                 </p>
-                {parts.length === 0 && (
-                  <div className="flex gap-3 justify-center">
-                    <Button
-                      onClick={() => {
-                        setShowUploadModal(true);
-                        setUploadFile(null);
-                        setUploadProgress(null);
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white"
-                    >
-                      <Upload size={18} className="mr-2" />
-                      Upload Excel File
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setEditingPart(null);
-                        resetForm();
-                        setShowModal(true);
-                      }}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                    >
-                      <PlusCircle size={18} className="mr-2" />
-                      Add First Part
-                    </Button>
-                  </div>
-                )}
+
               </div>
             </CardBody>
           </Card>
@@ -601,8 +240,7 @@ export default function PartsMasterPage() {
                       return (
                         <tr
                           key={part.id}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
-                          onClick={() => handleEdit(part)}
+                          className="hover:bg-gray-50 transition-colors"
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900">{part.partId}</div>
@@ -665,23 +303,8 @@ export default function PartsMasterPage() {
                               </Badge>
                             )}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleEdit(part)}
-                                className="text-blue-600 hover:text-blue-900 hover:bg-blue-50 p-2 rounded transition-colors"
-                                title="Edit"
-                              >
-                                <Edit size={16} />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(part.id)}
-                                className="text-red-600 hover:text-red-900 hover:bg-red-50 p-2 rounded transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <span className="text-gray-400 text-xs">View Only</span>
                           </td>
                         </tr>
                       );
@@ -693,152 +316,9 @@ export default function PartsMasterPage() {
           </Card>
         )}
 
-        {/* Add/Edit Part Modal */}
-        <Modal
-          isOpen={showModal}
-          onClose={() => {
-            setShowModal(false);
-            setEditingPart(null);
-            resetForm();
-          }}
-          title={editingPart ? "Edit Part" : "Add New Part"}
-        >
-          <PartsMasterForm
-            formData={formData}
-            onFormChange={setFormData}
-            onSubmit={handleSubmit}
-            isEditing={!!editingPart}
-            showServiceCenter={false}
-            submitButtonText={editingPart ? "Update" : "Create"}
-            submitButtonClass={editingPart
-              ? "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg text-base shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 mt-6"
-              : "w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg text-base shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 mt-6"
-            }
-          />
-        </Modal>
 
-        {/* Bulk Upload Modal */}
-        <Modal
-          isOpen={showUploadModal}
-          onClose={() => {
-            setShowUploadModal(false);
-            setUploadFile(null);
-            setUploadProgress(null);
-          }}
-          title="Bulk Upload Parts from Excel"
-        >
-          <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="font-semibold text-blue-900 mb-2">Excel File Format</h4>
-              <p className="text-sm text-blue-800 mb-2">
-                Your Excel file should have the following columns (matching the image format):
-              </p>
-              <ul className="text-xs text-blue-700 list-disc list-inside space-y-1">
-                <li><strong>Required:</strong> Part Name</li>
-                <li><strong>Basic Info (optional):</strong> OEM PART NUMBER, Part Number, ORIGIN TYPE (OLD/NEW), Category, PURCHASE PRICE, Description, Min Stock, Unit</li>
-                <li><strong>Basic Part Info (optional):</strong> Brand Name, Variant, Part Type (e.g., PANEL), Color</li>
-                <li><strong>GST and Pricing (optional):</strong> GST Amount (auto-calculated), GST Rate Input (%), Price Pre GST, GST Rate Output (%)</li>
-                <li><strong>Labour Information (optional):</strong> Estimated Labour, Estimated Labour Work Time (e.g., 0.3M), Labour Rate, Labour GST Rate (%)</li>
-                <li><strong>Calculated Totals (auto-calculated):</strong> LABOUR PRICE, GST INPUT, TOTAL PRICE, TOTAL GST</li>
-                <li><strong>High Value Part (optional):</strong> High Value Part (YES/NO/true/false)</li>
-                <li><strong>Note:</strong> GST amounts, Labour Price, and Totals are auto-calculated from base amounts and rates</li>
-              </ul>
-            </div>
 
-            <div className="flex gap-3">
-              <Button
-                onClick={downloadTemplate}
-                variant="outline"
-                className="flex-1"
-              >
-                <Download size={18} className="mr-2" />
-                Download Template
-              </Button>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Excel File (.xlsx, .xls, .csv)
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleFileUpload}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
-                />
-                {uploadFile && (
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <FileSpreadsheet size={18} />
-                    <span className="truncate max-w-[200px]">{uploadFile.name}</span>
-                    <button
-                      onClick={() => setUploadFile(null)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <X size={18} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {uploadProgress && (
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-gray-900">Upload Results:</span>
-                  <div className="flex gap-4 text-sm">
-                    <span className="text-green-600 font-medium">
-                      Success: {uploadProgress.success}
-                    </span>
-                    {uploadProgress.merged && uploadProgress.merged > 0 && (
-                      <span className="text-blue-600 font-medium">
-                        Merged: {uploadProgress.merged}
-                      </span>
-                    )}
-                    <span className="text-red-600 font-medium">
-                      Failed: {uploadProgress.failed}
-                    </span>
-                  </div>
-                </div>
-                {uploadProgress.errors.length > 0 && (
-                  <div className="mt-3 max-h-40 overflow-y-auto">
-                    <p className="text-xs font-semibold text-red-600 mb-1">Errors:</p>
-                    <ul className="text-xs text-red-600 list-disc list-inside space-y-1">
-                      {uploadProgress.errors.slice(0, 10).map((error, idx) => (
-                        <li key={idx}>{error}</li>
-                      ))}
-                      {uploadProgress.errors.length > 10 && (
-                        <li>... and {uploadProgress.errors.length - 10} more errors</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-4">
-              <Button
-                onClick={handleExcelUpload}
-                disabled={!uploadFile}
-                className="bg-green-600 hover:bg-green-700 text-white flex-1"
-              >
-                <Upload size={18} className="mr-2" />
-                Upload Parts
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setShowUploadModal(false);
-                  setUploadFile(null);
-                  setUploadProgress(null);
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </Modal>
       </div>
     </div>
   );

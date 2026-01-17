@@ -91,6 +91,7 @@ export default function JobCardFormModal({
   const [searching, setSearching] = useState(false);
   const [showCheckInSlip, setShowCheckInSlip] = useState(false);
   const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
+  const [isCreatingQuotation, setIsCreatingQuotation] = useState(false);
 
   // Load existing job card if editing
   useEffect(() => {
@@ -327,7 +328,7 @@ export default function JobCardFormModal({
     }
 
     try {
-      setIsSubmitting(true);
+      setIsCreatingQuotation(true);
       const now = new Date();
 
       // Fetch all quotations to determine the next quotation number
@@ -463,7 +464,7 @@ export default function JobCardFormModal({
       console.error("Error creating quotation:", error);
       onError?.("Failed to create quotation. Please try again.");
     } finally {
-      setIsSubmitting(false);
+      setIsCreatingQuotation(false);
     }
   };
 
@@ -628,17 +629,17 @@ export default function JobCardFormModal({
               <button
                 type="button"
                 onClick={handleCreateQuotation}
-                disabled={isSubmitting || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+                disabled={isCreatingQuotation || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
                 className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
 
                   ? "bg-gray-100 text-gray-400 border border-gray-200"
                   : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
                   }`}
               >
-                {isSubmitting ? (
+                {isCreatingQuotation ? (
                   <>
                     <Loader2 className="animate-spin" size={20} />
-                    Creating...
+                    Processing...
                   </>
                 ) : (
                   <>

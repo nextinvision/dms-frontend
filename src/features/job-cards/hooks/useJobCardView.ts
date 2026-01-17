@@ -73,14 +73,28 @@ export function useJobCardView() {
             // Search filter
             if (searchQuery) {
                 const query = searchQuery.toLowerCase();
-                const vehicleStr = getVehicleDisplayString(job.vehicle);
+
+                // Use helper functions to extract customer name and vehicle info
+                const { getJobCardCustomerName, getJobCardVehicleDisplay } = require("@/features/job-cards/utils/job-card-helpers");
+                const customerName = getJobCardCustomerName(job).toLowerCase();
+                const vehicleDisplay = getJobCardVehicleDisplay(job).toLowerCase();
+
+                // Get phone number(s) if available
+                const phoneNumbers = [
+                    job.part1?.mobilePrimary,
+                    job.customerWhatsappNumber,
+                    job.customerAlternateMobile,
+                    (job.customer as any)?.phone,
+                    (job.customer as any)?.mobile
+                ].filter(Boolean).join(' ').toLowerCase();
 
                 return (
                     (job.id && job.id.toLowerCase().includes(query)) ||
                     (job.jobCardNumber && job.jobCardNumber.toLowerCase().includes(query)) ||
-                    (job.customerName && job.customerName.toLowerCase().includes(query)) ||
+                    customerName.includes(query) ||
                     (job.registration && job.registration.toLowerCase().includes(query)) ||
-                    (vehicleStr && vehicleStr.toLowerCase().includes(query)) ||
+                    vehicleDisplay.includes(query) ||
+                    phoneNumbers.includes(query) ||
                     (job.serviceType && job.serviceType.toLowerCase().includes(query))
                 );
             }
