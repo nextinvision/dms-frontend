@@ -1,5 +1,19 @@
+// Use /dev-api for development environment, /api for production
+const getBaseUrl = () => {
+  // Check if we're in development mode (served from /dev/)
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dev')) {
+    return '/dev-api';
+  }
+  // Check environment variable
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  // Default to /api for production
+  return '/api';
+};
+
 export const API_CONFIG = {
-  BASE_URL: "/api",
+  BASE_URL: getBaseUrl(),
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000,
   TIMEOUT: 30000,
