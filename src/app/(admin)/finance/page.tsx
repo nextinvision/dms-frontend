@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Search, Filter, Download, BarChart3, Calendar, Eye, X, FileText, Building, DollarSign, Check, Printer, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { invoiceRepository } from "@/core/repositories/invoice.repository";
@@ -690,7 +690,6 @@ export default function FinancePage() {
                     try {
                       const { pdf } = await import("@react-pdf/renderer");
                       const { InvoicePDFDocument } = await import("@/shared/components/invoice/InvoicePDFDocument");
-                      const React = await import("react");
 
                       // Generate PDF blob using React-PDF
                       const blob = await pdf(
@@ -721,7 +720,6 @@ export default function FinancePage() {
                     try {
                       const { pdf } = await import("@react-pdf/renderer");
                       const { InvoicePDFDocument } = await import("@/shared/components/invoice/InvoicePDFDocument");
-                      const React = await import("react");
 
                       // Generate PDF blob using React-PDF
                       const blob = await pdf(
