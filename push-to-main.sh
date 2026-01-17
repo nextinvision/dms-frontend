@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Pushing development code to GitHub current branch"
+echo "🚀 Syncing development code with GitHub main"
 echo "Started at $(date)"
 
 cd ~/dms-dev/frontend
@@ -29,10 +29,21 @@ git commit -m "chore: update from development environment - $(date +%Y-%m-%d\ %H
     exit 0
 }
 
-# Push to current branch
-echo "📤 Pushing to GitHub branch: $CURRENT_BRANCH ..."
-git push origin "$CURRENT_BRANCH"
+echo "🔄 Fetching latest main..."
+git fetch origin main
 
-echo "✅ Successfully pushed to GitHub branch: $CURRENT_BRANCH"
+# Rebase current branch on top of latest main
+echo "🧩 Rebasing $CURRENT_BRANCH onto origin/main..."
+git rebase origin/main
+
+# Push current branch HEAD to main
+echo "📤 Pushing to GitHub main (from $CURRENT_BRANCH)..."
+git push origin HEAD:main
+
+# Keep local branch synced with updated main
+echo "🔁 Syncing local $CURRENT_BRANCH with origin/main..."
+git pull --rebase origin main
+
+echo "✅ Successfully pushed to GitHub main and synced $CURRENT_BRANCH"
 echo "🔄 Production will auto-deploy via GitHub Actions"
 echo "Completed at $(date)"
