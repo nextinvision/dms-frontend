@@ -6,7 +6,24 @@ const getBaseUrl = () => {
   }
   // Check environment variable
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+    if (typeof window !== 'undefined') {
+      // Avoid mixed-content or cross-origin issues in production
+      const envUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (envUrl.startsWith('http')) {
+        try {
+          const envOrigin = new URL(envUrl).origin;
+          if (envOrigin === window.location.origin) {
+            return envUrl;
+          }
+        } catch {
+          // Fall through to default
+        }
+      } else {
+        return envUrl;
+      }
+    } else {
+      return process.env.NEXT_PUBLIC_API_URL;
+    }
   }
   // Default to /api for production
   return '/api';
