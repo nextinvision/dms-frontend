@@ -2658,6 +2658,8 @@ Please keep this slip safe for vehicle collection.`;
           }}
           loading={loading}
           isEditing={isEditing}
+          status={isEditing ? quotations.find((q) => q.id === editingId)?.status : undefined}
+          passedToManager={isEditing ? quotations.find((q) => q.id === editingId)?.passedToManager : undefined}
         />
       )}
 

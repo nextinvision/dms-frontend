@@ -45,6 +45,8 @@ interface CreateQuotationModalProps {
     onClose: () => void;
     loading: boolean;
     isEditing?: boolean;
+    status?: string;
+    passedToManager?: boolean;
 }
 
 export function CreateQuotationModal({
@@ -76,6 +78,8 @@ export function CreateQuotationModal({
     onClose,
     loading,
     isEditing = false,
+    status,
+    passedToManager = false,
 }: CreateQuotationModalProps) {
     // Get appointment data directly from localStorage as fallback
     const appointmentDataFromStorage = typeof window !== "undefined"
@@ -124,15 +128,21 @@ export function CreateQuotationModal({
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Document Type</label>
-                            <select
-                                value={form.documentType}
-                                onChange={(e) => setForm({ ...form, documentType: e.target.value as any })}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            >
-                                <option value="Quotation">Quotation</option>
-                                <option value="Proforma Invoice">Proforma Invoice</option>
-                                <option value="Check-in Slip">Check-in Slip</option>
-                            </select>
+                            {isEditing ? (
+                                <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-gray-700">
+                                    {form.documentType}
+                                </div>
+                            ) : (
+                                <select
+                                    value={form.documentType}
+                                    onChange={(e) => setForm({ ...form, documentType: e.target.value as any })}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                >
+                                    <option value="Quotation">Quotation</option>
+                                    <option value="Proforma Invoice">Proforma Invoice</option>
+                                    <option value="Check-in Slip">Check-in Slip</option>
+                                </select>
+                            )}
                         </div>
                         {form.documentType !== "Check-in Slip" && (
                             <>
@@ -166,49 +176,51 @@ export function CreateQuotationModal({
                     {/* Customer Selection - Available for both Quotations and Check-in Slips */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Customer *</label>
-                        <div className="relative">
-                            <input
-                                type="text"
-                                placeholder="Search customer by name, phone, or vehicle number..."
-                                value={customerSearchQuery}
-                                onChange={(e) => setCustomerSearchQuery(e.target.value)}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            />
-                            {customerSearchResults.length > 0 && (
-                                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                                    {customerSearchResults.map((customer: CustomerWithVehicles) => (
-                                        <div
-                                            key={customer.id}
-                                            onClick={() => {
-                                                setSelectedCustomer(customer);
-                                                const firstVehicle = customer.vehicles?.[0];
-                                                const vehicleId = firstVehicle?.id?.toString() || "";
+                        {!isEditing && (
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Search customer by name, phone, or vehicle number..."
+                                    value={customerSearchQuery}
+                                    onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                                {customerSearchResults.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                        {customerSearchResults.map((customer: CustomerWithVehicles) => (
+                                            <div
+                                                key={customer.id}
+                                                onClick={() => {
+                                                    setSelectedCustomer(customer);
+                                                    const firstVehicle = customer.vehicles?.[0];
+                                                    const vehicleId = firstVehicle?.id?.toString() || "";
 
-                                                // Auto-populate insurance data from first vehicle if available
-                                                setForm({
-                                                    ...form,
-                                                    customerId: customer.id.toString(),
-                                                    vehicleId: vehicleId,
-                                                    insuranceCompanyName: firstVehicle?.insuranceCompanyName || form.insuranceCompanyName || "",
-                                                    insuranceStartDate: firstVehicle?.insuranceStartDate || form.insuranceStartDate || "",
-                                                    insuranceEndDate: firstVehicle?.insuranceEndDate || form.insuranceEndDate || "",
-                                                    hasInsurance: !!(firstVehicle?.insuranceCompanyName || firstVehicle?.insuranceStartDate || firstVehicle?.insuranceEndDate || form.hasInsurance),
-                                                });
-                                                setActiveCustomerId(customer.id.toString());
-                                                setCustomerSearchQuery("");
-                                                clearCustomerSearch();
-                                            }}
-                                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
-                                        >
-                                            <div className="font-medium">{customer.name}</div>
-                                            <div className="text-sm text-gray-500">{customer.phone}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
+                                                    // Auto-populate insurance data from first vehicle if available
+                                                    setForm({
+                                                        ...form,
+                                                        customerId: customer.id.toString(),
+                                                        vehicleId: vehicleId,
+                                                        insuranceCompanyName: firstVehicle?.insuranceCompanyName || form.insuranceCompanyName || "",
+                                                        insuranceStartDate: firstVehicle?.insuranceStartDate || form.insuranceStartDate || "",
+                                                        insuranceEndDate: firstVehicle?.insuranceEndDate || form.insuranceEndDate || "",
+                                                        hasInsurance: !!(firstVehicle?.insuranceCompanyName || firstVehicle?.insuranceStartDate || firstVehicle?.insuranceEndDate || form.hasInsurance),
+                                                    });
+                                                    setActiveCustomerId(customer.id.toString());
+                                                    setCustomerSearchQuery("");
+                                                    clearCustomerSearch();
+                                                }}
+                                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                                            >
+                                                <div className="font-medium">{customer.name}</div>
+                                                <div className="text-sm text-gray-500">{customer.phone}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         {selectedCustomer && (
-                            <div className="mt-2 p-3 bg-gray-50 rounded-lg">
+                            <div className={`p-3 bg-gray-50 rounded-lg ${!isEditing ? 'mt-2' : ''}`}>
                                 <div className="font-medium">{selectedCustomer.name}</div>
                                 <div className="text-sm text-gray-600">{selectedCustomer.phone}</div>
                             </div>
@@ -563,19 +575,22 @@ export function CreateQuotationModal({
                             <>
                                 <button
                                     type="button"
+                                    disabled={loading || passedToManager}
                                     onClick={() => {
                                         // Pass to manager logic
                                         alert("Pass to manager functionality will be implemented");
                                     }}
-                                    className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+                                    className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium disabled:opacity-50 disabled:bg-gray-400"
+                                    title={passedToManager ? "Already passed to manager" : "Pass to Manager"}
                                 >
                                     Pass to Manager
                                 </button>
                                 <button
                                     type="button"
-                                    disabled={loading}
+                                    disabled={loading || status === "CUSTOMER_APPROVED"}
                                     onClick={handleCreateAndSendToCustomer}
-                                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+                                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:bg-gray-400"
+                                    title={status === "CUSTOMER_APPROVED" ? "Already approved by customer" : "Create & Send to Customer"}
                                 >
                                     {loading ? "Sending..." : "Create & Send to Customer"}
                                 </button>

@@ -61,7 +61,7 @@ const JobCardList = React.memo<JobCardListProps>(({
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-4">
+        <div className="p-2 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
             {currentJobs.map((job) => {
                 const jobCardId = job.id || job.jobCardNumber;
                 const request = partsRequestsData[jobCardId] || partsRequestsData[job.id] || partsRequestsData[job.jobCardNumber || ""];
@@ -120,13 +120,13 @@ const JobCardList = React.memo<JobCardListProps>(({
                         </div>
 
                         {/* Card Body */}
-                        <div className="p-5">
+                        <div className="p-3 sm:p-4 md:p-5">
                             <div className="flex flex-col lg:flex-row gap-5">
                                 {/* Main Content */}
                                 <div className="flex-1 space-y-4">
                                     {/* Customer & Vehicle Grid */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                                        <div className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 bg-gray-50 rounded-lg border border-gray-100">
                                             <div className="flex-shrink-0 w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
                                                 <User size={18} className="text-blue-600" />
                                             </div>
@@ -139,7 +139,7 @@ const JobCardList = React.memo<JobCardListProps>(({
                                             </div>
                                         </div>
 
-                                        <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                        <div className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 bg-gray-50 rounded-lg border border-gray-100">
                                             <div className="flex-shrink-0 w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
                                                 <Car size={18} className="text-purple-600" />
                                             </div>
@@ -154,7 +154,7 @@ const JobCardList = React.memo<JobCardListProps>(({
                                     </div>
 
                                     {/* Service Details */}
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                                         <div className="flex items-center gap-2">
                                             <Wrench size={16} className="text-gray-400 flex-shrink-0" />
                                             <div className="min-w-0">

@@ -33,9 +33,9 @@ export default function JobCardFilters({
     pendingApprovalCount = 0
 }: JobCardFiltersProps) {
     return (
-        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 mb-6 ${view === "kanban" ? "mx-4 sm:mx-6" : ""}`}>
+        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4 md:p-5 mb-4 sm:mb-6 ${view === "kanban" ? "mx-2 sm:mx-4 md:mx-6" : ""}`}>
             {/* Search Bar */}
-            <div className="mb-4">
+            <div className="mb-3 sm:mb-4">
                 <div className="relative">
                     <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                     <input
@@ -80,8 +80,8 @@ export default function JobCardFilters({
                                 key={f}
                                 onClick={() => setFilter(f)}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === f
-                                        ? "bg-blue-600 text-white shadow-sm"
-                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm"
+                                    ? "bg-blue-600 text-white shadow-sm"
+                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm"
                                     }`}
                             >
                                 {filterLabelMap[f]}
@@ -106,8 +106,8 @@ export default function JobCardFilters({
                                         setShowMobileFilters(false);
                                     }}
                                     className={`px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${filter === f
-                                            ? "bg-blue-600 text-white shadow-sm"
-                                            : "bg-gray-100 text-gray-700 active:bg-gray-200"
+                                        ? "bg-blue-600 text-white shadow-sm"
+                                        : "bg-gray-100 text-gray-700 active:bg-gray-200"
                                         }`}
                                 >
                                     {filterLabelMap[f]}

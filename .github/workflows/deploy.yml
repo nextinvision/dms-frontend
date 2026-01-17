@@ -16,13 +16,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to VPS
+      - name: Deploy to Production
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          timeout: 30s
+          command_timeout: 10m
           script: |
-            cd ~/deploy
+            cd ~/deploy || cd /home/${{ secrets.VPS_USER }}/deploy
+            chmod +x frontend-deploy.sh
             ./frontend-deploy.sh
+
+      - name: Sync to Development
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          timeout: 30s
+          command_timeout: 10m
+          script: |
+            cd ~/deploy || cd /home/${{ secrets.VPS_USER }}/deploy
+            chmod +x sync-dev.sh
+            ./sync-dev.sh
