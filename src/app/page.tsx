@@ -16,8 +16,6 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-  const logoSrc = `${basePath}/42ev.png`;
 
   // Clear any stale auth cookies on mount ONLY if we're actually on login page
   // This prevents middleware from redirecting based on stale cookies
@@ -128,7 +126,7 @@ export default function LoginPage() {
             <div className="mb-8">
               <div className="bg-white/10 backdrop-blur-sm p-6 rounded-2xl border border-white/20 shadow-xl">
                 <Image
-                  src={logoSrc}
+                  src="/42ev.png"
                   alt="42 EV Tech & Services"
                   width={240}
                   height={100}
@@ -139,7 +137,7 @@ export default function LoginPage() {
             </div>
             <h1 className="text-4xl font-bold mb-4 text-center">Welcome Back</h1>
             <p className="text-xl text-indigo-100 text-center max-w-md mb-8">
-              Sign in to access your Services Management System
+              Sign up to access your Service Center Management System
             </p>
             <div className="w-full max-w-md space-y-3">
               <div className="flex items-center gap-3 text-indigo-100">
@@ -165,7 +163,7 @@ export default function LoginPage() {
             <div className="lg:hidden flex justify-center mb-8">
               <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                 <Image
-                  src={logoSrc}
+                  src="/42ev.png"
                   alt="42 EV Tech & Services"
                   width={160}
                   height={70}
