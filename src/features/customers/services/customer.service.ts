@@ -26,9 +26,8 @@ class CustomerService {
     // Map frontend form data to backend DTO structure
     // This ensures we only send fields the backend expects and map mismatches
     
-    // Helper to format phone number for @IsPhoneNumber('IN') validation
-    // Backend validator accepts E.164 format (+91XXXXXXXXXX) or 10-digit numbers
-    // We'll use E.164 format as it's the standard for @IsPhoneNumber
+    // Helper to format phone number for backend validation
+    // Backend expects 10-digit numbers without country code prefix (e.g., 9876543210)
     const formatPhoneForBackend = (phone: string | undefined | null, required: boolean = false): string | undefined => {
       if (!phone || phone.trim() === '') {
         if (required) {
@@ -36,13 +35,11 @@ class CustomerService {
         }
         return undefined;
       }
-      // If already in E.164 format, return as is
-      if (phone.startsWith('+91')) return phone;
-      // Remove any spaces, dashes, and existing country code
+      // Remove any spaces, dashes, and country code prefix (+91 or 91)
       const cleaned = phone.replace(/[\s-+]/g, "").replace(/^91/, "");
       // Must be 10 digits starting with 6-9 for Indian mobile numbers
       if (/^[6-9]\d{9}$/.test(cleaned)) {
-        return `+91${cleaned}`;
+        return cleaned; // Return only the 10-digit number
       }
       // If invalid format and required, throw error
       if (required) {
