@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import {
     X,
     Trash2,
@@ -11,6 +12,7 @@ import type {
     CustomerWithVehicles,
     Vehicle,
 } from "@/shared/types";
+import type { Part } from "@/shared/types/inventory.types";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import type { CheckInSlipFormData } from "@/shared/types/check-in-slip.types";
 import { CheckInSlipForm } from "../check-in-slip/CheckInSlipForm";
@@ -29,6 +31,7 @@ interface CreateQuotationModalProps {
     clearCustomerSearch: () => void;
     insurers: Insurer[];
     noteTemplates: NoteTemplate[];
+    parts: Part[];
     totals: any; // Define proper type if available
     addItem: () => void;
     removeItem: (index: number) => void;
@@ -60,6 +63,7 @@ export function CreateQuotationModal({
     clearCustomerSearch,
     insurers,
     noteTemplates,
+    parts,
     totals,
     addItem,
     removeItem,
@@ -77,6 +81,11 @@ export function CreateQuotationModal({
     loading,
     isEditing = false,
 }: CreateQuotationModalProps) {
+    // Autocomplete state
+    const [partSearch, setPartSearch] = useState<{[key: number]: string}>({});
+    const [showPartSuggestions, setShowPartSuggestions] = useState<{[key: number]: boolean}>({});
+    const [filteredParts, setFilteredParts] = useState<{[key: number]: Part[]}>({});
+    const partInputRefs = useRef<{[key: number]: HTMLInputElement | null}>({});
     // Get appointment data directly from localStorage as fallback
     const appointmentDataFromStorage = typeof window !== "undefined"
         ? safeStorage.getItem<any>("pendingQuotationFromAppointment", null)?.appointmentData
@@ -104,6 +113,54 @@ export function CreateQuotationModal({
         appointmentDataFromStorage?.insuranceEndDate ||
         "";
     const hasInsuranceData = !!(insuranceCompanyName || insuranceStartDate || insuranceEndDate);
+
+    // Handle part search
+    const handlePartSearch = (index: number, query: string) => {
+        setPartSearch(prev => ({ ...prev, [index]: query }));
+        updateItem(index, "partName", query);
+
+        if (query.trim().length > 0) {
+            const filtered = parts.filter(part => 
+                part.partName?.toLowerCase().includes(query.toLowerCase()) ||
+                part.partNumber?.toLowerCase().includes(query.toLowerCase())
+            ).slice(0, 10); // Limit to 10 results
+            
+            setFilteredParts(prev => ({ ...prev, [index]: filtered }));
+            setShowPartSuggestions(prev => ({ ...prev, [index]: true }));
+        } else {
+            setShowPartSuggestions(prev => ({ ...prev, [index]: false }));
+        }
+    };
+
+    // Handle part selection from dropdown
+    const handlePartSelect = (index: number, part: Part) => {
+        // Update all fields at once to ensure proper state update
+        const updatedItems = [...form.items];
+        updatedItems[index] = {
+            ...updatedItems[index],
+            partName: part.partName || "",
+            partNumber: part.partNumber || "",
+            rate: part.sellingPrice || 0,
+            gstPercent: part.gstPercent || 18,
+        };
+        
+        setForm({ ...form, items: updatedItems });
+        setPartSearch(prev => ({ ...prev, [index]: part.partName || "" }));
+        setShowPartSuggestions(prev => ({ ...prev, [index]: false }));
+    };
+
+    // Click outside to close dropdown
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement;
+            if (!target.closest('.part-autocomplete-wrapper')) {
+                setShowPartSuggestions({});
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
@@ -361,14 +418,51 @@ export function CreateQuotationModal({
                                             {form.items.map((item: QuotationItem, index: number) => (
                                                 <tr key={index}>
                                                     <td className="px-3 py-2">{item.serialNumber}</td>
-                                                    <td className="px-3 py-2">
-                                                        <input
-                                                            type="text"
-                                                            value={item.partName}
-                                                            onChange={(e) => updateItem(index, "partName", e.target.value)}
-                                                            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                                                            required
-                                                        />
+                                                    <td className="px-3 py-2 part-autocomplete-wrapper">
+                                                        <div className="relative">
+                                                            <input
+                                                                ref={(el) => partInputRefs.current[index] = el}
+                                                                type="text"
+                                                                value={item.partName}
+                                                                onChange={(e) => handlePartSearch(index, e.target.value)}
+                                                                onFocus={() => {
+                                                                    if (item.partName && filteredParts[index]?.length > 0) {
+                                                                        setShowPartSuggestions(prev => ({ ...prev, [index]: true }));
+                                                                    }
+                                                                }}
+                                                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                                placeholder="Type to search parts..."
+                                                                autoComplete="off"
+                                                                required
+                                                            />
+                                                        </div>
+                                                        {showPartSuggestions[index] && filteredParts[index]?.length > 0 && (
+                                                            <div className="fixed z-[9999] bg-white border border-gray-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto min-w-[300px]"
+                                                                style={{
+                                                                    top: `${partInputRefs.current[index]?.getBoundingClientRect().bottom + 4}px`,
+                                                                    left: `${partInputRefs.current[index]?.getBoundingClientRect().left}px`,
+                                                                    width: `${partInputRefs.current[index]?.offsetWidth}px`
+                                                                }}
+                                                            >
+                                                                {filteredParts[index].map((part, idx) => (
+                                                                    <div
+                                                                        key={idx}
+                                                                        onMouseDown={(e) => {
+                                                                            e.preventDefault();
+                                                                            handlePartSelect(index, part);
+                                                                        }}
+                                                                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                                                                    >
+                                                                        <div className="font-medium text-sm text-gray-900">{part.partName}</div>
+                                                                        <div className="text-xs text-gray-600">
+                                                                            {part.partNumber && <span className="mr-3">Code: {part.partNumber}</span>}
+                                                                            {part.sellingPrice && <span className="mr-3">₹{part.sellingPrice}</span>}
+                                                                            {part.currentStock !== undefined && <span>Stock: {part.currentStock}</span>}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="px-3 py-2">
                                                         <input

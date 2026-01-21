@@ -25,17 +25,60 @@ class CustomerService {
   async create(data: NewCustomerForm): Promise<CustomerWithVehicles> {
     // Map frontend form data to backend DTO structure
     // This ensures we only send fields the backend expects and map mismatches
+    
+    // Helper to format phone number for @IsPhoneNumber('IN') validation
+    // Backend validator accepts E.164 format (+91XXXXXXXXXX) or 10-digit numbers
+    // We'll use E.164 format as it's the standard for @IsPhoneNumber
+    const formatPhoneForBackend = (phone: string | undefined | null, required: boolean = false): string | undefined => {
+      if (!phone || phone.trim() === '') {
+        if (required) {
+          throw new Error('Phone number is required');
+        }
+        return undefined;
+      }
+      // If already in E.164 format, return as is
+      if (phone.startsWith('+91')) return phone;
+      // Remove any spaces, dashes, and existing country code
+      const cleaned = phone.replace(/[\s-+]/g, "").replace(/^91/, "");
+      // Must be 10 digits starting with 6-9 for Indian mobile numbers
+      if (/^[6-9]\d{9}$/.test(cleaned)) {
+        return `+91${cleaned}`;
+      }
+      // If invalid format and required, throw error
+      if (required) {
+        throw new Error('Phone number must be a valid 10-digit Indian mobile number');
+      }
+      // For optional fields, return undefined if invalid
+      return undefined;
+    };
+
+    // Helper to handle optional fields - convert empty strings to undefined
+    // Backend validators like @IsPhoneNumber and @IsEmail fail on empty strings even with @IsOptional
+    const handleOptionalField = <T>(value: T | undefined | null | string): T | undefined => {
+      if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+        return undefined;
+      }
+      return value as T;
+    };
+
     const backendPayload = {
-      name: data.name,
-      phone: data.phone,
-      whatsappNumber: data.whatsappNumber,
-      alternateNumber: data.alternateNumber,
-      email: data.email,
-      address: data.address,
-      cityState: data.cityState,
-      pincode: data.pincode,
+      name: data.name?.trim(),
+      phone: formatPhoneForBackend(data.phone, true), // Required field
+      whatsappNumber: formatPhoneForBackend(data.whatsappNumber),
+      alternateNumber: formatPhoneForBackend(data.alternateNumber),
+      email: handleOptionalField(data.email),
+      address: handleOptionalField(data.address),
+      cityState: handleOptionalField(data.cityState),
+      pincode: handleOptionalField(data.pincode),
       customerType: data.customerType || 'B2C'
     };
+
+    // Remove undefined fields from payload to avoid sending them
+    Object.keys(backendPayload).forEach(key => {
+      if (backendPayload[key as keyof typeof backendPayload] === undefined) {
+        delete backendPayload[key as keyof typeof backendPayload];
+      }
+    });
 
     return customerRepository.create(backendPayload as any);
   }

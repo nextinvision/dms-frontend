@@ -10,6 +10,7 @@ import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { populateJobCardPart1, createEmptyJobCardPart1 } from "@/shared/utils/jobCardData.util";
 import { generateJobCardNumber } from "@/shared/utils/job-card.utils";
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
+import { useCreateJobCard } from "@/features/job-cards/hooks/useJobCards";
 import { customerService } from "@/features/customers/services/customer.service";
 import { SERVICE_CENTER_CODE_MAP } from "./constants";
 import type { AppointmentRecord } from "./types";
@@ -183,9 +184,12 @@ function AppointmentsContent() {
         uploadedBy: userInfo?.id, // Current user creating the job card
       };
 
-      // Create job card via backend API
+      // Root-level fix: Use React Query mutation for automatic cache invalidation
       // Note: DTO structure differs from frontend JobCard type, backend will handle conversion
-      const createdJobCard = await jobCardService.create(createJobCardDto as any);
+      const createdJobCard = await createJobCardMutation.mutateAsync({ 
+        data: createJobCardDto as any, 
+        userId: undefined 
+      });
 
       // Set current job card ID for UI tracking
       setCurrentJobCardId(createdJobCard.id);

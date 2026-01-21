@@ -7,6 +7,12 @@ import { staffService } from "@/features/workshop/services/staff.service";
 // import { jobCardPartsRequestService } from "@/features/inventory/services/jobCardPartsRequest.service"; // Removed
 import type { JobCardPart2Item } from "@/shared/types/job-card.types";
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
+import { 
+  useAssignEngineer, 
+  useUpdateJobCardStatus, 
+  usePassToManager, 
+  useManagerReview 
+} from "@/features/job-cards/hooks/useJobCards";
 import { partsIssueService } from "@/features/inventory/services/parts-issue.service"; // Added
 // Import utils
 import { generateInvoiceNumber, populateInvoiceFromJobCard } from "@/shared/utils/invoice.utils";
@@ -26,6 +32,12 @@ export function useJobCardActions(
 ) {
     const router = useRouter();
     const { showSuccess, showError, showWarning } = useToastStore();
+
+    // Root-level fix: Initialize React Query mutations for automatic cache invalidation
+    const assignEngineerMutation = useAssignEngineer();
+    const updateStatusMutation = useUpdateJobCardStatus();
+    const passToManagerMutation = usePassToManager();
+    const managerReviewMutation = useManagerReview();
 
     // Engineers State
     const [engineers, setEngineers] = useState<Engineer[]>([]);
@@ -79,8 +91,14 @@ export function useJobCardActions(
                 throw new Error("Engineer not found");
             }
 
-            await jobCardService.assignEngineer(jobId, engineerId, engineer.name);
+            // Root-level fix: Use React Query mutation for automatic cache invalidation
+            await assignEngineerMutation.mutateAsync({
+                id: jobId,
+                engineerId,
+                engineerName: engineer.name
+            });
 
+            // Optimistic update for immediate UI feedback (cache invalidation will sync backend data)
             setJobCards((prev) =>
                 prev.map((job) =>
                     job.id === jobId
@@ -110,9 +128,10 @@ export function useJobCardActions(
         try {
             setLoading(true);
 
-            // Use jobCardService API
-            await jobCardService.updateStatus(jobId, status);
+            // Root-level fix: Use React Query mutation for automatic cache invalidation
+            await updateStatusMutation.mutateAsync({ id: jobId, status });
 
+            // Optimistic update for immediate UI feedback (cache invalidation will sync backend data)
             const updatedJobCards = jobCards.map((job) =>
                 job.id === jobId
                     ? {
@@ -313,8 +332,10 @@ export function useJobCardActions(
             setLoading(true);
             const managerId = "sc-manager-001"; // Default Manager ID
 
-            await jobCardService.passToManager(targetJob.id, managerId);
+            // Root-level fix: Use React Query mutation for automatic cache invalidation
+            await passToManagerMutation.mutateAsync({ id: targetJob.id, managerId });
 
+            // Optimistic update for immediate UI feedback (cache invalidation will sync backend data)
             const updatedJobCards = jobCards.map((j) =>
                 j.id === targetJob.id
                     ? { ...j, status: "CREATED" as JobCardStatus, passedToManager: true, passedToManagerAt: new Date().toISOString() }
@@ -335,7 +356,8 @@ export function useJobCardActions(
     const handleManagerReview = async (jobId: string, status: "APPROVED" | "REJECTED", notes?: string) => {
         try {
             setLoading(true);
-            await jobCardService.managerReview(jobId, { status, notes });
+            // Root-level fix: Use React Query mutation for automatic cache invalidation
+            await managerReviewMutation.mutateAsync({ id: jobId, status, notes });
 
             // Optimistic update
             const updatedJobCards = jobCards.map(j =>

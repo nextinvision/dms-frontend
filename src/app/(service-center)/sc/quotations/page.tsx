@@ -48,6 +48,7 @@ import { ViewQuotationModal } from "../components/quotations/ViewQuotationModal"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { quotationRepository } from "@/core/repositories/quotation.repository";
 import { serviceCenterRepository } from "@/core/repositories/service-center.repository";
+import { usePassToManager, useConvertToActual } from "@/features/job-cards/hooks/useJobCards";
 import { jobCardRepository } from "@/core/repositories/job-card.repository";
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { appointmentRepository } from "@/core/repositories/appointment.repository";
@@ -85,6 +86,11 @@ function QuotationsContent() {
   const [activeCustomerId, setActiveCustomerId] = useState<string>("");
 
   const queryClient = useQueryClient();
+  
+  // Root-level fix: Initialize React Query mutations for automatic cache invalidation
+  const passToManagerMutation = usePassToManager();
+  const convertToActualMutation = useConvertToActual();
+  
   const { data: quotations = [], isLoading: isLoadingQuotations } = useQuery({
     queryKey: ['quotations'],
     queryFn: () => quotationRepository.getAll(),
@@ -1871,7 +1877,8 @@ Please keep this slip safe for vehicle collection.`;
             "This quotation contains warranty items. The Job Card must be approved by the Manager before sending. Send Job Card to Manager now?",
             async () => {
               try {
-                await jobCardService.passToManager(jobCard.id, "sc-manager-001");
+                // Root-level fix: Use React Query mutation for automatic cache invalidation
+                await passToManagerMutation.mutateAsync({ id: jobCard.id, managerId: "sc-manager-001" });
                 showSuccess("Job Card sent to Manager for approval.");
               } catch (e) {
                 showError("Failed to send Job Card to Manager.");
@@ -2115,7 +2122,8 @@ Please keep this slip safe for vehicle collection.`;
               // We assume convertToActual endpoint exists and works
               // Since we can't test backend, we trust based on user request "converted to actual job card"
               // If not, we might need to update status manually
-              const updatedJobCard = await jobCardService.convertToActual(jobCardId);
+              // Root-level fix: Use React Query mutation for automatic cache invalidation
+              const updatedJobCard = await convertToActualMutation.mutateAsync(jobCardId);
 
               // Enforce status to CREATED as per user requirement
               if (updatedJobCard.status !== "CREATED") {
@@ -2209,7 +2217,7 @@ Please keep this slip safe for vehicle collection.`;
 
 
   // Open Quotation/Check-in Slip for Viewing
-  const handleOpenQuotation = (quotation: Quotation) => {
+  const handleOpenQuotation = async (quotation: Quotation) => {
     if (quotation.documentType === "Check-in Slip") {
       // Load check-in slip data and display
       const storedCheckInSlipData = safeStorage.getItem<any>(`checkInSlip_${quotation.id}`, null) as EnhancedCheckInSlipData | null;
@@ -2253,8 +2261,21 @@ Please keep this slip safe for vehicle collection.`;
         setShowCheckInSlipModal(true);
       }
     } else {
-      setSelectedQuotation(quotation);
-      setShowViewModal(true);
+      // Fetch full quotation details to ensure items are included
+      try {
+        setLoading(true);
+        const fullQuotation = await quotationRepository.getById(quotation.id);
+        setSelectedQuotation(fullQuotation);
+        setShowViewModal(true);
+      } catch (error) {
+        console.error("Error fetching quotation details:", error);
+        showError("Failed to load quotation details. Please try again.");
+        // Fallback to using the quotation from list if fetch fails
+        setSelectedQuotation(quotation);
+        setShowViewModal(true);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 

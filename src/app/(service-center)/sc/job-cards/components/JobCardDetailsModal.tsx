@@ -114,18 +114,49 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                         <div>
                             <h3 className="font-semibold text-gray-800 mb-1 md:mb-2 text-sm md:text-base">Required Parts</h3>
                             <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
-                                {job.parts && job.parts.length > 0 ? (
+                                {(() => {
+                                    // Get items from items relation (JobCardItem[]) or part2 JSON array, fallback to legacy parts
+                                    const items = job.items || (Array.isArray(job.part2) ? job.part2 : []) || [];
+                                    const partItems = items.filter((item: any) => 
+                                        item?.itemType === 'part' || (item && !item.itemType && item.partName)
+                                    );
+                                    
+                                    // Fallback to legacy parts field for backward compatibility
+                                    const legacyParts = job.parts || [];
+                                    
+                                    if (partItems.length > 0) {
+                                        return (
+                                            <ul className="space-y-1">
+                                                {partItems.map((item: any, idx: number) => (
+                                                    <li key={idx} className="text-xs md:text-sm text-gray-700 flex items-center gap-1 md:gap-2 break-words">
+                                                        <Package size={12} className="text-gray-400 flex-shrink-0" />
+                                                        <span>
+                                                            {item.partName || item.part}
+                                                            {item.qty && ` (Qty: ${item.qty})`}
+                                                            {item.isWarranty && (
+                                                                <span className="ml-2 text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
+                                                                    Warranty
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        );
+                                    } else if (legacyParts.length > 0) {
+                                        return (
                                     <ul className="space-y-1">
-                                        {job.parts.map((part, idx) => (
+                                                {legacyParts.map((part: string, idx: number) => (
                                             <li key={idx} className="text-xs md:text-sm text-gray-700 flex items-center gap-1 md:gap-2 break-words">
                                                 <Package size={12} className="text-gray-400 flex-shrink-0" />
                                                 {part}
                                             </li>
                                         ))}
                                     </ul>
-                                ) : (
-                                    <p className="text-xs md:text-sm text-gray-500">No parts required</p>
-                                )}
+                                        );
+                                    }
+                                    return <p className="text-xs md:text-sm text-gray-500">No parts required</p>;
+                                })()}
                             </div>
                         </div>
                         <div>

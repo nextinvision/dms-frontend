@@ -45,6 +45,13 @@ import { getServiceCenterContext, filterByServiceCenter, shouldFilterByServiceCe
 import type { DocumentationFiles } from '@/shared/types/documentation.types';
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { quotationsService } from "@/features/quotations/services/quotations.service";
+import { 
+  useManagerReview, 
+  useUpdatePartsRequestStatus, 
+  useAssignEngineer,
+  usePendingPartsRequests,
+  useJobCardsQuery
+} from "@/features/job-cards/hooks/useJobCards";
 
 interface ServiceIntakeForm {
   customerIdProof: DocumentationFiles;
@@ -133,6 +140,41 @@ export default function Approvals() {
   const shouldFilter = shouldFilterByServiceCenter(serviceCenterContext);
   const { showSuccess, showError, showInfo } = useToast();
 
+  // Root-level fix: Initialize React Query mutations for automatic cache invalidation
+  const managerReviewMutation = useManagerReview();
+  const updatePartsRequestStatusMutation = useUpdatePartsRequestStatus();
+  const assignEngineerMutation = useAssignEngineer();
+
+  // Root-level fix: Use React Query for fetching job cards and parts requests
+  const jobCardQueryParams = useMemo(() => {
+    const params: any = {
+      passedToManager: 'true',
+      managerReviewStatus: 'PENDING'
+    };
+    if (shouldFilter && serviceCenterContext.serviceCenterId) {
+      params.serviceCenterId = serviceCenterContext.serviceCenterId;
+    }
+    return params;
+  }, [shouldFilter, serviceCenterContext.serviceCenterId]);
+
+  const { data: fetchedJobCards, refetch: refetchJobCards } = useJobCardsQuery(jobCardQueryParams);
+  const { data: fetchedPartsRequests, refetch: refetchPartsRequests } = usePendingPartsRequests(
+    shouldFilter && serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined
+  );
+
+  // Sync React Query data to local state (for compatibility with existing code)
+  useEffect(() => {
+    if (fetchedJobCards) {
+      setJobCardApprovals(fetchedJobCards);
+    }
+  }, [fetchedJobCards]);
+
+  useEffect(() => {
+    if (fetchedPartsRequests) {
+      setPartsRequests(fetchedPartsRequests);
+    }
+  }, [fetchedPartsRequests]);
+
   // Modal States
   const [confirmModalState, setConfirmModalState] = useState<{
     isOpen: boolean;
@@ -189,12 +231,14 @@ export default function Approvals() {
         refreshQuotations();
         showInfo("Quotation rejected.");
       } else if (type === 'JOB_CARD') {
-        await jobCardService.managerReview(targetId, { status: "REJECTED", notes: rejectionReason });
-        refreshJobCards();
+        // Root-level fix: Use React Query mutation for automatic cache invalidation
+        await managerReviewMutation.mutateAsync({ id: targetId, status: "REJECTED", notes: rejectionReason });
+        await refetchJobCards(); // Refetch to update UI immediately
         showInfo("Job card rejected.");
       } else if (type === 'PARTS_REQUEST') {
-        await jobCardService.updatePartsRequestStatus(targetId, "REJECTED", rejectionReason);
-        refreshPartsRequests();
+        // Root-level fix: Use React Query mutation for automatic cache invalidation
+        await updatePartsRequestStatusMutation.mutateAsync({ id: targetId, status: "REJECTED", notes: rejectionReason });
+        await refetchPartsRequests(); // Refetch to update UI immediately
         showInfo("Parts Request rejected.");
       } else if (type === 'SERVICE_INTAKE') {
         processServiceIntakeRejection(targetId, rejectionReason);
@@ -217,23 +261,16 @@ export default function Approvals() {
     setQuotations(finalQuotations);
   };
 
+  // Root-level fix: refreshJobCards and refreshPartsRequests now use React Query refetch
+  // These functions kept for backward compatibility with existing code
   const refreshJobCards = async () => {
-    const queryParams: any = {
-      passedToManager: 'true',
-      managerReviewStatus: 'PENDING'
-    };
-    if (shouldFilter && serviceCenterContext.serviceCenterId) {
-      queryParams.serviceCenterId = serviceCenterContext.serviceCenterId;
-    }
-    const pendingJobCards = await jobCardService.getAll(queryParams);
-    setJobCardApprovals(pendingJobCards);
+    // Root-level fix: Use React Query refetch instead of direct service call
+    await refetchJobCards();
   };
 
   const refreshPartsRequests = async () => {
-    const pendingParts = await jobCardService.getPendingPartsRequests(
-      shouldFilter && serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined
-    );
-    setPartsRequests(pendingParts);
+    // Root-level fix: Use React Query refetch instead of direct service call
+    await refetchPartsRequests();
   };
 
   const processServiceIntakeRejection = (requestId: string, reason: string) => {
@@ -474,8 +511,9 @@ export default function Approvals() {
       "Approve this job card? This will allow technician assignment and parts monitoring.",
       async () => {
         try {
-          await jobCardService.managerReview(jobCardId, { status: "APPROVED", notes: "Approved via Web Portal" });
-          await refreshJobCards();
+          // Root-level fix: Use React Query mutation for automatic cache invalidation
+          await managerReviewMutation.mutateAsync({ id: jobCardId, status: "APPROVED", notes: "Approved via Web Portal" });
+          await refetchJobCards(); // Refetch to update UI immediately
           setShowJobCardModal(false);
           setSelectedJobCard(null);
           showSuccess("Job card approved! You can now assign a technician.");
@@ -562,15 +600,16 @@ export default function Approvals() {
         // Find engineer name
         const engineer = engineers.find(e => e.id === selectedEngineerId);
         if (engineer) {
-          await jobCardService.assignEngineer(jobCardId, selectedEngineerId, engineer.name);
+          // Root-level fix: Use React Query mutation for automatic cache invalidation
+          await assignEngineerMutation.mutateAsync({ id: jobCardId, engineerId: selectedEngineerId, engineerName: engineer.name });
         }
       }
 
-      // 2. Approve Request
-      await jobCardService.updatePartsRequestStatus(requestId, "APPROVED");
+      // 2. Approve Request - Root-level fix: Use React Query mutation for automatic cache invalidation
+      await updatePartsRequestStatusMutation.mutateAsync({ id: requestId, status: "APPROVED", jobCardId });
 
-      await refreshPartsRequests();
-      await refreshJobCards(); // In case status changed
+      await refetchPartsRequests(); // Refetch to update UI immediately
+      await refetchJobCards(); // In case status changed
 
       setApprovePartsModalState(prev => ({ ...prev, isOpen: false }));
       showSuccess("Parts Request Approved & Engineer Confirmed!");
@@ -664,11 +703,36 @@ export default function Approvals() {
                               "N/A"
                             }
                           </p>
-                          {jobCard.parts && jobCard.parts.length > 0 && (
-                            <p className="text-gray-700">
-                              <span className="font-semibold">Required Parts:</span> {jobCard.parts.join(", ")}
-                            </p>
-                          )}
+                          {/* Display part items from items relation or part2 JSON */}
+                          {(() => {
+                            // Get items from items relation (JobCardItem[]) or part2 JSON array
+                            const items = (jobCard as any).items || (Array.isArray(jobCard.part2) ? jobCard.part2 : []) || [];
+                            const partItems = items.filter((item: any) => 
+                              item?.itemType === 'part' || (item && !item.itemType && item.partName)
+                            );
+                            
+                            if (partItems.length > 0) {
+                              return (
+                                <div className="text-gray-700">
+                                  <span className="font-semibold">Required Parts:</span>
+                                  <ul className="list-disc list-inside mt-1 space-y-1 ml-4">
+                                    {partItems.map((item: any, idx: number) => (
+                                      <li key={idx} className="text-sm">
+                                        {item.partName || item.part}
+                                        {item.qty && ` (Qty: ${item.qty})`}
+                                        {item.isWarranty && (
+                                          <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-medium">
+                                            Warranty
+                                          </span>
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                           {jobCard.estimatedCost && (
                             <p className="text-gray-700">
                               <span className="font-semibold">Estimated Cost:</span>{" "}

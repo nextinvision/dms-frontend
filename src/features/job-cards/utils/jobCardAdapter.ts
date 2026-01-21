@@ -380,9 +380,29 @@ export const jobCardAdapter = {
             vcuSerialNumber: jobCard.part1?.vcuSerialNumber || jobCard.part1Data?.vcuSerialNumber || "",
             otherPartSerialNumber: jobCard.part1?.otherPartSerialNumber || jobCard.part1Data?.otherPartSerialNumber || "",
 
-            // Part 2
+            // Part 2 - Root-level fix: Merge items from BOTH items relation (source of truth) AND part2 JSON
             part2Items: (() => {
-                const existing = jobCard.part2 || [];
+                // Source of truth: items relation (normalized database records)
+                const itemsRelation = (jobCard.items || []).map((item: any) => ({
+                    srNo: item.srNo || 0,
+                    partName: item.partName || "",
+                    partCode: item.partCode || "",
+                    qty: item.qty || 1,
+                    amount: item.amount || 0,
+                    technician: item.technician || "",
+                    labourCode: item.labourCode || "",
+                    itemType: item.itemType || "part",
+                    partWarrantyTag: item.partWarrantyTag || false,
+                    isWarranty: item.isWarranty || false,
+                    inventoryPartId: item.inventoryPartId,
+                    serialNumber: item.serialNumber,
+                    warrantyTagNumber: item.warrantyTagNumber,
+                })).filter((item: any) => item.partName && item.partCode);
+
+                // Fallback: part2 JSON (legacy/compatibility)
+                const part2Json = jobCard.part2 || [];
+
+                // Completed parts requests items
                 const completedRequests = (jobCard.partsRequests || []).filter((pr: any) => pr.status === 'COMPLETED');
                 const completedItems = completedRequests.flatMap((pr: any) => pr.items || []).map((item: any) => ({
                     srNo: 0,
@@ -394,17 +414,46 @@ export const jobCardAdapter = {
                     labourCode: "Auto Select With Part",
                     itemType: "part",
                     partWarrantyTag: item.isWarranty || false,
+                    isWarranty: item.isWarranty || false,
                 }));
 
-                // Combine and dedupe based on code and name
-                const combined = [...existing];
+                // Merge strategy: items relation is source of truth, then part2 JSON, then completed items
+                // Use items relation if available, otherwise fallback to part2 JSON
+                const baseItems = itemsRelation.length > 0 ? itemsRelation : part2Json;
+
+                // Dedupe function based on partCode and partName
+                const dedupeItems = (items: any[]): any[] => {
+                    const seen = new Set<string>();
+                    return items.filter((item: any) => {
+                        const key = `${item.partCode || ''}_${item.partName || ''}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+                };
+
+                // Combine: base items (from relation or JSON) + completed items
+                let combined = [...baseItems];
                 completedItems.forEach((ci: any) => {
-                    const exists = combined.some(e => e.partCode === ci.partCode && e.partName === ci.partName);
+                    const exists = combined.some((e: any) => 
+                        (e.partCode && ci.partCode && e.partCode === ci.partCode) ||
+                        (e.partName && ci.partName && e.partName === ci.partName)
+                    );
                     if (!exists) {
                         combined.push(ci);
                     }
                 });
-                return combined.map((item, i) => ({ ...item, srNo: i + 1 }));
+
+                // Dedupe final result
+                combined = dedupeItems(combined);
+
+                // Ensure all items have required fields and renumber srNo
+                return combined
+                    .filter((item: any) => item.partName && item.partCode)
+                    .map((item: any, i: number) => ({ 
+                        ...item, 
+                        srNo: item.srNo || i + 1 
+                    }));
             })(),
             requestedParts: jobCard.requestedParts || (jobCard.partsRequests?.length ? jobCard.partsRequests
                 .filter((pr: any) => pr.status !== 'COMPLETED')

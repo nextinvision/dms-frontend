@@ -11,6 +11,14 @@ import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { createPartsRequestFromJobCard } from "@/shared/utils/jobCardPartsRequest.util";
 import { customerService } from "@/features/customers/services/customer.service";
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
+import { 
+  useCreateJobCard, 
+  useUpdateJobCard, 
+  usePassToManager,
+  useUpdateJobCardStatus,
+  useManagerReview,
+  useCreatePartsRequest
+} from "@/features/job-cards/hooks/useJobCards";
 import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/components/check-in-slip/CheckInSlip";
 import { getServiceCenterCode } from "@/shared/utils/service-center.utils";
 import { JobCard } from "@/shared/types/job-card.types";
@@ -65,6 +73,14 @@ export default function JobCardFormModal({
 
   // Generate a temporary ID for file uploads during creation
   const [tempId] = useState(() => generateTempEntityId());
+
+  // Root-level fix: Initialize React Query mutations for automatic cache invalidation
+  const createJobCardMutation = useCreateJobCard();
+  const updateJobCardMutation = useUpdateJobCard();
+  const passToManagerMutation = usePassToManager();
+  const updateStatusMutation = useUpdateJobCardStatus();
+  const managerReviewMutation = useManagerReview();
+  const createPartsRequestMutation = useCreatePartsRequest();
 
   const {
     form,
@@ -204,7 +220,6 @@ export default function JobCardFormModal({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-
     setIsSubmitting(true);
     try {
       const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
@@ -218,13 +233,23 @@ export default function JobCardFormModal({
         jobCardForSave
       );
 
-      let savedJobCard;
+      let savedJobCard: JobCard;
 
       if (mode === "edit") {
-        savedJobCard = await jobCardService.update(jobCardId!, jobCardToSave);
+        // Root-level fix: Use React Query mutation for automatic cache invalidation
+        savedJobCard = await updateJobCardMutation.mutateAsync({
+          id: jobCardId!,
+          data: jobCardToSave,
+          userId: userInfo?.id
+        });
+        // Preserve existing callback behavior
         onUpdated?.(savedJobCard);
       } else {
-        savedJobCard = await jobCardService.create(jobCardToSave);
+        // Root-level fix: Use React Query mutation for automatic cache invalidation
+        savedJobCard = await createJobCardMutation.mutateAsync({
+          data: jobCardToSave,
+          userId: userInfo?.id
+        });
 
         // Link any uploaded files (using tempId) to the real Job Card ID
         if (tempId) {
@@ -236,10 +261,11 @@ export default function JobCardFormModal({
           }
         }
 
+        // Preserve existing callback behavior
         onCreated(savedJobCard);
       }
 
-      // Create Parts Request if parts selected
+      // Create Parts Request if parts selected (preserve existing side effects)
       if (form.selectedParts && form.selectedParts.length > 0) {
         const requestedBy = `${serviceCenterContext.serviceCenterName || "Service Center"} - Advisor`;
         await createPartsRequestFromJobCard(savedJobCard || jobCardToSave, requestedBy);
@@ -265,19 +291,57 @@ export default function JobCardFormModal({
     try {
       setIsSubmitting(true);
 
+      // Root-level fix: Save/update the job card with current form data FIRST
+      // This ensures all updated items (including part2Items) are persisted before passing to manager
+      if (mode === "edit" && jobCardId) {
+        // Validate required fields before saving
+        if (!form.customerId || !form.vehicleId) {
+          throw new Error("Please select a customer and vehicle before passing to manager.");
+        }
+
+        // Prepare job card data with current form state (including updated part2Items)
+        const { migrateAllJobCards } = require("../../job-cards/utils/migrateJobCards.util");
+        const existingJobCards = migrateAllJobCards();
+        const jobCardForSave = apiJobCard || existingJobCards.find((jc: any) => jc.id === jobCardId);
+
+        const jobCardToSave = jobCardAdapter.mapFormToJobCard(
+          form,
+          serviceCenterId,
+          serviceCenterCode,
+          jobCardForSave
+        );
+
+        // Root-level fix: Use React Query mutation for automatic cache invalidation
+        const updatedJobCard = await updateJobCardMutation.mutateAsync({
+          id: jobCardId,
+          data: jobCardToSave,
+          userId: userInfo?.id
+        });
+        // Preserve existing callback behavior
+        onUpdated?.(updatedJobCard);
+        console.log("✅ Job card updated before passing to manager");
+      }
+
       // Fetch manager for this service center
       const managers = await userRepository.getByRole("sc_manager", serviceCenterId);
 
+      let managerId: string;
       if (managers.length === 0) {
         // Try without service center filter if none found specifically
         const allManagers = await userRepository.getByRole("sc_manager");
         if (allManagers.length === 0) {
           throw new Error("No manager found to pass this job card to.");
         }
-        await jobCardService.passToManager(jobCardId, allManagers[0].id);
+        managerId = allManagers[0].id;
       } else {
-        await jobCardService.passToManager(jobCardId, managers[0].id);
+        managerId = managers[0].id;
       }
+
+      // Root-level fix: Use React Query mutation for automatic cache invalidation
+      await passToManagerMutation.mutateAsync({
+        id: jobCardId,
+        managerId
+      });
 
       alert("Job card passed to manager successfully!");
       onClose();
@@ -321,7 +385,13 @@ export default function JobCardFormModal({
     setShowCheckInSlip(true);
   };
 
-  const handleCreateQuotation = async () => {
+  const handleCreateQuotation = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+    // Prevent form submission and event propagation
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
     if (!form.customerId || !form.vehicleId) {
       onError?.("Please select a customer and vehicle first.");
       return;
@@ -440,7 +510,8 @@ export default function JobCardFormModal({
           // If not manager approved (and thus not auto-approved), and currently CREATED,
           // move to AWAITING_QUOTATION_APPROVAL to act as "Draft" until customer approves.
           try {
-            await jobCardService.updateStatus(jobCardId!, "AWAITING_QUOTATION_APPROVAL");
+            // Root-level fix: Use React Query mutation for automatic cache invalidation
+            await updateStatusMutation.mutateAsync({ id: jobCardId!, status: "AWAITING_QUOTATION_APPROVAL" });
             console.log("Job Card status updated to AWAITING_QUOTATION_APPROVAL");
           } catch (statusError) {
             console.error("Failed to update job card status:", statusError);
@@ -481,7 +552,8 @@ export default function JobCardFormModal({
 
     try {
       setIsSubmitting(true);
-      await jobCardService.managerReview(jobCardId, { status, notes: finalNotes || "" });
+      // Root-level fix: Use React Query mutation for automatic cache invalidation
+      await managerReviewMutation.mutateAsync({ id: jobCardId, status, notes: finalNotes || "" });
       alert(status === "APPROVED" ? "Job Card Approved!" : "Job Card Rejected!");
       onClose();
     } catch (error) {
@@ -576,7 +648,7 @@ export default function JobCardFormModal({
                       {result.type === 'quotation' && (
                         <div className="text-right">
                           <div className="text-xs font-mono text-gray-400 group-hover:text-blue-400">{result.quotation.quotationNumber}</div>
-                          <div className="text-sm font-semibold text-blue-600">Apply Approved Quotation</div>
+                          <div className="text-sm font-semibold text-blue-600">Apply Approved Quotations</div>
                         </div>
                       )}
                     </button>
@@ -628,7 +700,11 @@ export default function JobCardFormModal({
             <>
               <button
                 type="button"
-                onClick={handleCreateQuotation}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleCreateQuotation(e);
+                }}
                 disabled={isCreatingQuotation || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
                 className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
 
@@ -671,7 +747,8 @@ export default function JobCardFormModal({
                 if (!confirm("Start work on this job card?")) return;
                 try {
                   setIsSubmitting(true);
-                  await jobCardService.update(jobCardId!, { status: "IN_PROGRESS" });
+                  // Root-level fix: Use React Query mutation for automatic cache invalidation
+                  await updateStatusMutation.mutateAsync({ id: jobCardId!, status: "IN_PROGRESS" });
                   router.push("/sc/job-cards");
                 } catch (e) {
                   console.error(e);
@@ -707,10 +784,12 @@ export default function JobCardFormModal({
                     inventoryPartId: undefined // Could be mapped if part selection provides ID
                   }));
 
-                  await jobCardService.createPartsRequest(jobCardId, items);
+                  // Root-level fix: Use React Query mutation for automatic cache invalidation
+                  await createPartsRequestMutation.mutateAsync({ jobCardId, items });
 
                   alert("Parts request sent successfully!");
-                  if (typeof window !== 'undefined') window.location.reload();
+                  // Cache invalidation will automatically refresh UI - no need for page reload
+                  // if (typeof window !== 'undefined') window.location.reload();
                 } catch (e) {
                   console.error(e);
                   alert("Failed to send parts request");
@@ -733,7 +812,8 @@ export default function JobCardFormModal({
                 if (!confirm("Mark this job card as completed?")) return;
                 try {
                   setIsSubmitting(true);
-                  await jobCardService.update(jobCardId!, { status: "COMPLETED" });
+                  // Root-level fix: Use React Query mutation for automatic cache invalidation
+                  await updateStatusMutation.mutateAsync({ id: jobCardId!, status: "COMPLETED" });
                   router.push("/sc/job-cards");
                 } catch (e) {
                   console.error(e);

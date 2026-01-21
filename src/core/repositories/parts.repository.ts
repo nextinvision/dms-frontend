@@ -2,7 +2,7 @@ import { BaseRepository } from './base.repository';
 import type { Part } from '@/shared/types/inventory.types';
 
 class PartsRepository extends BaseRepository<Part> {
-    protected endpoint = '/inventory/parts';
+    protected endpoint = '/inventory';
 
     async getLowStock(): Promise<Part[]> {
         const response = await this.getAll({ filter: 'low_stock' });

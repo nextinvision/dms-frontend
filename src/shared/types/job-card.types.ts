@@ -218,11 +218,29 @@ export interface JobCard {
   // NEW STRUCTURED DATA (PART 1, PART 2, PART 2A, PART 3)
   part1?: JobCardPart1; // Customer & Vehicle Information
   part1Data?: any; // Historical snapshot (Part 1 - Customer & Vehicle Info) from backend
-  part2?: JobCardPart2Item[]; // Parts & Work Items List (Part 2 items)
+  part2?: JobCardPart2Item[]; // Parts & Work Items List (Part 2 items) - JSON field from backend
   part2A?: JobCardPart2A; // Warranty / Insurance Case Details (only if applicable)
   part2AData?: any; // Warranty / Insurance Case Details from backend
   part3?: JobCardPart3; // Part Requisition & Issue Details
   quotation?: any;
+
+  // Items relation from backend (JobCardItem[] table)
+  items?: Array<{
+    id: string;
+    srNo: number;
+    partWarrantyTag?: boolean | string;
+    partName: string;
+    partCode?: string;
+    qty: number;
+    amount?: number;
+    technician?: string;
+    labourCode?: string;
+    itemType?: "part" | "work_item";
+    serialNumber?: string;
+    isWarranty?: boolean;
+    inventoryPartId?: string;
+    warrantyTagNumber?: string;
+  }>;
 
   partsRequests?: PartsRequest[];
 }

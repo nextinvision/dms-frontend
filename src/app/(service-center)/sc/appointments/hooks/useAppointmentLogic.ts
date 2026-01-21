@@ -9,6 +9,7 @@ import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 
 import { customerService } from "@/features/customers/services/customer.service";
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
+import { useCreateJobCard } from "@/features/job-cards/hooks/useJobCards";
 import { appointmentsService } from "@/features/appointments/services/appointments.service"; // Added
 import { generateJobCardNumber } from "@/shared/utils/job-card.utils";
 import { populateJobCardPart1, createEmptyJobCardPart1 } from "@/shared/utils/jobCardData.util";
@@ -57,6 +58,9 @@ export const useAppointmentLogic = () => {
     // Router
     const router = useRouter();
     const searchParams = useSearchParams();
+
+    // Root-level fix: Initialize React Query mutation for automatic cache invalidation
+    const createJobCardMutation = useCreateJobCard();
 
     // Role Hooks
     const { userInfo, userRole } = useRole();
@@ -934,8 +938,11 @@ export const useAppointmentLogic = () => {
 
                 console.log("📋 Creating Temp Job Card with payload:", jobCardPayload);
 
-                // Create job card via API
-                const createdJobCard = await jobCardService.create(jobCardPayload as any);
+                // Root-level fix: Use React Query mutation for automatic cache invalidation
+                const createdJobCard = await createJobCardMutation.mutateAsync({ 
+                    data: jobCardPayload as any, 
+                    userId: undefined 
+                });
 
                 if (createdJobCard) {
                     console.log("✅ Temp Job Card Created Successfully:", createdJobCard);

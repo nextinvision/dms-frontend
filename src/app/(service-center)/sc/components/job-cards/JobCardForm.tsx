@@ -5,12 +5,18 @@ import { useRouter } from "next/navigation";
 import { Loader2, Search, UserPlus, FileText, CheckCircle, ArrowLeft } from "lucide-react";
 import { DocumentsSection } from "./sections/DocumentsSection";
 import { ConfirmModal } from "@/shared/components/ui/ConfirmModal/ConfirmModal";
+import { showSuccess, showError, showWarning } from "@/shared/utils/toast";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import { createPartsRequestFromJobCard } from "@/shared/utils/jobCardPartsRequest.util";
 import { customerService } from "@/features/customers/services/customer.service";
 import { jobCardService } from "@/features/job-cards/services/jobCard.service";
+import { 
+  useCreateJobCard, 
+  useUpdateJobCard, 
+  usePassToManager 
+} from "@/features/job-cards/hooks/useJobCards";
 import CheckInSlip, { generateCheckInSlipNumber, type CheckInSlipData } from "@/components/check-in-slip/CheckInSlip";
 import { getServiceCenterCode } from "@/shared/utils/service-center.utils";
 import { JobCard } from "@/shared/types/job-card.types";
@@ -54,6 +60,11 @@ export default function JobCardForm({
     // Active ID is either the real ID (edit mode) or the temp ID (create mode)
     const activeId = mode === "edit" ? jobCardId : tempEntityId;
 
+    // Root-level fix: Initialize React Query mutations for automatic cache invalidation
+    const createJobCardMutation = useCreateJobCard();
+    const updateJobCardMutation = useUpdateJobCard();
+    const passToManagerMutation = usePassToManager();
+
     const {
         form,
         setForm,
@@ -65,7 +76,7 @@ export default function JobCardForm({
     } = useJobCardForm({
         initialValues,
         serviceCenterId,
-        onError: (message) => alert(message),
+        onError: (message) => showError(message),
     });
 
     const [previewJobCardNumber, setPreviewJobCardNumber] = useState<string>("");
@@ -213,7 +224,7 @@ export default function JobCardForm({
         e.preventDefault();
 
         if (!form.customerId || !form.vehicleId) {
-            alert("Please select a customer and vehicle");
+            showWarning("Please select a customer and vehicle");
             return;
         }
 
@@ -229,11 +240,20 @@ export default function JobCardForm({
 
             let savedJobCard: JobCard;
             if (mode === "edit" && jobCardId) {
-                savedJobCard = await jobCardService.update(jobCardId, { ...jobCardToSave, id: jobCardId });
+                // Root-level fix: Use React Query mutation for automatic cache invalidation
+                savedJobCard = await updateJobCardMutation.mutateAsync({
+                    id: jobCardId,
+                    data: { ...jobCardToSave, id: jobCardId },
+                    userId: userInfo?.id
+                });
 
                 console.log("✅ Job card updated:", savedJobCard.id);
             } else {
-                savedJobCard = await jobCardService.create({ ...jobCardToSave }, userInfo?.id);
+                // Root-level fix: Use React Query mutation for automatic cache invalidation
+                savedJobCard = await createJobCardMutation.mutateAsync({
+                    data: { ...jobCardToSave },
+                    userId: userInfo?.id
+                });
 
                 console.log("✅ Job card created:", savedJobCard.id);
 
@@ -251,11 +271,11 @@ export default function JobCardForm({
                 await createPartsRequestFromJobCard(savedJobCard, requestedBy);
             }
 
-            alert(mode === "edit" ? "Job card updated successfully!" : "Job card created successfully!");
+            showSuccess(mode === "edit" ? "Job card updated successfully!" : "Job card created successfully!");
             router.push("/sc/job-cards");
         } catch (error) {
             console.error("Error saving job card:", error);
-            alert("Failed to save job card");
+            showError("Failed to save job card");
         } finally {
             setIsSubmitting(false);
         }
@@ -289,19 +309,51 @@ export default function JobCardForm({
             setIsSubmitting(true);
             setConfirmModal(prev => ({ ...prev, isOpen: false })); // Close confirmation
 
+            // Root-level fix: Save/update the job card with current form data FIRST
+            // This ensures all updated items (including part2Items) are persisted before passing to manager
+            if (mode === "edit" && jobCardId) {
+                // Validate required fields before saving
+                if (!form.customerId || !form.vehicleId) {
+                    throw new Error("Please select a customer and vehicle before passing to manager.");
+                }
+
+                // Prepare job card data with current form state (including updated part2Items)
+                const jobCardToSave = jobCardAdapter.mapFormToJobCard(
+                    form,
+                    serviceCenterId,
+                    serviceCenterCode,
+                    existingJobCard
+                );
+
+                // Root-level fix: Use React Query mutation for automatic cache invalidation
+                await updateJobCardMutation.mutateAsync({
+                    id: jobCardId,
+                    data: { ...jobCardToSave, id: jobCardId },
+                    userId: userInfo?.id
+                });
+                console.log("✅ Job card updated before passing to manager");
+            }
+
             // Fetch manager for this service center
             const managers = await userRepository.getByRole("sc_manager", serviceCenterId);
 
+            let managerId: string;
             if (managers.length === 0) {
                 // Try without service center filter if none found specifically
                 const allManagers = await userRepository.getByRole("sc_manager");
                 if (allManagers.length === 0) {
                     throw new Error("No manager found to pass this job card to.");
                 }
-                await jobCardService.passToManager(jobCardId, allManagers[0].id);
+                managerId = allManagers[0].id;
             } else {
-                await jobCardService.passToManager(jobCardId, managers[0].id);
+                managerId = managers[0].id;
             }
+
+            // Root-level fix: Use React Query mutation for automatic cache invalidation
+            await passToManagerMutation.mutateAsync({
+                id: jobCardId,
+                managerId
+            });
 
             // Success Popup
             setConfirmModal({
@@ -349,7 +401,7 @@ export default function JobCardForm({
 
     const handleCreateQuotation = async () => {
         if (!form.customerId || !form.vehicleId) {
-            alert("Please select a customer and vehicle first.");
+            showWarning("Please select a customer and vehicle first.");
             return;
         }
 
@@ -398,7 +450,7 @@ export default function JobCardForm({
             console.error("Error creating quotation:", error);
             const { formatApiErrorMessage } = require("@/shared/utils/api-validation.utils");
             const errorMessage = formatApiErrorMessage(error);
-            alert(`Failed to create quotation: ${errorMessage}`);
+            showError(`Failed to create quotation: ${errorMessage}`);
         } finally {
             setIsSubmitting(false);
         }
@@ -428,7 +480,7 @@ export default function JobCardForm({
 
                 {/* Search Section */}
                 <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-                    <h2 className="text-lg font-semibold text-gray-800 mb-4">Search Customer or Quotation</h2>
+                    <h2 className="text-lg font-semibold text-gray-800 mb-4">Search Customer or Quotations</h2>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                         <input
@@ -503,7 +555,7 @@ export default function JobCardForm({
                     <Part2ItemsSection
                         form={form}
                         updateField={updateFormField}
-                        onError={(message) => alert(message)}
+                        onError={(message) => showError(message)}
                         jobCardId={activeId}
                         userId={userInfo?.id}
                         onPassToManager={mode === "edit" && isServiceAdvisor ? handlePassToManager : undefined}

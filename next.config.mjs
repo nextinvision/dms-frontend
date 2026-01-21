@@ -1,18 +1,11 @@
 /** @type {import('next').NextConfig} */
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
-
 const nextConfig = {
-  // Base path for deployments behind a subpath (default: root)
-  basePath,
-  
   // Optimize images
   images: {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    // When deployed under a basePath (e.g. /dev), the image optimizer
-    // can request /<asset> without the basePath and fail. Disable for dev.
-    unoptimized: Boolean(basePath),
+    unoptimized: false,
   },
 
   // Compress output

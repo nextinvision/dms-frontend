@@ -197,7 +197,39 @@ export function jobCardToFormInitialValues(jobCard: JobCard): Partial<CreateJobC
 
     // Parts
     selectedParts: jobCard.parts || [],
-    part2Items: jobCard.part2 || [],
+    // Root-level fix: Load items from BOTH items relation (source of truth) AND part2 JSON
+    part2Items: (() => {
+      // Source of truth: items relation (normalized database records)
+      const itemsRelation = (jobCard.items || []).map((item: any) => ({
+        srNo: item.srNo || 0,
+        partName: item.partName || "",
+        partCode: item.partCode || "",
+        qty: item.qty || 1,
+        amount: item.amount || 0,
+        technician: item.technician || "",
+        labourCode: item.labourCode || "",
+        itemType: item.itemType || "part",
+        partWarrantyTag: item.partWarrantyTag || false,
+        isWarranty: item.isWarranty || false,
+        inventoryPartId: item.inventoryPartId,
+        serialNumber: item.serialNumber,
+        warrantyTagNumber: item.warrantyTagNumber,
+      })).filter((item: any) => item.partName && item.partCode);
+
+      // Fallback: part2 JSON (legacy/compatibility)
+      const part2Json = jobCard.part2 || [];
+
+      // Use items relation if available, otherwise fallback to part2 JSON
+      const baseItems = itemsRelation.length > 0 ? itemsRelation : part2Json;
+
+      // Ensure all items have required fields and renumber srNo
+      return baseItems
+        .filter((item: any) => item.partName && item.partCode)
+        .map((item: any, i: number) => ({ 
+          ...item, 
+          srNo: item.srNo || i + 1 
+        }));
+    })(),
 
     // Part 2A (warranty docs)
     videoEvidence: convertPart2AFieldToDocFiles(jobCard.part2A?.videoEvidence),

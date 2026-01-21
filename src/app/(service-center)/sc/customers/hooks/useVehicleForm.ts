@@ -5,7 +5,7 @@
 
 import { useState, useCallback } from "react";
 import { customerService } from "@/features/customers/services/customer.service";
-import { vehicleRepository } from "@/core/repositories/vehicle.repository";
+import { vehicleService } from "@/features/vehicles/services/vehicle.service";
 import { validateVIN } from "@/shared/utils/validation";
 import { initialVehicleForm } from "../constants/form.constants";
 import type { NewVehicleForm, Vehicle, CustomerWithVehicles } from "@/shared/types";
@@ -77,14 +77,13 @@ export function useVehicleForm(
       return { error: "Registration Number is required" };
     }
 
-    if (!newVehicleForm.vin) {
-      return { error: "VIN / Chassis Number is required" };
-    }
-
-    if (!validateVIN(newVehicleForm.vin)) {
-      return {
-        error: "Invalid VIN format. VIN must be exactly 17 alphanumeric characters",
-      };
+    // VIN is optional, but if provided, validate format
+    if (newVehicleForm.vin && newVehicleForm.vin.trim() !== "") {
+      if (!validateVIN(newVehicleForm.vin)) {
+        return {
+          error: "Invalid VIN format. VIN must be exactly 17 alphanumeric characters",
+        };
+      }
     }
 
     // Validate insurance dates if provided and hasInsurance is checked
@@ -119,13 +118,13 @@ export function useVehicleForm(
         return null;
       }
 
-      // Persist the vehicle to the repository
+      // Persist the vehicle using the service layer which handles data transformation
       let createdVehicle: Vehicle;
       try {
-        const payload = {
+        createdVehicle = await vehicleService.create({
           customerId: String(selectedCustomer.id),
           registration: newVehicleForm.registrationNumber!,
-          vin: newVehicleForm.vin!,
+          vin: newVehicleForm.vin,
           vehicleMake: newVehicleForm.vehicleBrand!,
           vehicleModel: newVehicleForm.vehicleModel!,
           vehicleYear: newVehicleForm.purchaseDate
@@ -136,13 +135,11 @@ export function useVehicleForm(
           motorNumber: newVehicleForm.motorNumber,
           chargerSerialNumber: newVehicleForm.chargerSerialNumber,
           warrantyStatus: newVehicleForm.warrantyStatus,
-          purchaseDate: newVehicleForm.purchaseDate ? new Date(newVehicleForm.purchaseDate).toISOString() : undefined,
-          insuranceStartDate: hasInsurance && newVehicleForm.insuranceStartDate ? new Date(newVehicleForm.insuranceStartDate).toISOString() : undefined,
-          insuranceEndDate: hasInsurance && newVehicleForm.insuranceEndDate ? new Date(newVehicleForm.insuranceEndDate).toISOString() : undefined,
+          purchaseDate: newVehicleForm.purchaseDate,
+          insuranceStartDate: hasInsurance ? newVehicleForm.insuranceStartDate : undefined,
+          insuranceEndDate: hasInsurance ? newVehicleForm.insuranceEndDate : undefined,
           insuranceCompanyName: hasInsurance ? newVehicleForm.insuranceCompanyName : undefined,
-        };
-
-        createdVehicle = await vehicleRepository.create(payload as any);
+        });
       } catch (error) {
         console.error("Failed to save vehicle:", error);
         showToast("Failed to save vehicle. Please try again.", "error");
@@ -203,9 +200,9 @@ export function useVehicleForm(
 
       let updatedVehicle: Vehicle;
       try {
-        const payload = {
+        updatedVehicle = await vehicleService.update(vehicleId, {
           registration: newVehicleForm.registrationNumber!,
-          vin: newVehicleForm.vin!,
+          vin: newVehicleForm.vin,
           vehicleMake: newVehicleForm.vehicleBrand!,
           vehicleModel: newVehicleForm.vehicleModel!,
           vehicleYear: newVehicleForm.purchaseDate
@@ -216,13 +213,11 @@ export function useVehicleForm(
           motorNumber: newVehicleForm.motorNumber,
           chargerSerialNumber: newVehicleForm.chargerSerialNumber,
           warrantyStatus: newVehicleForm.warrantyStatus,
-          purchaseDate: newVehicleForm.purchaseDate ? new Date(newVehicleForm.purchaseDate).toISOString() : undefined,
-          insuranceStartDate: hasInsurance && newVehicleForm.insuranceStartDate ? new Date(newVehicleForm.insuranceStartDate).toISOString() : undefined,
-          insuranceEndDate: hasInsurance && newVehicleForm.insuranceEndDate ? new Date(newVehicleForm.insuranceEndDate).toISOString() : undefined,
+          purchaseDate: newVehicleForm.purchaseDate,
+          insuranceStartDate: hasInsurance ? newVehicleForm.insuranceStartDate : undefined,
+          insuranceEndDate: hasInsurance ? newVehicleForm.insuranceEndDate : undefined,
           insuranceCompanyName: hasInsurance ? newVehicleForm.insuranceCompanyName : undefined,
-        };
-
-        updatedVehicle = await vehicleRepository.update(vehicleId, payload);
+        });
       } catch (error) {
         console.error("Failed to update vehicle:", error);
         showToast("Failed to update vehicle. Please try again.", "error");
