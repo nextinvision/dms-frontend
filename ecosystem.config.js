@@ -1,8 +1,7 @@
 module.exports = {
   apps: [{
     name: 'dms-frontend',
-    script: 'npm',
-    args: 'start',
+    script: '/home/fortytwoev/dms-frontend/start-production.sh',
     cwd: '/home/fortytwoev/dms-frontend',
     env: {
       NODE_ENV: 'production',

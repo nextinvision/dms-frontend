@@ -2,6 +2,12 @@
 # Fix CSS and JS chunk symlinks after build
 cd /home/fortytwoev/dms-frontend
 
+# Verify build artifacts exist before fixing symlinks
+if [ ! -d ".next/static" ] || [ ! -d ".next/static/css" ] || [ ! -d ".next/static/chunks" ]; then
+    echo "ERROR: Build artifacts missing! Run 'npm run build' first."
+    exit 1
+fi
+
 # Wait for server to be ready
 sleep 5
 
