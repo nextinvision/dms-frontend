@@ -38,7 +38,6 @@ interface CreateQuotationModalProps {
     updateItem: (index: number, field: keyof QuotationItem, value: string | number) => void;
     handleNoteTemplateChange: (templateId: string) => void;
     handleSubmit: (e: React.FormEvent) => void;
-    handleCreateAndSendToCustomer: () => void;
     handleGenerateAndSendCheckInSlip?: () => void;
     handleSendCheckInSlipToCustomer?: () => void;
     checkInSlipFormData: CheckInSlipFormData;
@@ -48,6 +47,10 @@ interface CreateQuotationModalProps {
     onClose: () => void;
     loading: boolean;
     isEditing?: boolean;
+    createdQuotationId?: string | null;
+    onSendToCustomerAfterCreate?: (quotationId: string) => void;
+  onCustomerApproveAfterCreate?: (quotationId: string) => void;
+  onCustomerRejectAfterCreate?: (quotationId: string) => void;
 }
 
 export function CreateQuotationModal({
@@ -70,7 +73,6 @@ export function CreateQuotationModal({
     updateItem,
     handleNoteTemplateChange,
     handleSubmit,
-    handleCreateAndSendToCustomer,
     handleGenerateAndSendCheckInSlip,
     handleSendCheckInSlipToCustomer,
     checkInSlipFormData,
@@ -80,6 +82,10 @@ export function CreateQuotationModal({
     onClose,
     loading,
     isEditing = false,
+    createdQuotationId = null,
+    onSendToCustomerAfterCreate,
+  onCustomerApproveAfterCreate,
+  onCustomerRejectAfterCreate,
 }: CreateQuotationModalProps) {
     // Autocomplete state
     const [partSearch, setPartSearch] = useState<{[key: number]: string}>({});
@@ -176,7 +182,16 @@ export function CreateQuotationModal({
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                <form
+                    onSubmit={(e) => {
+                        if (createdQuotationId) {
+                            e.preventDefault();
+                            return;
+                        }
+                        handleSubmit(e);
+                    }}
+                    className="p-6 space-y-6"
+                >
                     {/* Document Type & Dates */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
@@ -625,70 +640,106 @@ export function CreateQuotationModal({
 
                     {/* Actions */}
                     <div className="flex flex-wrap gap-3 justify-end pt-4 border-t border-gray-200">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
-                        >
-                            Cancel
-                        </button>
-                        {form.documentType === "Check-in Slip" && checkInSlipData && (
-                            <button
-                                type="button"
-                                disabled={loading}
-                                onClick={handleSendCheckInSlipToCustomer}
-                                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 inline-flex items-center gap-2"
-                            >
-                                <MessageCircle size={18} />
-                                {loading ? "Sending..." : "Send to Customer via WhatsApp"}
-                            </button>
-                        )}
-                        {form.documentType === "Check-in Slip" && selectedCustomer && handleGenerateAndSendCheckInSlip && (
-                            <button
-                                type="button"
-                                disabled={loading}
-                                onClick={handleGenerateAndSendCheckInSlip}
-                                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
-                            >
-                                {loading ? "Sending..." : "Generate & Send to Customer"}
-                            </button>
-                        )}
-                        {form.documentType !== "Check-in Slip" && (
+                        {form.documentType === "Check-in Slip" && (
                             <>
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        // Pass to manager logic
-                                        alert("Pass to manager functionality will be implemented");
-                                    }}
-                                    className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+                                    onClick={onClose}
+                                    className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
                                 >
-                                    Pass to Manager
+                                    Cancel
                                 </button>
+                                {checkInSlipData && handleSendCheckInSlipToCustomer && (
+                                    <button
+                                        type="button"
+                                        disabled={loading}
+                                        onClick={handleSendCheckInSlipToCustomer}
+                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 inline-flex items-center gap-2"
+                                    >
+                                        <MessageCircle size={18} />
+                                        {loading ? "Sending..." : "Send to Customer via WhatsApp"}
+                                    </button>
+                                )}
+                                {selectedCustomer && handleGenerateAndSendCheckInSlip && (
+                                    <button
+                                        type="button"
+                                        disabled={loading}
+                                        onClick={handleGenerateAndSendCheckInSlip}
+                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+                                    >
+                                        {loading ? "Sending..." : "Generate & Send to Customer"}
+                                    </button>
+                                )}
                                 <button
-                                    type="button"
+                                    type="submit"
                                     disabled={loading}
-                                    onClick={handleCreateAndSendToCustomer}
                                     className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
                                 >
-                                    {loading ? "Sending..." : "Create & Send to Customer"}
+                                    {loading
+                                        ? (isEditing ? "Updating..." : "Generating...")
+                                        : (isEditing ? "Update Check-in Slip" : "Generate Check-in Slip")}
                                 </button>
                             </>
                         )}
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
-                        >
-                            {loading
-                                ? (form.documentType === "Check-in Slip"
-                                    ? (isEditing ? "Updating..." : "Generating...")
-                                    : (isEditing ? "Updating..." : "Creating..."))
-                                : (form.documentType === "Check-in Slip"
-                                    ? (isEditing ? "Update Check-in Slip" : "Generate Check-in Slip")
-                                    : (isEditing ? "Update Quotation" : "Create Quotation"))
-                            }
-                        </button>
+                        {form.documentType !== "Check-in Slip" && createdQuotationId && onSendToCustomerAfterCreate && (
+                          <div className="flex flex-wrap gap-3 items-center justify-end w-full">
+                            <p className="text-sm text-gray-600 mr-2">
+                              Quotation created. Next actions:
+                            </p>
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => onCustomerApproveAfterCreate?.(createdQuotationId)}
+                              className="px-4 py-2 border border-green-500 text-green-700 rounded-lg hover:bg-green-50 text-xs font-medium disabled:opacity-50 inline-flex items-center gap-1"
+                            >
+                              Customer Approve
+                            </button>
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => onCustomerRejectAfterCreate?.(createdQuotationId)}
+                              className="px-4 py-2 border border-red-500 text-red-600 rounded-lg hover:bg-red-50 text-xs font-medium disabled:opacity-50 inline-flex items-center gap-1"
+                            >
+                              Customer Reject
+                            </button>
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => onSendToCustomerAfterCreate(createdQuotationId)}
+                              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 inline-flex items-center gap-2"
+                            >
+                              <MessageCircle size={18} />
+                              {loading ? "Opening WhatsApp..." : "Send to Customer"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={onClose}
+                              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        )}
+                        {form.documentType !== "Check-in Slip" && !createdQuotationId && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={onClose}
+                                    className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+                                >
+                                    {loading
+                                        ? (isEditing ? "Updating..." : "Creating...")
+                                        : (isEditing ? "Update Quotation" : "Create Quotation")}
+                                </button>
+                            </>
+                        )}
                     </div>
                 </form>
             </div>

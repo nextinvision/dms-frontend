@@ -23,6 +23,7 @@ import { JobCard } from "@/shared/types/job-card.types";
 import { Quotation } from "@/shared/types/quotation.types";
 import { quotationsService } from "@/features/quotations/services/quotations.service";
 import { userRepository } from "@/core/repositories/user.repository";
+import { hasActiveQuotation } from "@/shared/utils/quotation.utils";
 
 // Hooks, Utils and Sections
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
@@ -388,12 +389,13 @@ export default function JobCardForm({
     const handlePassToManager = () => {
         if (!jobCardId || !hydratedCard) return;
 
+        const isResubmit = !!(hydratedCard?.passedToManager && (hydratedCard as any)?.managerReviewStatus === "REJECTED");
         setConfirmModal({
             isOpen: true,
-            title: "Pass to Manager",
-            message: "Pass this job card to manager for approval?",
+            title: isResubmit ? "Resubmit to Manager" : "Pass to Manager",
+            message: isResubmit ? "Resubmit this job card to manager for approval?" : "Pass this job card to manager for approval?",
             type: "warning",
-            confirmText: "Yes, Pass to Manager",
+            confirmText: isResubmit ? "Yes, Resubmit" : "Yes, Pass to Manager",
             showCancel: true,
             onConfirm: executePassToManager
         });
@@ -561,7 +563,7 @@ export default function JobCardForm({
                         onPassToManager={mode === "edit" && isServiceAdvisor ? handlePassToManager : undefined}
                         isPassedToManager={hydratedCard?.passedToManager}
                         isSubmitting={isSubmitting}
-                        hasQuotation={!!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+                        hasQuotation={hasActiveQuotation(hydratedCard ?? {})}
                     />
 
                     <CheckInSection
@@ -584,8 +586,8 @@ export default function JobCardForm({
                             <button
                                 type="button"
                                 onClick={handleCreateQuotation}
-                                disabled={isSubmitting || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
-                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${!!hydratedCard?.quotationId || !!hydratedCard?.quotation
+                                disabled={isSubmitting || hasActiveQuotation(hydratedCard ?? {})}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${hasActiveQuotation(hydratedCard ?? {})
                                     ? "bg-gray-100 text-gray-400 border border-gray-200"
                                     : "bg-indigo-600 text-white hover:bg-indigo-700"
                                     }`}
@@ -598,7 +600,7 @@ export default function JobCardForm({
                                 ) : (
                                     <>
                                         <FileText size={20} />
-                                        {!!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
+                                        {hasActiveQuotation(hydratedCard ?? {}) ? "Quotation Created" : "Create Quotation"}
                                     </>
                                 )}
                             </button>

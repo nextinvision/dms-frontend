@@ -28,7 +28,8 @@ import {
 } from "@/shared/lib/serviceCenter";
 import {
   getJobCardVehicleDisplay,
-  getJobCardCustomerName
+  getJobCardCustomerName,
+  isEngineerAssignedToJob
 } from "@/features/job-cards/utils/job-card-helpers";
 import { serviceEngineerJobCards } from "@/__mocks__/data/job-cards.mock";
 
@@ -134,13 +135,15 @@ export default function PartsRequest() {
   const visibleJobCards = useMemo(() => {
     let filtered = filterByServiceCenter(jobCards, serviceCenterContext);
 
-    // Note: Backend might already filter if proper params send, but safe to filter here too
-    if (isTechnician) {
-      // Optional: Filter by assigned engineer if needed, but for now showing all accessible
+    // For technicians, show ONLY jobs assigned to that engineer
+    if (isTechnician && userInfo) {
+      const engineerName = userInfo.name || "Service Engineer";
+      const engineerId = userInfo.id ? String(userInfo.id) : null;
+      filtered = filtered.filter((job) => isEngineerAssignedToJob(job, engineerId, engineerName));
     }
 
     return filtered;
-  }, [jobCards, serviceCenterContext, isTechnician]);
+  }, [jobCards, serviceCenterContext, isTechnician, userInfo]);
 
   // Active job cards (Assigned, In Progress, Parts Pending)
   const activeJobCards = useMemo(() => {
@@ -490,26 +493,38 @@ export default function PartsRequest() {
     // 1. Check embedded partsRequests (new flow via jobCardService)
     const requests = (jobCard as any).partsRequests;
     if (Array.isArray(requests) && requests.length > 0) {
-      // Use the latest request
-      const activeRequest = requests.find((r: any) => r.status !== 'COMPLETED' && r.status !== 'REJECTED') || requests[0];
+      // Use the first non-completed/non-rejected request as "active" for high-level flags,
+      // but always show items from *all* requests so technicians can see full history.
+      const activeRequest =
+        requests.find((r: any) => r.status !== "COMPLETED" && r.status !== "REJECTED") ||
+        requests[0];
 
+      // Derive high-level flags from the active request
       const status = activeRequest.status;
-      // Infer flags based on status if not explicitly present
-      const scManagerApproved = activeRequest.scManagerApproved ?? (status === 'APPROVED' || status === 'COMPLETED' || status === 'PARTIALLY_APPROVED');
-      const inventoryManagerAssigned = activeRequest.inventoryManagerAssigned ?? (status === 'COMPLETED');
+      const scManagerApproved =
+        activeRequest.scManagerApproved ??
+        (status === "APPROVED" || status === "COMPLETED" || status === "PARTIALLY_APPROVED");
+      const inventoryManagerAssigned =
+        activeRequest.inventoryManagerAssigned ?? status === "COMPLETED";
+
+      // Flatten all request items so old + new parts requests are visible together
+      const combinedItems =
+        requests.flatMap((req: any) =>
+          (req.items || []).map((i: any) => ({
+            ...i,
+            partName: i.partName || "Unknown Part",
+            partCode: i.partCode || i.partName, // or inventoryPartId if needed
+            quantity: i.requestedQty ?? i.quantity ?? 1,
+            status: req.status, // Reflect the status of the specific request
+          })),
+        ) || [];
 
       return {
         ...activeRequest,
-        status: activeRequest.status,
+        status,
         scManagerApproved,
         inventoryManagerAssigned,
-        items: activeRequest.items?.map((i: any) => ({
-          ...i,
-          partName: i.partName || "Unknown Part",
-          partCode: i.partName, // or inventoryPartId
-          quantity: i.requestedQty,
-          status: activeRequest.status // Inherit status for items if individual item status not tracked yet
-        })) || []
+        items: combinedItems,
       };
     }
 

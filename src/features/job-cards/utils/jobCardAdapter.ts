@@ -1,6 +1,7 @@
 import { Quotation } from "@/shared/types/quotation.types";
 import { CustomerWithVehicles, Vehicle } from "@/shared/types/vehicle.types";
 import { CreateJobCardForm, JobCardPart2Item } from "../types/job-card.types";
+import { getAllJobCardParts } from "./job-card-helpers";
 
 /**
  * Adapter to map various source data (Quotations, Customers, Vehicles) 
@@ -380,7 +381,10 @@ export const jobCardAdapter = {
             vcuSerialNumber: jobCard.part1?.vcuSerialNumber || jobCard.part1Data?.vcuSerialNumber || "",
             otherPartSerialNumber: jobCard.part1?.otherPartSerialNumber || jobCard.part1Data?.otherPartSerialNumber || "",
 
-            // Part 2 - Root-level fix: Merge items from BOTH items relation (source of truth) AND part2 JSON
+            // Part 2 - ONLY existing parts (from JobCardItem table or part2 JSON)
+            // DO NOT include requested parts here - they go in requestedParts field
+            // This ensures that when form is saved, only existing parts are saved as JobCardItem
+            // Requested parts are managed separately via PartsRequest table
             part2Items: (() => {
                 // Source of truth: items relation (normalized database records)
                 const itemsRelation = (jobCard.items || []).map((item: any) => ({
@@ -402,58 +406,13 @@ export const jobCardAdapter = {
                 // Fallback: part2 JSON (legacy/compatibility)
                 const part2Json = jobCard.part2 || [];
 
-                // Completed parts requests items
-                const completedRequests = (jobCard.partsRequests || []).filter((pr: any) => pr.status === 'COMPLETED');
-                const completedItems = completedRequests.flatMap((pr: any) => pr.items || []).map((item: any) => ({
-                    srNo: 0,
-                    partName: item.part?.name || item.partName || "Unknown Part",
-                    partCode: item.part?.partNumber || item.partNumber || item.partId,
-                    qty: item.quantity || item.requestedQty || 1,
-                    amount: 0,
-                    technician: "",
-                    labourCode: "Auto Select With Part",
-                    itemType: "part",
-                    partWarrantyTag: item.isWarranty || false,
-                    isWarranty: item.isWarranty || false,
-                }));
-
-                // Merge strategy: items relation is source of truth, then part2 JSON, then completed items
                 // Use items relation if available, otherwise fallback to part2 JSON
                 const baseItems = itemsRelation.length > 0 ? itemsRelation : part2Json;
 
-                // Dedupe function based on partCode and partName
-                const dedupeItems = (items: any[]): any[] => {
-                    const seen = new Set<string>();
-                    return items.filter((item: any) => {
-                        const key = `${item.partCode || ''}_${item.partName || ''}`;
-                        if (seen.has(key)) return false;
-                        seen.add(key);
-                        return true;
-                    });
-                };
-
-                // Combine: base items (from relation or JSON) + completed items
-                let combined = [...baseItems];
-                completedItems.forEach((ci: any) => {
-                    const exists = combined.some((e: any) => 
-                        (e.partCode && ci.partCode && e.partCode === ci.partCode) ||
-                        (e.partName && ci.partName && e.partName === ci.partName)
-                    );
-                    if (!exists) {
-                        combined.push(ci);
-                    }
-                });
-
-                // Dedupe final result
-                combined = dedupeItems(combined);
-
                 // Ensure all items have required fields and renumber srNo
-                return combined
+                return baseItems
                     .filter((item: any) => item.partName && item.partCode)
-                    .map((item: any, i: number) => ({ 
-                        ...item, 
-                        srNo: item.srNo || i + 1 
-                    }));
+                    .map((item: any, idx: number) => ({ ...item, srNo: idx + 1 }));
             })(),
             requestedParts: jobCard.requestedParts || (jobCard.partsRequests?.length ? jobCard.partsRequests
                 .filter((pr: any) => pr.status !== 'COMPLETED')

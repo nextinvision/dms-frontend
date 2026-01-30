@@ -7,6 +7,7 @@ import type { JobCard } from "@/shared/types";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import JobCardFormModal from "../../components/job-cards/JobCardFormModal";
 import { jobCardToFormInitialValues } from "../utils/jobCardToForm.util";
+import { useRole } from "@/shared/hooks";
 
 interface AdvisorJobCardPageProps {
   params: Promise<{
@@ -21,18 +22,23 @@ const fetchJobCard = async (id: string): Promise<JobCard | undefined> => {
   if (typeof window === "undefined") return undefined;
 
   try {
-    // Import the job card service
-    const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
+    // 1) Try fast path: job card cached from list / My Jobs
+    const cached = safeStorage.getItem<JobCard | null>("selectedJobCardForDetail", null);
+    if (cached && (cached.id === id || cached.jobCardNumber === id)) {
+      return cached;
+    }
 
-    // Fetch job card directly by ID from API
+    // 2) Import the job card service and fetch from API
+    const { jobCardService } = await import("@/features/job-cards/services/jobCard.service");
     const jobCard = await jobCardService.getById(id);
 
     if (jobCard) {
-      console.log("Found job card from API:", jobCard);
+      // Keep cache in sync for subsequent opens
+      safeStorage.setItem("selectedJobCardForDetail", jobCard);
       return jobCard;
     }
 
-    // Fallback to localStorage if not found in API
+    // 3) Fallback to migrated local storage data (legacy)
     const { migrateAllJobCards } = require("../utils/migrateJobCards.util");
     const stored = migrateAllJobCards();
 
@@ -41,7 +47,7 @@ const fetchJobCard = async (id: string): Promise<JobCard | undefined> => {
     );
 
     if (found) {
-      console.log("Found job card from localStorage:", found);
+      safeStorage.setItem("selectedJobCardForDetail", found);
     }
 
     return found;
@@ -55,16 +61,26 @@ export default function AdvisorJobCardDetailPage({ params, searchParams }: Advis
   const router = useRouter();
   const resolvedParams = use(params);
   const resolvedSearchParams = use(searchParams || Promise.resolve({ temp: undefined }));
+  const { userRole } = useRole();
+  const isCallCenter = userRole === "call_center";
 
-  const [jobCard, setJobCard] = useState<JobCard | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
+  const [jobCard, setJobCard] = useState<JobCard | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    const cached = safeStorage.getItem<JobCard | null>("selectedJobCardForDetail", null);
+    return cached && (cached.id === resolvedParams.id || cached.jobCardNumber === resolvedParams.id)
+      ? cached
+      : undefined;
+  });
+  const [loading, setLoading] = useState(!jobCard);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      // Use async IIFE to handle the promise
+      // Use async IIFE to handle the promise (background refresh)
       (async () => {
         const found = await fetchJobCard(resolvedParams.id);
-        setJobCard(found);
+        if (found) {
+          setJobCard(found);
+        }
         setLoading(false);
       })();
 
@@ -167,6 +183,7 @@ export default function AdvisorJobCardDetailPage({ params, searchParams }: Advis
             console.error("Error updating job card:", error);
           }}
           isFullPage={true}
+          readOnly={isCallCenter}
         />
       </div>
     </div>

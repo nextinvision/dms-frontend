@@ -11,7 +11,8 @@ import {
   useAssignEngineer, 
   useUpdateJobCardStatus, 
   usePassToManager, 
-  useManagerReview 
+  useManagerReview,
+  useCreatePartsRequest
 } from "@/features/job-cards/hooks/useJobCards";
 import { partsIssueService } from "@/features/inventory/services/parts-issue.service"; // Added
 // Import utils
@@ -38,6 +39,7 @@ export function useJobCardActions(
     const updateStatusMutation = useUpdateJobCardStatus();
     const passToManagerMutation = usePassToManager();
     const managerReviewMutation = useManagerReview();
+    const createPartsRequestMutation = useCreatePartsRequest();
 
     // Engineers State
     const [engineers, setEngineers] = useState<Engineer[]>([]);
@@ -145,7 +147,6 @@ export function useJobCardActions(
             );
             setJobCards(updatedJobCards);
 
-
             // Update lead status logic (legacy) - Removed localStorage logic.
             // Backend should handle lead updates on status change if relevant.
 
@@ -205,31 +206,27 @@ export function useJobCardActions(
             return;
         }
 
-        // Removed partsWithDetails map that relied on unknown logic.
-
         try {
             setLoading(true);
 
-            // Replaced jobCardPartsRequestService.createRequestFromJobCard with stub or API
-            // Using partsIssueService.create as placeholder
-            const payload = {
-                serviceCenterId: "unknown", // Need context
-                items: items.map(i => ({ partId: i.partCode || "unknown", quantity: i.qty })),
-                notes: "From Job Card Action"
-            };
+            // Map items to the format expected by the API
+            const requestItems = items.map((item) => ({
+                partName: item.partName,
+                partNumber: item.partCode || undefined,
+                quantity: item.qty || 1,
+                isWarranty: item.partWarrantyTag || item.isWarranty || false,
+                inventoryPartId: item.inventoryPartId,
+                warrantyTagNumber: item.warrantyTagNumber,
+                serialNumber: item.serialNumber,
+            }));
 
-            // await partsIssueService.create(payload); // Potentially incorrect payload for Central API
-
-            console.warn("Backend API not fully integrated for Job Card Parts Request. Stubbing success.");
-
-            // Mock success
-            setPartsRequestsData((prev) => {
-                const updated = { ...prev };
-                // updated[jobCardId] = request; 
-                return updated;
+            // Use React Query mutation for automatic cache invalidation
+            await createPartsRequestMutation.mutateAsync({
+                jobCardId: jobCardId,
+                items: requestItems,
             });
 
-            showSuccess(`Part request submitted for Job Card: ${selectedJobCard.jobCardNumber || selectedJobCard.id} (Stubbed)`);
+            showSuccess(`Parts request submitted successfully for Job Card: ${selectedJobCard.jobCardNumber || selectedJobCard.id}`);
         } catch (error) {
             console.error("Failed to submit parts request:", error);
             showError("Failed to submit parts request. Please try again.");
@@ -264,30 +261,7 @@ export function useJobCardActions(
         showSuccess("Parts request approved (Stubbed)");
     };
 
-    const handleInventoryManagerPartsApproval = async (isTechnician: boolean) => {
-        /*
-        const jobCardId = isTechnician ? selectedJobCardForRequest : selectedJob?.id;
-        const currentRequest = jobCardId ? partsRequestsData[jobCardId] : null;
-
-        if (!currentRequest) {
-            showWarning("No active parts request found for this job card.");
-            return;
-        }
-
-        try {
-            setLoading(true);
-             console.warn("Inventory Manager Approval Stubbed (API not integrated)");
-            showSuccess("Parts assigned to engineer by Inventory Manager. (Stubbed)");
-        } catch (error) {
-            console.error("Failed to assign parts:", error);
-            showError("Failed to assign parts. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-        */
-        console.warn("Inventory Manager Approval Stubbed");
-        showSuccess("Parts assigned (Stubbed)");
-    };
+    // Removed handleInventoryManagerPartsApproval - Parts assignment should only happen through Inventory Manager's approval dashboard
 
     const handleWorkCompletionNotification = (jobId?: string) => {
         const targetJobId = jobId || selectedJob?.id || selectedJobCardForRequest;
@@ -457,7 +431,6 @@ export function useJobCardActions(
         handleManagerQuoteAction,
         handlePartRequestSubmit,
         handleServiceManagerPartApproval,
-        handleInventoryManagerPartsApproval,
         handleWorkCompletionNotification,
         handleSubmitToManager,
         handleManagerReview,

@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { X, Package, User, CheckCircle, XCircle, ShieldCheck, FileText } from 'lucide-react';
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
-import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
+import { getVehicleDisplayString, getAssignedEngineerName, getAllJobCardParts } from "@/features/job-cards/utils/job-card-helpers";
+import { hasActiveQuotation } from "@/shared/utils/quotation.utils";
 
 interface JobCardDetailsModalProps {
     open: boolean;
@@ -115,9 +116,9 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                             <h3 className="font-semibold text-gray-800 mb-1 md:mb-2 text-sm md:text-base">Required Parts</h3>
                             <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
                                 {(() => {
-                                    // Get items from items relation (JobCardItem[]) or part2 JSON array, fallback to legacy parts
-                                    const items = job.items || (Array.isArray(job.part2) ? job.part2 : []) || [];
-                                    const partItems = items.filter((item: any) => 
+                                    // Use centralized utility to get all parts (existing + requested)
+                                    const allParts = getAllJobCardParts(job);
+                                    const partItems = allParts.filter((item: any) => 
                                         item?.itemType === 'part' || (item && !item.itemType && item.partName)
                                     );
                                     
@@ -130,12 +131,28 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                                 {partItems.map((item: any, idx: number) => (
                                                     <li key={idx} className="text-xs md:text-sm text-gray-700 flex items-center gap-1 md:gap-2 break-words">
                                                         <Package size={12} className="text-gray-400 flex-shrink-0" />
-                                                        <span>
-                                                            {item.partName || item.part}
-                                                            {item.qty && ` (Qty: ${item.qty})`}
+                                                        <span className="flex items-center gap-2 flex-wrap">
+                                                            <span>
+                                                                {item.partName || item.part}
+                                                                {item.qty && ` (Qty: ${item.qty})`}
+                                                            </span>
                                                             {item.isWarranty && (
-                                                                <span className="ml-2 text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
+                                                                <span className="text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
                                                                     Warranty
+                                                                </span>
+                                                            )}
+                                                            {/* Show source/status badge */}
+                                                            {item.source === 'requested' && item.requestStatus && (
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                                                                    item.requestStatus === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                                                                    item.requestStatus === 'APPROVED' ? 'bg-blue-100 text-blue-800' :
+                                                                    item.requestStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                                                                    'bg-gray-100 text-gray-800'
+                                                                }`}>
+                                                                    {item.requestStatus === 'PENDING' ? 'Requested' :
+                                                                     item.requestStatus === 'APPROVED' ? 'Approved' :
+                                                                     item.requestStatus === 'COMPLETED' ? 'Assigned' :
+                                                                     item.requestStatus}
                                                                 </span>
                                                             )}
                                                         </span>
@@ -236,7 +253,7 @@ const JobCardDetailsModal: React.FC<JobCardDetailsModalProps> = ({
                                 Update Status
                             </button>
                         )}
-                        {job.managerReviewStatus === "APPROVED" && !job.quotationId && !job.quotation && onCreateQuotation && (
+                        {job.managerReviewStatus === "APPROVED" && !hasActiveQuotation(job) && onCreateQuotation && (
                             <button
                                 onClick={() => onCreateQuotation(job)}
                                 className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 md:px-6 md:py-3 rounded-lg font-medium hover:opacity-90 transition text-sm md:text-base flex items-center justify-center gap-2"

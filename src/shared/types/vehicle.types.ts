@@ -28,6 +28,7 @@ export interface Customer {
   pickupDropRequired?: boolean;
   pickupAddress?: string;
   dropAddress?: string;
+  gstNumber?: string; // GST number (optional, flows from customer to invoices/quotations)
   createdAt: string;
   totalVehicles?: number;
   totalSpent?: string;
@@ -136,6 +137,7 @@ export interface NewCustomerForm {
   pickupDropRequired?: boolean;
   pickupAddress?: string;
   dropAddress?: string;
+  gstNumber?: string; // GST number (optional, flows from customer to invoices/quotations)
   serviceCenterId?: number | string;
   serviceCenterName?: string;
 }

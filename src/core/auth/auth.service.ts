@@ -74,8 +74,18 @@ class AuthService {
                 console.log('[Auth Service] Mapped user:', user);
             }
 
-            // Store the real token
-            Cookies.set('auth_token', responseData.access_token, { expires: 7 });
+            // Before setting new auth, clear any stale persisted auth store
+            // This prevents "flashing" between previous and current login sessions
+            if (typeof window !== "undefined") {
+                try {
+                    window.localStorage.removeItem("dms-auth-storage");
+                } catch (e) {
+                    console.warn("[Auth Service] Failed to clear persisted auth storage:", e);
+                }
+            }
+
+            // Store the real token with path and sameSite for cross-page access
+            Cookies.set('auth_token', responseData.access_token, { expires: 7, path: '/', sameSite: 'lax' });
             if (process.env.NODE_ENV === 'development') {
                 console.log('[Auth Service] Token stored in cookie');
             }
@@ -113,11 +123,20 @@ class AuthService {
         // This ensures middleware sees them as cleared
         Cookies.remove('auth_token', { path: '/' });
         Cookies.remove('auth_role', { path: '/' });
-        
+
         // Also set to empty with immediate expiration as a fallback
         Cookies.set('auth_token', '', { expires: new Date(0), path: '/' });
         Cookies.set('auth_role', '', { expires: new Date(0), path: '/' });
-        
+
+        // Clear persisted auth store so a new login starts from a clean state
+        if (typeof window !== "undefined") {
+            try {
+                window.localStorage.removeItem("dms-auth-storage");
+            } catch (e) {
+                console.warn("[Auth Service] Failed to clear persisted auth storage on logout:", e);
+            }
+        }
+
         // Also clear from store
         const { clearAuth } = useAuthStore.getState();
         clearAuth();

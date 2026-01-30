@@ -64,6 +64,11 @@ export function useJobCardView() {
         return visibleJobCards.filter((job) => {
             // Status filter
             if (filter === "draft" && !(job.draftIntake && job.status === "CREATED")) return false;
+            if (filter === "active") {
+                // Active job cards are those that are not completed or invoiced
+                const inactiveStatuses: JobCardStatus[] = ["COMPLETED", "INVOICED"];
+                if (inactiveStatuses.includes(job.status)) return false;
+            }
             if (filter === "created" && job.status !== "CREATED" && job.status !== "AWAITING_QUOTATION_APPROVAL") return false;
             if (filter === "assigned" && job.status !== "ASSIGNED") return false;
             if (filter === "in_progress" && job.status !== "IN_PROGRESS") return false;
@@ -113,6 +118,14 @@ export function useJobCardView() {
         [visibleJobCards]
     );
 
+    const activeCount = useMemo(
+        () => visibleJobCards.filter((card) => {
+            const inactiveStatuses: JobCardStatus[] = ["COMPLETED", "INVOICED"];
+            return !inactiveStatuses.includes(card.status);
+        }).length,
+        [visibleJobCards]
+    );
+
     const kanbanColumns: KanbanColumn[] = [
         { id: "created", title: "Created", status: "CREATED" },
         { id: "assigned", title: "Assigned", status: "ASSIGNED" },
@@ -138,6 +151,7 @@ export function useJobCardView() {
         filteredJobs,
         draftCount,
         pendingApprovalCount,
+        activeCount,
         kanbanColumns,
         getJobsByStatus,
         isLoading,

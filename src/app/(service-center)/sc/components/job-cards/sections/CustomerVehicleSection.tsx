@@ -7,6 +7,7 @@ interface CustomerVehicleSectionProps {
     updateField: <K extends keyof CreateJobCardForm>(field: K, value: CreateJobCardForm[K]) => void;
     previewJobCardNumber: string;
     mode?: "create" | "edit"; // Add mode to know if we're editing
+    readOnly?: boolean; // Read-only mode for call center users
 }
 
 export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
@@ -14,10 +15,12 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
     updateField,
     previewJobCardNumber,
     mode = "create",
+    readOnly = false,
 }) => {
-    // Disable customer and vehicle fields in edit mode
+    // Disable customer and vehicle fields in edit mode or read-only mode
     const isEditMode = mode === "edit";
-    const disabledClass = isEditMode ? "bg-gray-100 cursor-not-allowed" : "";
+    const isDisabled = isEditMode || readOnly;
+    const disabledClass = isDisabled ? "bg-gray-100 cursor-not-allowed" : "";
     return (
         <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-6">
@@ -46,7 +49,7 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                                 updateField('fullName', e.target.value);
                                 updateField('customerName', e.target.value);
                             }}
-                            disabled={isEditMode}
+                            disabled={isDisabled}
                             className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${disabledClass}`}
                             required
                             placeholder="Enter customer full name"
@@ -61,7 +64,7 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                             type="tel"
                             value={form.mobilePrimary}
                             onChange={(e) => updateField('mobilePrimary', e.target.value)}
-                            disabled={isEditMode}
+                            disabled={isDisabled}
                             className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${disabledClass}`}
                             required
                             placeholder="9876543210"
@@ -76,7 +79,7 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                             type="tel"
                             value={form.whatsappNumber || ""}
                             onChange={(e) => updateField('whatsappNumber', e.target.value)}
-                            disabled={isEditMode}
+                            disabled={isDisabled}
                             className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${disabledClass}`}
                             placeholder="9876543210"
                         />
@@ -134,7 +137,7 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                                 updateField('vehicleBrand', e.target.value);
                                 updateField('vehicleMake', e.target.value);
                             }}
-                            disabled={isEditMode}
+                            disabled={isDisabled}
                             className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${disabledClass}`}
                             required
                             placeholder="Honda"
@@ -149,7 +152,7 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                             type="text"
                             value={form.vehicleModel}
                             onChange={(e) => updateField('vehicleModel', e.target.value)}
-                            disabled={isEditMode}
+                            disabled={isDisabled}
                             className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${disabledClass}`}
                             required
                             placeholder="City"
@@ -164,7 +167,7 @@ export const CustomerVehicleSection: React.FC<CustomerVehicleSectionProps> = ({
                             type="text"
                             value={form.vehicleRegistration}
                             onChange={(e) => updateField('vehicleRegistration', e.target.value.toUpperCase())}
-                            disabled={isEditMode}
+                            disabled={isDisabled}
                             className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${disabledClass}`}
                             required
                             placeholder="PB10AB1234"

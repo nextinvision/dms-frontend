@@ -24,8 +24,8 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
 
             setAuth: (role, user) => {
-                // Sync with Cookie for Middleware
-                Cookies.set('auth_role', role, { expires: 7 });
+                // Sync with Cookie for Middleware - set with path and sameSite for cross-page access
+                Cookies.set('auth_role', role, { expires: 7, path: '/', sameSite: 'lax' });
                 // Note: auth_token is now set by auth.service.ts during actual login
 
                 set({

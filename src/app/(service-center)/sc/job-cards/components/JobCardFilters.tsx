@@ -17,6 +17,7 @@ interface JobCardFiltersProps {
     view: JobCardViewType;
     draftCount?: number;
     pendingApprovalCount?: number;
+    activeCount?: number;
 }
 
 export default function JobCardFilters({
@@ -30,7 +31,8 @@ export default function JobCardFilters({
     filterLabelMap,
     view,
     draftCount = 0,
-    pendingApprovalCount = 0
+    pendingApprovalCount = 0,
+    activeCount = 0
 }: JobCardFiltersProps) {
     return (
         <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 mb-6 ${view === "kanban" ? "mx-4 sm:mx-6" : ""}`}>
@@ -74,7 +76,7 @@ export default function JobCardFilters({
             <div className="hidden md:block">
                 <div className="flex flex-wrap gap-2">
                     {filterOptions.map((f) => {
-                        const count = f === 'draft' ? draftCount : f === 'pending_approval' ? pendingApprovalCount : null;
+                        const count = f === 'draft' ? draftCount : f === 'pending_approval' ? pendingApprovalCount : f === 'active' ? activeCount : null;
                         return (
                             <button
                                 key={f}
@@ -97,7 +99,7 @@ export default function JobCardFilters({
                 <div className="md:hidden">
                     <div className="grid grid-cols-2 gap-2 pt-2">
                         {filterOptions.map((f) => {
-                            const count = f === 'draft' ? draftCount : f === 'pending_approval' ? pendingApprovalCount : null;
+                            const count = f === 'draft' ? draftCount : f === 'pending_approval' ? pendingApprovalCount : f === 'active' ? activeCount : null;
                             return (
                                 <button
                                     key={f}

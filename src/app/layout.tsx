@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { TanStackProvider } from "@/components/providers/TanStackProvider";
 import { Sidebar, SCSidebar, InventoryManagerSidebar, CentralInventorySidebar, Navbar } from "@/components/layout";
 import { GlobalErrorBoundary } from "@/shared/components/providers/GlobalErrorBoundary";
+import { ChunkLoadErrorHandler } from "@/shared/components/providers/ChunkLoadErrorHandler";
 import { useRole } from "@/shared/hooks";
 import type { UserRole } from "@/shared/types";
 import { TopLoadingBar } from "@/components/ui/TopLoadingBar";
@@ -112,6 +113,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
               </div>
               <Toaster position="top-center" toastOptions={{ duration: 4000 }} />
               <ScrollToTop />
+              <ChunkLoadErrorHandler />
             </GlobalErrorBoundary>
           </ToastProvider>
         </TanStackProvider>

@@ -9,7 +9,7 @@ import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { useRole } from "./useRole"; // Assuming in same directory or adjust import
 
 // Helper to map Backend PartsRequest to Frontend JobCardPartsRequest
-const mapPartsRequestToFrontend = (req: any): JobCardPartsRequest => {
+export const mapPartsRequestToFrontend = (req: any): JobCardPartsRequest => {
   const status = req.status;
   const isScApproved = status === 'APPROVED' || status === 'COMPLETED' || status === 'PARTIALLY_APPROVED';
   const isIssued = status === 'COMPLETED';

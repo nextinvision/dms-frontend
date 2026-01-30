@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { partsOrderService } from '@/features/inventory/services/partsOrder.service';
 import { localStorage as safeStorage } from '@/shared/lib/localStorage';
 import type { PartsOrder, PartsOrderItem } from '@/features/inventory/services/partsOrder.service';
@@ -33,7 +33,13 @@ describe('PartsOrderService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-15'));
     vi.mocked(safeStorage.getItem).mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('getAll', () => {

@@ -254,7 +254,7 @@ export interface KanbanColumn {
 // ViewType is exported from common.types.ts
 // Job cards support list, kanban, and table views
 export type JobCardViewType = "kanban" | "list" | "table";
-export type JobCardFilterType = "all" | "created" | "assigned" | "in_progress" | "completed" | "draft" | "pending_approval";
+export type JobCardFilterType = "all" | "active" | "created" | "assigned" | "in_progress" | "completed" | "draft" | "pending_approval";
 
 // Parts Request Types
 export type PartsRequestStatus = 'PENDING' | 'APPROVED' | 'PARTIALLY_APPROVED' | 'REJECTED' | 'COMPLETED';

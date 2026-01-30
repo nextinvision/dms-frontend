@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRole } from "@/shared/hooks";
 import { getServiceCenterContext, shouldFilterByServiceCenter, filterByServiceCenter, staticServiceCenters } from "@/app/(service-center)/sc/components/service-center";
 import { apiClient } from "@/core/api";
@@ -55,9 +56,10 @@ interface DocumentMetadata {
 }
 
 export const useAppointmentLogic = () => {
-    // Router
+    // Router & Query Client
     const router = useRouter();
     const searchParams = useSearchParams();
+    const queryClient = useQueryClient();
 
     // Root-level fix: Initialize React Query mutation for automatic cache invalidation
     const createJobCardMutation = useCreateJobCard();
@@ -939,9 +941,9 @@ export const useAppointmentLogic = () => {
                 console.log("📋 Creating Temp Job Card with payload:", jobCardPayload);
 
                 // Root-level fix: Use React Query mutation for automatic cache invalidation
-                const createdJobCard = await createJobCardMutation.mutateAsync({ 
-                    data: jobCardPayload as any, 
-                    userId: undefined 
+                const createdJobCard = await createJobCardMutation.mutateAsync({
+                    data: jobCardPayload as any,
+                    userId: undefined
                 });
 
                 if (createdJobCard) {
@@ -967,8 +969,12 @@ export const useAppointmentLogic = () => {
             setSelectedAppointmentCustomer(null);
             setSelectedAppointmentVehicle(null);
 
-            // Refresh list
+            // Refresh appointments list
             loadAppointments();
+
+            // ALSO refresh any Advisor Job Card lists/dashboards (Option A)
+            // so newly created job card appears without a full window reload.
+            queryClient.invalidateQueries({ queryKey: ['job-cards'] });
 
             // Step 3: Redirect to the created job card page
             if (createdJobCardId) {

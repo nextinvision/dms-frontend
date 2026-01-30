@@ -58,6 +58,7 @@ interface Part2ItemsSectionProps {
     isPassedToManager?: boolean;
     isSubmitting?: boolean;
     hasQuotation?: boolean;
+    readOnly?: boolean;
 }
 
 export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
@@ -70,6 +71,7 @@ export const Part2ItemsSection: React.FC<Part2ItemsSectionProps> = ({
     isPassedToManager,
     isSubmitting,
     hasQuotation,
+    readOnly = false,
 }) => {
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [newItem, setNewItem] = useState<Partial<JobCardPart2Item>>({

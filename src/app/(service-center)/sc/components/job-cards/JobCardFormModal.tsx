@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useRouter } from "next/navigation";
-import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight, Package, XCircle } from "lucide-react";
+import { Loader2, X, Search, UserPlus, Car, FileText, CheckCircle, ArrowRight, Package, XCircle, AlertCircle } from "lucide-react";
 
 import { getServiceCenterContext } from "@/shared/lib/serviceCenter";
 import { localStorage as safeStorage } from "@/shared/lib/localStorage";
@@ -26,6 +26,7 @@ import { Quotation } from "@/shared/types/quotation.types";
 import { CustomerWithVehicles, Vehicle } from "@/shared/types/vehicle.types";
 import { quotationsService } from "@/features/quotations/services/quotations.service";
 import { generateTempEntityId, updateFileEntityAssociation, RelatedEntityType } from "@/services/cloudinary/fileMetadata.service";
+import { hasActiveQuotation } from "@/shared/utils/quotation.utils";
 
 // New Hooks, Utils and Sections
 import { useJobCardForm } from "@/features/job-cards/hooks/useJobCardForm";
@@ -49,6 +50,7 @@ interface JobCardFormModalProps {
   onUpdated?: (jobCard: JobCard) => void;
   onError?: (message: string) => void;
   isFullPage?: boolean; // New prop to render as full page instead of modal
+  readOnly?: boolean; // New prop for read-only view (e.g., for call center users)
 }
 
 export default function JobCardFormModal({
@@ -61,6 +63,7 @@ export default function JobCardFormModal({
   onUpdated,
   onError,
   isFullPage = false,
+  readOnly = false,
 }: JobCardFormModalProps) {
   const serviceCenterContext = useMemo(() => getServiceCenterContext(), []);
   const serviceCenterId = String(serviceCenterContext.serviceCenterId ?? "sc-001");
@@ -70,6 +73,10 @@ export default function JobCardFormModal({
   const isServiceAdvisor = userRole === "service_advisor";
   const isServiceManager = userRole === "sc_manager";
   const isTechnician = userRole === "service_engineer";
+  const isCallCenter = userRole === "call_center";
+  
+  // Override readOnly if user is call center
+  const isReadOnly = readOnly || isCallCenter;
 
   // Generate a temporary ID for file uploads during creation
   const [tempId] = useState(() => generateTempEntityId());
@@ -284,7 +291,8 @@ export default function JobCardFormModal({
   const handlePassToManager = async () => {
     if (!jobCardId || !hydratedCard) return;
 
-    if (!confirm("Pass this job card to manager for approval?")) {
+    const isResubmit = !!(hydratedCard?.passedToManager && (hydratedCard as any)?.managerReviewStatus === "REJECTED");
+    if (!confirm(isResubmit ? "Resubmit this job card to manager for approval?" : "Pass this job card to manager for approval?")) {
       return;
     }
 
@@ -343,7 +351,7 @@ export default function JobCardFormModal({
         managerId
       });
 
-      alert("Job card passed to manager successfully!");
+      alert(isResubmit ? "Job card resubmitted to manager successfully!" : "Job card passed to manager successfully!");
       onClose();
       router.push("/sc/job-cards");
     } catch (error: any) {
@@ -391,9 +399,23 @@ export default function JobCardFormModal({
       e.preventDefault();
       e.stopPropagation();
     }
-    
+
     if (!form.customerId || !form.vehicleId) {
       onError?.("Please select a customer and vehicle first.");
+      return;
+    }
+
+    // Enforce warranty approval rule for Service Advisor:
+    // - If there are NO warranty parts, advisor can create quotation directly.
+    // - If there ARE warranty parts, advisor can only create quotation AFTER manager APPROVED.
+    const hasWarrantyItems =
+      (form.part2Items || []).some((item) => item.partWarrantyTag || item.isWarranty);
+    const managerStatus = (hydratedCard as any)?.managerReviewStatus;
+
+    if (userRole === "service_advisor" && hasWarrantyItems && managerStatus !== "APPROVED") {
+      onError?.(
+        "Manager must approve warranty parts before you can create this quotation. Please send the job card to manager and wait for approval."
+      );
       return;
     }
 
@@ -591,8 +613,23 @@ export default function JobCardFormModal({
 
       <div className="flex-1 overflow-y-auto p-6">
         <form id="jobCardForm" onSubmit={handleSubmit} className="space-y-8">
+          {/* Read-only notice for call center */}
+          {isReadOnly && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
+                <div>
+                  <p className="text-sm font-medium text-blue-900">View Only Mode</p>
+                  <p className="text-sm text-blue-700 mt-1">
+                    You have read-only access to this job card. You cannot make any changes.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Search Section (Only for Create Mode) */}
-          {mode === "create" && (
+          {mode === "create" && !isReadOnly && (
             <div className="relative mb-8">
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -664,6 +701,7 @@ export default function JobCardFormModal({
             updateField={updateFormField}
             previewJobCardNumber={previewJobCardNumber}
             mode={mode}
+            readOnly={isReadOnly}
           />
 
           <Part2ItemsSection
@@ -672,16 +710,19 @@ export default function JobCardFormModal({
             onError={onError}
             jobCardId={jobCardId || tempId}
             userId={userInfo?.id}
-            onPassToManager={mode === "edit" && isServiceAdvisor ? handlePassToManager : undefined}
+            onPassToManager={mode === "edit" && isServiceAdvisor && !isReadOnly ? handlePassToManager : undefined}
             isPassedToManager={hydratedCard?.passedToManager}
             isSubmitting={isSubmitting}
-            hasQuotation={!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
+            hasQuotation={!!selectedQuotation || hasActiveQuotation(hydratedCard ?? {})}
+            readOnly={isReadOnly}
           />
 
           <RequestedPartsSection
             form={form}
             updateField={updateFormField}
             onError={onError}
+            readOnly={isReadOnly}
+            jobStatus={hydratedCard?.status}
           />
 
           {/* CheckInSection moved to Check-in Slip only - not shown in Job Card */}
@@ -696,7 +737,7 @@ export default function JobCardFormModal({
       <div className="p-6 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
         <div className="flex gap-3">
 
-          {!isTechnician && (
+          {!isTechnician && !isReadOnly && (
             <>
               <button
                 type="button"
@@ -705,9 +746,8 @@ export default function JobCardFormModal({
                   e.stopPropagation();
                   handleCreateQuotation(e);
                 }}
-                disabled={isCreatingQuotation || !!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation
-
+                disabled={isCreatingQuotation || !!selectedQuotation || hasActiveQuotation(hydratedCard ?? {})}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed ${!!selectedQuotation || hasActiveQuotation(hydratedCard ?? {})
                   ? "bg-gray-100 text-gray-400 border border-gray-200"
                   : "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:opacity-90"
                   }`}
@@ -720,7 +760,7 @@ export default function JobCardFormModal({
                 ) : (
                   <>
                     <FileText size={20} />
-                    {!!selectedQuotation || !!hydratedCard?.quotationId || !!hydratedCard?.quotation ? "Quotation Created" : "Create Quotation"}
+                    {!!selectedQuotation || hasActiveQuotation(hydratedCard ?? {}) ? "Quotation Created" : "Create Quotation"}
                   </>
 
                 )}
@@ -740,7 +780,7 @@ export default function JobCardFormModal({
             </>
           )}
 
-          {isTechnician && hydratedCard?.status === "ASSIGNED" && (
+          {isTechnician && !isReadOnly && hydratedCard?.status === "ASSIGNED" && (
             <button
               type="button"
               onClick={async () => {
@@ -765,7 +805,7 @@ export default function JobCardFormModal({
             </button>
           )}
 
-          {isTechnician && (
+          {isTechnician && !isReadOnly && (
             <button
               type="button"
               onClick={async () => {
@@ -805,7 +845,7 @@ export default function JobCardFormModal({
             </button>
           )}
 
-          {isTechnician && hydratedCard?.status === "IN_PROGRESS" && (
+          {isTechnician && !isReadOnly && hydratedCard?.status === "IN_PROGRESS" && (
             <button
               type="button"
               onClick={async () => {
@@ -831,7 +871,8 @@ export default function JobCardFormModal({
           )}
 
 
-          {isServiceManager && hydratedCard?.passedToManager && (
+          {/* Manager Approval Buttons - Only for Service Managers, never for Technicians */}
+          {isServiceManager && !isTechnician && !isReadOnly && hydratedCard?.passedToManager && (
             (hydratedCard as any).managerReviewStatus === "PENDING"
           ) && (
               <>
@@ -864,7 +905,7 @@ export default function JobCardFormModal({
           >
             Cancel
           </button>
-          {!isTechnician && (
+          {!isTechnician && !isReadOnly && (
             <button
               type="submit"
               form="jobCardForm"

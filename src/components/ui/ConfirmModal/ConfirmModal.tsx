@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { Modal } from "../Modal";
 import { Button } from "../Button";
 import { AlertCircle, CheckCircle, XCircle, Info } from "lucide-react";
@@ -6,7 +7,7 @@ import { AlertCircle, CheckCircle, XCircle, Info } from "lucide-react";
 export interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title: string;
   message: string;
   type?: "danger" | "warning" | "info" | "success";
@@ -56,8 +57,16 @@ export function ConfirmModal({
     }
   };
 
-  const handleConfirm = () => {
-    onConfirm();
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  const handleConfirm = async () => {
+    if (isConfirming) return;
+    setIsConfirming(true);
+    try {
+      await Promise.resolve(onConfirm());
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
   return (
@@ -69,7 +78,7 @@ export function ConfirmModal({
         <div className="flex gap-3 justify-center">
           <Button
             onClick={onClose}
-            disabled={isLoading}
+            disabled={isLoading || isConfirming}
             variant="outline"
             className="min-w-[100px]"
           >
@@ -77,14 +86,13 @@ export function ConfirmModal({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={isLoading}
+            disabled={isLoading || isConfirming}
             className={`${getConfirmButtonColor()} text-white min-w-[100px]`}
           >
-            {isLoading ? "Processing..." : confirmText}
+            {(isLoading || isConfirming) ? "Processing..." : confirmText}
           </Button>
         </div>
       </div>
     </Modal>
   );
 }
-

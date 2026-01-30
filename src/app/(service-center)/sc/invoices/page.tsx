@@ -138,9 +138,20 @@ function InvoicesContent() {
       // Use invoicesService.create which properly handles the API call and response transformation
       return await invoicesService.create(createInvoiceDto);
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      // Invalidate job cards to refresh the list and show invoice status
+      if (variables.jobCardId) {
+        queryClient.invalidateQueries({ queryKey: ['job-cards'] });
+      }
       alert(`Invoice generated and saved successfully! Invoice Number: ${data.invoiceNumber || data.id}`);
+      
+      // If invoice was created from job card, navigate back to job cards after a short delay
+      if (variables.jobCardId) {
+        setTimeout(() => {
+          router.push('/sc/job-cards');
+        }, 1500);
+      }
     },
     onError: (err: any) => {
       console.error("Failed to save invoice", err);

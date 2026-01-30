@@ -3,7 +3,8 @@ import { FileText, Wrench, Car, User, Calendar, Eye, Edit, Clock, Banknote } fro
 import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { UserInfo } from '@/shared/types/auth.types';
 import { JobCardPartsRequest } from '@/shared/types/jobcard-inventory.types';
-import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
+import { getVehicleDisplayString, getAssignedEngineerName, getJobCardCustomerName } from "@/features/job-cards/utils/job-card-helpers";
+import { hasActiveQuotation } from "@/shared/utils/quotation.utils";
 
 interface JobCardListProps {
     currentJobs: JobCard[];
@@ -132,7 +133,9 @@ const JobCardList = React.memo<JobCardListProps>(({
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-xs font-medium text-gray-500 mb-0.5">Customer</p>
-                                                <p className="font-semibold text-gray-900 text-sm truncate">{job.customerName}</p>
+                                                <p className="font-semibold text-gray-900 text-sm truncate">
+                                                    {getJobCardCustomerName(job)}
+                                                </p>
                                                 {job.customer?.phone && (
                                                     <p className="text-xs text-gray-600 mt-0.5">{job.customer.phone}</p>
                                                 )}
@@ -220,29 +223,40 @@ const JobCardList = React.memo<JobCardListProps>(({
                                                 View
                                             </button>
                                         )}
-                                        {isServiceAdvisor && job.isTemporary && !job.quotation && !job.quotationId && onCreateQuotation && (() => {
+                                        {isServiceAdvisor && job.isTemporary && !hasActiveQuotation(job) && onCreateQuotation && (() => {
                                             const hasWarrantyItems = job.part2?.some((item) => item.partWarrantyTag || item.isWarranty) || false;
-                                            if (!hasWarrantyItems && !job.passedToManager) {
-                                                return (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (!hasQuotation?.(job.id)) {
-                                                                onCreateQuotation(job);
-                                                            }
-                                                        }}
-                                                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition inline-flex items-center gap-1 justify-center ${hasQuotation?.(job.id)
-                                                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                                            : "bg-indigo-600 text-white hover:bg-indigo-700"}`}
-                                                        disabled={hasQuotation?.(job.id)}
-                                                        title={hasQuotation?.(job.id) ? "Quotation already created" : "Create Quotation"}
-                                                    >
-                                                        <FileText size={14} />
-                                                        {hasQuotation?.(job.id) ? "Quotation Created" : "Create Quotation"}
-                                                    </button>
-                                                );
+                                            const managerStatus = (job as any).managerReviewStatus;
+
+                                            // Advisor can create quotation:
+                                            // - if there are NO warranty items, OR
+                                            // - if there ARE warranty items but manager has APPROVED them
+                                            const canCreate =
+                                              !hasWarrantyItems || (hasWarrantyItems && managerStatus === "APPROVED");
+
+                                            if (!canCreate) {
+                                                return null;
                                             }
-                                            return null;
+
+                                            return (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (!hasQuotation?.(job.id)) {
+                                                            onCreateQuotation(job);
+                                                        }
+                                                    }}
+                                                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition inline-flex items-center gap-1 justify-center ${hasQuotation?.(job.id)
+                                                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                                        : "bg-indigo-600 text-white hover:bg-indigo-700"}`}
+                                                    disabled={hasQuotation?.(job.id)}
+                                                    title={hasQuotation?.(job.id)
+                                                        ? "Quotation already created"
+                                                        : "Create Quotation"}
+                                                >
+                                                    <FileText size={14} />
+                                                    {hasQuotation?.(job.id) ? "Quotation Created" : "Create Quotation"}
+                                                </button>
+                                            );
                                         })()}
                                         {isServiceAdvisor && job.draftIntake && job.sourceAppointmentId && onEditDraft && (
                                             <button
@@ -256,7 +270,7 @@ const JobCardList = React.memo<JobCardListProps>(({
                                                 Edit Draft
                                             </button>
                                         )}
-                                        {isServiceManager && onEdit && (
+                                        {((isServiceManager || (isServiceAdvisor && (job as any).managerReviewStatus === "REJECTED")) && onEdit) && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -265,7 +279,7 @@ const JobCardList = React.memo<JobCardListProps>(({
                                                 className="flex-1 border border-blue-400 text-blue-700 px-3 py-2 rounded-lg text-xs font-medium hover:bg-blue-50 transition inline-flex items-center gap-1 justify-center"
                                             >
                                                 <Edit size={14} />
-                                                Edit
+                                                {isServiceAdvisor && (job as any).managerReviewStatus === "REJECTED" ? "Edit & Resubmit" : "Edit"}
                                             </button>
                                         )}
                                     </div>

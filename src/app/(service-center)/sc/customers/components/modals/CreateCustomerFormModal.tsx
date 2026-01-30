@@ -267,6 +267,7 @@ export function CreateCustomerFormModal({
           </div>
           <FormInput
             label="Pincode"
+            required
             value={formData.pincode || ""}
             onChange={(e) => {
               onFormChange({ ...formData, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) });
@@ -295,6 +296,22 @@ export function CreateCustomerFormModal({
             <option value="B2B">B2B</option>
           </select>
         </div>
+
+        {/* GST Number - Optional field */}
+        <FormInput
+          label="GST Number"
+          value={formData.gstNumber || ""}
+          onChange={(e) => {
+            const gstValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15);
+            onFormChange({ ...formData, gstNumber: gstValue });
+            if (fieldErrors.gstNumber) {
+              onFieldErrorChange({ ...fieldErrors, gstNumber: "" });
+            }
+          }}
+          placeholder="Enter GST number (optional)"
+          maxLength={15}
+          error={fieldErrors.gstNumber}
+        />
 
         <div className="flex gap-3 pt-4 border-t border-gray-200">
           <Button onClick={onClose} variant="secondary" className="flex-1">

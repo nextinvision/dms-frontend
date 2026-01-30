@@ -64,3 +64,18 @@ export function generateQuotationNumber(
 
     return `QT-${serviceCenterCode}-${monthKey}-${String(nextSequence).padStart(4, "0")}`;
 }
+
+/**
+ * Whether the job has an "active" (non–customer-cancelled) quotation.
+ * When the customer cancels, status is CUSTOMER_REJECTED; advisor can create a new quote.
+ * Used to show/enable "Create Quotation" in Advisor dashboard.
+ */
+export function hasActiveQuotation(job: {
+    quotationId?: string | null;
+    quotation?: { status?: string } | null;
+}): boolean {
+    if (!job.quotationId && !job.quotation) return false;
+    const s = (job.quotation as { status?: string } | undefined)?.status?.toUpperCase?.();
+    if (s === "CUSTOMER_REJECTED") return false;
+    return true;
+}

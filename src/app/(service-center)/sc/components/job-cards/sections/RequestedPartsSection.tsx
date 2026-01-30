@@ -10,16 +10,22 @@ interface RequestedPartsSectionProps {
     form: CreateJobCardForm;
     updateField: <K extends keyof CreateJobCardForm>(field: K, value: CreateJobCardForm[K]) => void;
     onError?: (message: string) => void;
+    readOnly?: boolean;
+    /** Job card status. Add parts is allowed only for technicians when status is IN_PROGRESS. */
+    jobStatus?: string;
 }
 
 export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
     form,
     updateField,
     onError,
+    readOnly = false,
+    jobStatus,
 }) => {
-    // Role-based access control - only service technicians can request parts
     const { userRole } = useRole();
     const isTechnician = userRole === "service_engineer";
+    /** Add parts allowed only for technicians when job is IN_PROGRESS */
+    const canAddParts = isTechnician && jobStatus === "IN_PROGRESS";
 
     const [newItem, setNewItem] = useState<Partial<JobCardPart2Item>>({
         partName: "",
@@ -147,9 +153,9 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
 
 
 
-    // Access Control Logic:
-    // 1. Service Technician: Can see section, Add parts, View list (Full Access)
-    // 2. Others: Can only SEE the list if parts exist (Read Only), cannot Add/Request
+    // Access Control:
+    // - Technician: Can see section. Add parts / remove only when job is IN_PROGRESS.
+    // - Others: Can only see the list if parts exist (read-only), cannot add/request.
     const hasRequestedParts = form.requestedParts && form.requestedParts.length > 0;
 
     if (!isTechnician && !hasRequestedParts) {
@@ -163,7 +169,7 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
                 Requested Parts
             </h3>
 
-            {isTechnician && (
+            {canAddParts && (
                 <div className="bg-white rounded-lg p-4 mb-4 border border-gray-300">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">
                         Add Part Request
@@ -257,13 +263,13 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Part Code</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">QTY</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
-                                {isTechnician && <th className="px-3 py-2 text-left font-semibold text-gray-700">Action</th>}
+                                {canAddParts && <th className="px-3 py-2 text-left font-semibold text-gray-700">Action</th>}
                             </tr>
                         </thead>
                         <tbody>
                             {(!form.requestedParts || form.requestedParts.length === 0) ? (
                                 <tr>
-                                    <td colSpan={isTechnician ? 6 : 5} className="px-3 py-8 text-center text-gray-500">
+                                    <td colSpan={canAddParts ? 6 : 5} className="px-3 py-8 text-center text-gray-500">
                                         No parts requested yet.
                                     </td>
                                 </tr>
@@ -280,7 +286,7 @@ export const RequestedPartsSection: React.FC<RequestedPartsSectionProps> = ({
                                                 Sending Parts
                                             </span>
                                         </td>
-                                        {isTechnician && (
+                                        {canAddParts && (
                                             <td className="px-3 py-2">
                                                 <button
                                                     type="button"

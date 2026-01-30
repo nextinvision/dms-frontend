@@ -9,6 +9,7 @@ import { JobCard, JobCardStatus, Priority } from '@/shared/types';
 import { UserInfo } from '@/shared/types/auth.types';
 import { JobCardPartsRequest } from '@/shared/types/jobcard-inventory.types';
 import { getJobCardVehicleDisplay, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
+import { hasActiveQuotation } from "@/shared/utils/quotation.utils";
 
 interface JobCardTableProps {
     currentJobs: JobCard[];
@@ -421,32 +422,38 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                     </button>
                                                 )}
 
-                                                {/* Create Quotation Button - Show only for temp job cards WITHOUT warranty items and quotation not created */}
-                                                {isServiceAdvisor && job.isTemporary && !job.quotation && !job.quotationId && onCreateQuotation && (() => {
-                                                    // Check if job has any warranty items
+                                                {/* Create Quotation Button - Advisor rules:
+                                                    - If NO warranty items: advisor can create directly
+                                                    - If THERE ARE warranty items: advisor can only create AFTER manager APPROVED
+                                                */}
+                                                {isServiceAdvisor && job.isTemporary && !hasActiveQuotation(job) && onCreateQuotation && (() => {
                                                     const hasWarrantyItems = job.part2?.some((item: any) => item.partWarrantyTag || item.isWarranty) || false;
+                                                    const managerStatus = (job as any).managerReviewStatus;
 
-                                                    // Show Create Quotation only if NO warranty items and NOT passed to manager
-                                                    if (!hasWarrantyItems && !job.passedToManager) {
-                                                        return (
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (!hasQuotation?.(job.id)) {
-                                                                        onCreateQuotation(job);
-                                                                    }
-                                                                }}
-                                                                className={`p-2 rounded transition ${hasQuotation?.(job.id)
-                                                                    ? "text-gray-300 cursor-not-allowed"
-                                                                    : "text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"}`}
-                                                                title={hasQuotation?.(job.id) ? "Quotation Already Created" : "Create Quotation"}
-                                                                disabled={hasQuotation?.(job.id)}
-                                                            >
-                                                                <FileText size={16} />
-                                                            </button>
-                                                        );
+                                                    const canCreate =
+                                                      !hasWarrantyItems || (hasWarrantyItems && managerStatus === "APPROVED");
+
+                                                    if (!canCreate) {
+                                                        return null;
                                                     }
-                                                    return null;
+
+                                                    return (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (!hasQuotation?.(job.id)) {
+                                                                    onCreateQuotation(job);
+                                                                }
+                                                            }}
+                                                            className={`p-2 rounded transition ${hasQuotation?.(job.id)
+                                                                ? "text-gray-300 cursor-not-allowed"
+                                                                : "text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"}`}
+                                                            title={hasQuotation?.(job.id) ? "Quotation Already Created" : "Create Quotation"}
+                                                            disabled={hasQuotation?.(job.id)}
+                                                        >
+                                                            <FileText size={16} />
+                                                        </button>
+                                                    );
                                                 })()}
 
                                                 {/* Pass to Manager Button - Show only for temp job cards WITH warranty items */}
@@ -545,14 +552,14 @@ const JobCardTable = React.memo<JobCardTableProps>(({
                                                     </>
                                                 )}
 
-                                                {isServiceManager && onEdit && (
+                                                {((isServiceManager || (isServiceAdvisor && (job as any).managerReviewStatus === "REJECTED")) && onEdit) && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             onEdit(job.id);
                                                         }}
                                                         className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition"
-                                                        title="Edit"
+                                                        title={isServiceAdvisor && (job as any).managerReviewStatus === "REJECTED" ? "Edit & Resubmit" : "Edit"}
                                                     >
                                                         <Edit size={16} />
                                                     </button>

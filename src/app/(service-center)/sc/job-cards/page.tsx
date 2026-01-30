@@ -1,6 +1,9 @@
 "use client";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { localStorage as safeStorage } from "@/shared/lib/localStorage";
 import {
   Plus, Search, Filter, CheckCircle, Loader2, UserCheck, X, Clock, User,
   Wrench, AlertCircle, Package, FileText, Eye, Edit, Car, Calendar, ClipboardList
@@ -24,6 +27,7 @@ import { useJobCardActions } from "@/features/job-cards/hooks/useJobCardActions"
 // Constants & Types
 import { SERVICE_TYPE_OPTIONS } from "@/shared/constants/service-types";
 import type { JobCard, JobCardStatus, JobCardFilterType } from "@/shared/types/job-card.types";
+import { hasActiveQuotation } from "@/shared/utils/quotation.utils";
 
 // Lazy load modals to improve initial load
 const JobCardDetailsModal = dynamic(() => import("./components/JobCardDetailsModal"), {
@@ -38,10 +42,8 @@ const SERVICE_TYPES = SERVICE_TYPE_OPTIONS;
 // Import job card helper functions
 import { getJobCardVehicleDisplay, getJobCardCustomerName } from "@/features/job-cards/utils/job-card-helpers";
 
-// Import JobCardTable component
-const JobCardTable = dynamic(() => import("./components/JobCardTable"), {
-  loading: () => <p>Loading table...</p>
-});
+// Import JobCardTable component (regular import to avoid chunk loading issues)
+import JobCardTable from "./components/JobCardTable";
 
 const getStatusColor = (status: JobCardStatus): string => {
   const colors: Record<JobCardStatus, string> = {
@@ -74,6 +76,7 @@ const getPriorityColor = (priority: string): string => {
 
 export default function JobCards() {
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   // 1. View & Data Hook
   const {
@@ -84,6 +87,7 @@ export default function JobCards() {
     filteredJobs,
     draftCount,
     pendingApprovalCount,
+    activeCount,
     kanbanColumns,
     getJobsByStatus,
     isLoading,
@@ -121,7 +125,6 @@ export default function JobCards() {
     handleManagerQuoteAction,
     handlePartRequestSubmit,
     handleServiceManagerPartApproval,
-    handleInventoryManagerPartsApproval,
     handleWorkCompletionNotification,
     handleSubmitToManager,
     handleCreateInvoice,
@@ -146,13 +149,44 @@ export default function JobCards() {
     setIsClient(true);
   }, []);
 
+  // Refresh job cards when page becomes visible (e.g., returning from quotations)
+  // Only needed for advisor/manager/technician views – avoid extra refreshes for Call Center
+  useEffect(() => {
+    if (!(isServiceAdvisor || isServiceManager || isTechnician)) {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Refetch job cards when page becomes visible to show updated quotation/status
+        queryClient.invalidateQueries({ queryKey: ['job-cards'] });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [queryClient, isServiceAdvisor, isServiceManager, isTechnician]);
+
   const jobForPanel = Boolean(selectedJob);
 
   // Derived state for Technician view
   const assignedJobCards = visibleJobCards; // For technician, visible cards are already filtered
-  const assignedJobs = isTechnician ? visibleJobCards.filter((job) => job.status === "ASSIGNED") : [];
-  const inProgressJobs = isTechnician ? visibleJobCards.filter((job) => job.status === "IN_PROGRESS") : [];
-  const completedJobs = isTechnician ? visibleJobCards.filter((job) => job.status === "COMPLETED") : [];
+  // For technicians, once a job is started, it should not jump back to "Assigned"
+  // Treat PARTS_PENDING as part of the in-progress workflow so status feels persistent
+  const assignedJobs = isTechnician
+    ? visibleJobCards.filter((job) => job.status === "ASSIGNED")
+    : [];
+  const inProgressJobs = isTechnician
+    ? visibleJobCards.filter(
+        (job) => job.status === "IN_PROGRESS" || job.status === "PARTS_PENDING"
+      )
+    : [];
+  const completedJobs = isTechnician
+    ? visibleJobCards.filter((job) => job.status === "COMPLETED")
+    : [];
 
   const handleEditDraft = (job: JobCard) => {
     if (!job.sourceAppointmentId) {
@@ -167,6 +201,7 @@ export default function JobCards() {
 
   const filterLabelMap: Record<JobCardFilterType, string> = {
     all: "All",
+    active: "Active",
     created: "Created",
     assigned: "Assigned",
     in_progress: "In Progress",
@@ -174,7 +209,7 @@ export default function JobCards() {
     draft: "Drafts",
     pending_approval: "Pending Approval",
   };
-  const filterOptions: JobCardFilterType[] = ["all", "created", "assigned", "in_progress", "completed", "draft", "pending_approval"];
+  const filterOptions: JobCardFilterType[] = ["all", "active", "created", "assigned", "in_progress", "completed", "draft", "pending_approval"];
 
   const handleJobCardError = (message: string) => {
     console.error(message);
@@ -229,9 +264,9 @@ export default function JobCards() {
             <p className="text-gray-500">Check service status for customer inquiries</p>
           </div>
 
-          {/* Search */}
+          {/* Search and Filters */}
           <div className="mb-6 bg-white rounded-xl shadow-md p-4">
-            <div className="relative">
+            <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
               <input
                 type="text"
@@ -240,6 +275,26 @@ export default function JobCards() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
+            </div>
+            
+            {/* Filter Buttons for Call Center */}
+            <div className="flex flex-wrap gap-2">
+              {filterOptions.map((f) => {
+                const count = f === 'draft' ? draftCount : f === 'pending_approval' ? pendingApprovalCount : f === 'active' ? activeCount : null;
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === f
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm"
+                        }`}
+                  >
+                    {filterLabelMap[f]}
+                    {count !== null && ` (${count})`}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -255,10 +310,37 @@ export default function JobCards() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredJobs.map((job) => (
+                {filteredJobs.map((job) => {
+                  const jobCardId = job.id || job.jobCardNumber;
+                  if (!jobCardId) {
+                    console.warn('Job card missing ID:', job);
+                    return null;
+                  }
+                  const handleClick = (e: React.MouseEvent) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const url = `/sc/job-cards/${jobCardId}`;
+                    console.log('Navigating to job card:', url);
+                    try {
+                      router.push(url);
+                    } catch (error) {
+                      console.error('Router push failed, using window.location:', error);
+                      window.location.href = url;
+                    }
+                  };
+                  return (
                   <div
-                    key={job.id}
-                    className="p-4 border-2 border-gray-200 rounded-lg bg-gray-50 cursor-not-allowed"
+                    key={job.id || job.jobCardNumber}
+                    onClick={handleClick}
+                    className="block p-4 border-2 border-gray-200 rounded-lg bg-gray-50 cursor-pointer hover:bg-gray-100 hover:border-blue-300 transition-all active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleClick(e as any);
+                      }
+                    }}
                   >
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                       {/* Job Card Number */}
@@ -303,8 +385,17 @@ export default function JobCards() {
                         </div>
                       )}
                     </div>
+                    
+                    {/* Click indicator */}
+                    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-end">
+                      <span className="text-xs text-blue-600 font-medium flex items-center gap-1">
+                        <Eye size={12} />
+                        Click to view details →
+                      </span>
+                    </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -428,7 +519,11 @@ export default function JobCards() {
                 partsRequestsData={partsRequestsData}
                 onJobClick={handleJobCardClick}
                 getPriorityColor={getPriorityColor}
-                onUpdateStatus={(jobId, status) => updateStatus(jobId, status)}
+                onUpdateStatus={async (jobId, status) => {
+                  await updateStatus(jobId, status);
+                  // Refresh job cards after status update
+                  await queryClient.refetchQueries({ queryKey: ['job-cards'] });
+                }}
                 isTechnician={true}
               />
             )}
@@ -445,9 +540,11 @@ export default function JobCards() {
                 isTechnician={true}
                 userInfo={userInfo}
                 getNextStatus={getNextStatus}
-                onUpdateStatus={(jobId, status) => {
+                onUpdateStatus={async (jobId, status) => {
                   if (status) {
-                    updateStatus(jobId, status as JobCardStatus);
+                    await updateStatus(jobId, status as JobCardStatus);
+                    // Refresh job cards after status update
+                    await queryClient.refetchQueries({ queryKey: ['job-cards'] });
                   } else {
                     setUpdatingStatusJobId(jobId);
                     const currentStatus = visibleJobCards.find(j => j.id === jobId)?.status || "ASSIGNED";
@@ -469,10 +566,14 @@ export default function JobCards() {
             onSubmit={async (jobId, items) => {
               await handlePartRequestSubmit(visibleJobCards, jobId, items);
               setShowPartsRequestModal(false);
+              // Refresh job cards after parts request submission
+              await queryClient.refetchQueries({ queryKey: ['job-cards'] });
             }}
-            onNotifyWorkCompletion={(jobId) => {
+            onNotifyWorkCompletion={async (jobId) => {
               handleWorkCompletionNotification(jobId);
               setShowPartsRequestModal(false);
+              // Refresh job cards after work completion notification
+              await queryClient.refetchQueries({ queryKey: ['job-cards'] });
             }}
             isClient={isClient}
           />
@@ -550,6 +651,7 @@ export default function JobCards() {
           view={view}
           draftCount={draftCount}
           pendingApprovalCount={pendingApprovalCount}
+          activeCount={activeCount}
         />
 
         <JobCardActions
@@ -588,7 +690,11 @@ export default function JobCards() {
             kanbanColumns={kanbanColumns}
             getJobsByStatus={getJobsByStatus}
             partsRequestsData={partsRequestsData}
-            onJobClick={(job) => router.push(`/sc/job-cards/${job.id}`)}
+            onJobClick={(job) => {
+              // Persist selected job card for faster detail loading
+              safeStorage.setItem("selectedJobCardForDetail", job);
+              router.push(`/sc/job-cards/${job.id}`);
+            }}
             getPriorityColor={getPriorityColor}
           />
         )}
@@ -600,10 +706,19 @@ export default function JobCards() {
             partsRequestsData={partsRequestsData}
             getStatusColor={getStatusColor}
             getPriorityColor={getPriorityColor}
-            onJobClick={(job) => router.push(`/sc/job-cards/${job.id}`)}
+            onJobClick={(job) => {
+              safeStorage.setItem("selectedJobCardForDetail", job);
+              router.push(`/sc/job-cards/${job.id}`);
+            }}
             isServiceAdvisor={isServiceAdvisor}
             isServiceManager={isServiceManager}
-            onView={(jobId) => router.push(`/sc/job-cards/${jobId}`)}
+            onView={(jobId) => {
+              const job = filteredJobs.find((j) => j.id === jobId);
+              if (job) {
+                safeStorage.setItem("selectedJobCardForDetail", job);
+              }
+              router.push(`/sc/job-cards/${jobId}`);
+            }}
             onEdit={(jobId) => router.push(`/sc/job-cards/${jobId}/edit`)}
             onEditDraft={handleEditDraft}
             onAssignEngineer={(jobId) => {
@@ -618,9 +733,21 @@ export default function JobCards() {
             getNextStatus={getNextStatus}
             hasQuotation={(jobId) => {
               const job = filteredJobs.find(j => j.id === jobId);
-              return !!job?.quotationId || !!job?.quotation;
+              return job ? hasActiveQuotation(job) : false;
             }}
             onCreateQuotation={(job) => {
+              // Persist job card context so quotations page can auto-open the modal
+              if (typeof window !== "undefined") {
+                const payload = {
+                  jobCardId: job.id,
+                  customerId: (job as any).customerId || job.customer?.id,
+                  customerName: (job as any).customerName || job.customerName || job.part1?.fullName || "",
+                  serviceCenterId: (job as any).serviceCenterId || serviceCenterContext.serviceCenterId,
+                  vehicleId: (job as any).vehicleId || job.vehicleId,
+                  jobCardData: job,
+                };
+                safeStorage.setItem("pendingQuotationFromJobCard", payload);
+              }
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
             }}
             onCreateInvoice={(job) => {
@@ -670,7 +797,7 @@ export default function JobCards() {
             getNextStatus={getNextStatus}
             hasQuotation={(jobId) => {
               const job = filteredJobs.find(j => j.id === jobId);
-              return !!job?.quotationId;
+              return job ? hasActiveQuotation(job) : false;
             }}
             onCreateQuotation={(job) => {
               router.push(`/sc/quotations?fromJobCard=true&jobCardId=${job.id}`);
@@ -719,7 +846,7 @@ export default function JobCards() {
           setShowDetails(false);
           handleSubmitToManager(jobId);
         }}
-        onUpdateStatus={(jobId, initialStatus) => {
+        onUpdateStatus={async (jobId, initialStatus) => {
           setShowDetails(false);
           setUpdatingStatusJobId(jobId);
           setNewStatus(getNextStatus(initialStatus)[0]);
@@ -797,14 +924,20 @@ export default function JobCards() {
       {/* Update Status Modal */}
       <StatusUpdateModal
         open={showStatusUpdateModal && !!updatingStatusJobId}
-        onClose={() => {
+        onClose={async () => {
           setShowStatusUpdateModal(false);
           setUpdatingStatusJobId(null);
+          // Refresh job cards when modal closes (in case status was updated)
+          await queryClient.refetchQueries({ queryKey: ['job-cards'] });
         }}
         currentStatus={visibleJobCards.find((j) => j.id === updatingStatusJobId)?.status || "CREATED"}
         newStatus={newStatus}
         onStatusChange={setNewStatus}
-        onSubmit={handleStatusUpdate}
+        onSubmit={async () => {
+          await handleStatusUpdate();
+          // Refresh job cards after status update
+          await queryClient.refetchQueries({ queryKey: ['job-cards'] });
+        }}
         loading={actionLoading}
         getNextStatus={getNextStatus}
       />

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Car, Wrench, FileText, Clock, User } from 'lucide-react';
 import { JobCard, KanbanColumn, JobCardStatus, Priority } from '@/shared/types';
-import { getVehicleDisplayString, getAssignedEngineerName } from "@/features/job-cards/utils/job-card-helpers";
+import { getVehicleDisplayString, getAssignedEngineerName, getJobCardCustomerName } from "@/features/job-cards/utils/job-card-helpers";
 
 interface JobCardKanbanProps {
     kanbanColumns: KanbanColumn[];
@@ -88,7 +88,7 @@ const JobCardKanban: React.FC<JobCardKanbanProps> = ({
                                                                 {job.jobCardNumber || job.id}
                                                             </p>
                                                             <p className="text-xs text-gray-600 truncate">
-                                                                {job.customerName}
+                                                                {getJobCardCustomerName(job)}
                                                             </p>
                                                             {job.customer?.phone && (
                                                                 <p className="text-xs text-gray-500 truncate">

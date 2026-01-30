@@ -40,14 +40,58 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  async rewrites() {
-    return [
-      {
-        source: '/dev-api/:path*',
-        destination: 'http://localhost:3002/api/:path*',
-      },
-    ]
+  // Force unique build ID for every deployment to bust caches
+  generateBuildId: async () => {
+    return 'build-' + Date.now();
   },
+
+  // async rewrites() {
+  //   return [
+  //     {
+  //       source: '/dev-api/:path*',
+  //       destination: 'http://localhost:3002/api/:path*',
+  //     },
+  //     // Workaround: Route chunk 7200 to API handler
+  //     {
+  //       source: '/_next/static/chunks/7200.6d0db3ca9f7d654d.js',
+  //       destination: '/api/chunk-7200',
+  //     },
+  //   ]
+  // },
+
+  // async headers() {
+  //   return [
+  //     {
+  //       // Cache static assets with hashes aggressively (they have content hashes)
+  //       source: '/_next/static/:path*',
+  //       headers: [
+  //         {
+  //           key: 'Cache-Control',
+  //           value: 'public, max-age=31536000, immutable',
+  //         },
+  //       ],
+  //     },
+  //     {
+  //       // Don't cache HTML pages - they reference chunk hashes that change on deploy
+  //       // This prevents stale HTML from referencing old chunk hashes
+  //       source: '/:path*',
+  //       headers: [
+  //         {
+  //           key: 'Cache-Control',
+  //           value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  //         },
+  //         {
+  //           key: 'Pragma',
+  //           value: 'no-cache',
+  //         },
+  //         {
+  //           key: 'Expires',
+  //           value: '0',
+  //         },
+  //       ],
+  //     },
+  //   ]
+  // },
 };
 
 export default nextConfig;

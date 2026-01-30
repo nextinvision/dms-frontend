@@ -31,6 +31,9 @@ export function ViewQuotationModal({
     isServiceManager,
 }: any) {
     const [signatureUrl, setSignatureUrl] = React.useState<string | undefined>(undefined);
+    const [isSending, setIsSending] = React.useState(false);
+    const [isApproving, setIsApproving] = React.useState(false);
+    const [isRejecting, setIsRejecting] = React.useState(false);
 
     React.useEffect(() => {
         const fetchSignature = async () => {
@@ -687,28 +690,55 @@ export function ViewQuotationModal({
                     <>
                         {quotation.status?.toUpperCase() === "DRAFT" && onSendToCustomer && (
                             <button
-                                onClick={() => onSendToCustomer(quotation.id)}
-                                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
+                                onClick={async () => {
+                                    if (isSending) return;
+                                    try {
+                                        setIsSending(true);
+                                        await onSendToCustomer(quotation.id);
+                                    } finally {
+                                        setIsSending(false);
+                                    }
+                                }}
+                                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                                disabled={isSending}
                             >
                                 <MessageCircle size={18} />
-                                Send to Customer (WhatsApp)
+                                {isSending ? "Opening WhatsApp..." : "Send to Customer (WhatsApp)"}
                             </button>
                         )}
                         {quotation.status?.toUpperCase() === "SENT_TO_CUSTOMER" && onCustomerApproval && onCustomerRejection && (
                             <>
                                 <button
-                                    onClick={() => onCustomerRejection(quotation.id)}
-                                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium inline-flex items-center gap-2"
+                                    onClick={async () => {
+                                        if (isRejecting || isApproving) return;
+                                        try {
+                                            setIsRejecting(true);
+                                            await onCustomerRejection(quotation.id);
+                                        } finally {
+                                            setIsRejecting(false);
+                                        }
+                                    }}
+                                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    disabled={isRejecting || isApproving}
                                 >
                                     <UserX size={18} />
-                                    Customer Rejected
+                                    {isRejecting ? "Updating..." : "Customer Rejected"}
                                 </button>
                                 <button
-                                    onClick={() => onCustomerApproval(quotation.id)}
-                                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
+                                    onClick={async () => {
+                                        if (isRejecting || isApproving) return;
+                                        try {
+                                            setIsApproving(true);
+                                            await onCustomerApproval(quotation.id);
+                                        } finally {
+                                            setIsApproving(false);
+                                        }
+                                    }}
+                                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    disabled={isRejecting || isApproving}
                                 >
                                     <UserCheck size={18} />
-                                    Customer Approved
+                                    {isApproving ? "Updating..." : "Customer Approved"}
                                 </button>
                             </>
                         )}

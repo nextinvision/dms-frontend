@@ -136,3 +136,146 @@ export const isEngineerAssignedToJob = (job: JobCard, engineerId: string | null,
 
     return false;
 };
+
+/**
+ * Extended part item interface that includes source and status information
+ */
+export interface MergedPartItem {
+    // Core part information
+    srNo: number;
+    partName: string;
+    partCode: string;
+    qty: number;
+    amount: number;
+    technician?: string;
+    labourCode?: string;
+    itemType?: "part" | "work_item";
+    partWarrantyTag: boolean;
+    isWarranty: boolean;
+    inventoryPartId?: string;
+    serialNumber?: string;
+    warrantyTagNumber?: string;
+    
+    // Source tracking
+    source: 'existing' | 'requested' | 'completed';
+    requestStatus?: 'PENDING' | 'APPROVED' | 'PARTIALLY_APPROVED' | 'REJECTED' | 'COMPLETED';
+    requestId?: string;
+}
+
+/**
+ * Merges all parts from different sources (existing items, part2 JSON, and parts requests)
+ * into a unified list with source tracking. This ensures all parts are visible regardless
+ * of their source or status.
+ * 
+ * @param jobCard - The job card object containing items, part2, and partsRequests
+ * @returns Array of merged part items with source and status information
+ */
+export const getAllJobCardParts = (jobCard: any): MergedPartItem[] => {
+    const mergedParts: MergedPartItem[] = [];
+    const seenParts = new Set<string>(); // Track by partCode + partName to avoid duplicates
+
+    // 1. Add existing parts from JobCardItem table (normalized, source of truth)
+    const existingItems = jobCard.items || [];
+    existingItems.forEach((item: any) => {
+        if (!item.partName) return;
+        
+        const key = `${item.partCode || ''}_${item.partName}`;
+        if (!seenParts.has(key)) {
+            seenParts.add(key);
+            mergedParts.push({
+                srNo: item.srNo || mergedParts.length + 1,
+                partName: item.partName,
+                partCode: item.partCode || '',
+                qty: item.qty || 1,
+                amount: item.amount || 0,
+                technician: item.technician,
+                labourCode: item.labourCode,
+                itemType: item.itemType || 'part',
+                partWarrantyTag: item.partWarrantyTag || false,
+                isWarranty: item.isWarranty || false,
+                inventoryPartId: item.inventoryPartId,
+                serialNumber: item.serialNumber,
+                warrantyTagNumber: item.warrantyTagNumber,
+                source: 'existing',
+            });
+        }
+    });
+
+    // 2. Fallback: Add parts from part2 JSON (legacy storage) if no items relation exists
+    if (existingItems.length === 0) {
+        const part2Json = Array.isArray(jobCard.part2) ? jobCard.part2 : [];
+        part2Json.forEach((item: any) => {
+            if (!item.partName) return;
+            
+            const key = `${item.partCode || ''}_${item.partName}`;
+            if (!seenParts.has(key)) {
+                seenParts.add(key);
+                mergedParts.push({
+                    srNo: item.srNo || mergedParts.length + 1,
+                    partName: item.partName,
+                    partCode: item.partCode || '',
+                    qty: item.qty || 1,
+                    amount: item.amount || 0,
+                    technician: item.technician,
+                    labourCode: item.labourCode,
+                    itemType: item.itemType || 'part',
+                    partWarrantyTag: item.partWarrantyTag || false,
+                    isWarranty: item.isWarranty || false,
+                    inventoryPartId: item.inventoryPartId,
+                    serialNumber: item.serialNumber,
+                    warrantyTagNumber: item.warrantyTagNumber,
+                    source: 'existing',
+                });
+            }
+        });
+    }
+
+    // 3. Add parts from PartsRequest (all statuses: PENDING, APPROVED, COMPLETED, etc.)
+    const partsRequests = jobCard.partsRequests || [];
+    partsRequests.forEach((request: any) => {
+        const requestItems = request.items || [];
+        const requestStatus = request.status || 'PENDING';
+        
+        requestItems.forEach((item: any) => {
+            if (!item.partName) return;
+            
+            // Use approved quantity if available, otherwise requested quantity
+            const qty = item.approvedQty > 0 ? item.approvedQty : (item.requestedQty || item.quantity || 1);
+            const partName = item.part?.name || item.partName || 'Unknown Part';
+            const partCode = item.part?.partNumber || item.partNumber || item.partId || '';
+            
+            // For requested parts, we want to show them separately from existing parts
+            // even if they match, because they represent a separate request with its own status
+            // This ensures users can see both existing parts AND requested parts with their status
+            
+            // Add as a new requested part (always add, don't merge with existing)
+            mergedParts.push({
+                srNo: mergedParts.length + 1,
+                partName,
+                partCode,
+                qty,
+                amount: 0, // Parts requests don't have amount initially
+                itemType: 'part',
+                partWarrantyTag: item.isWarranty || false,
+                isWarranty: item.isWarranty || false,
+                inventoryPartId: item.inventoryPartId || item.partId,
+                source: requestStatus === 'COMPLETED' ? 'completed' : 'requested',
+                requestStatus: requestStatus,
+                requestId: request.id,
+            });
+        });
+    });
+
+    // 4. Sort by srNo if available, otherwise maintain order
+    mergedParts.sort((a, b) => {
+        if (a.srNo && b.srNo) return a.srNo - b.srNo;
+        return 0;
+    });
+
+    // 5. Re-number srNo sequentially
+    mergedParts.forEach((part, index) => {
+        part.srNo = index + 1;
+    });
+
+    return mergedParts;
+};

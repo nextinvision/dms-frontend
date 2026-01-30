@@ -12,34 +12,7 @@ import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types
 import { ApprovalForm } from "./ApprovalForm";
 import { getInitialApprovalFormData, type ApprovalFormData } from "./form.schema";
 
-// Helper to map Backend PartsRequest to Frontend JobCardPartsRequest
-const mapPartsRequestToFrontend = (req: any): JobCardPartsRequest => {
-  const status = req.status;
-  const isScApproved = status === 'APPROVED' || status === 'COMPLETED' || status === 'PARTIALLY_APPROVED';
-  const isIssued = status === 'COMPLETED';
-
-  return {
-    id: req.id,
-    jobCardId: req.jobCard?.jobCardNumber || req.jobCardId, // Use jobCardNumber if available
-    vehicleNumber: req.jobCard?.vehicle?.registration || req.jobCard?.vehicle?.vehicleMake || "N/A",
-    customerName: req.jobCard?.customer?.name || "N/A",
-    requestedBy: req.jobCard?.assignedEngineer?.name || "Service Engineer", // Assuming engineer requested
-    requestedAt: req.createdAt,
-    status: status === 'COMPLETED' ? 'APPROVED' : status === 'REJECTED' ? 'REJECTED' : 'PENDING',
-    parts: (req.items || []).map((item: any) => ({
-      partId: item.id,
-      partName: item.partName || `Part #${item.partNumber}`,
-      quantity: item.requestedQty || item.quantity,
-      isWarranty: item.isWarranty,
-      serialNumber: item.partNumber
-    })),
-    scManagerApproved: isScApproved,
-    scManagerApprovedBy: isScApproved ? "SC Manager" : undefined, // Placeholder as we don't strictly track who clicked approve yet in this view
-    scManagerApprovedAt: isScApproved ? req.updatedAt : undefined, // Approximation
-    inventoryManagerAssigned: isIssued,
-    assignedEngineer: isIssued ? (req.jobCard?.assignedEngineer?.name || "Engineer") : undefined
-  };
-};
+import { mapPartsRequestToFrontend } from "@/shared/hooks/usePartsApproval";
 
 export default function ApprovalsPage() {
   const { userInfo, userRole } = useRole();

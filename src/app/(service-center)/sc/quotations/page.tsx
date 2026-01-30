@@ -103,15 +103,25 @@ function QuotationsContent() {
 
   const createQuotationMutation = useMutation({
     mutationFn: (data: Partial<Quotation>) => quotationRepository.create(data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      // Invalidate job cards if quotation was created from a job card
+      if (data?.jobCardId) {
+        queryClient.invalidateQueries({ queryKey: ['job-cards'] });
+      }
     }
   });
 
   const updateQuotationMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Quotation> }) => quotationRepository.update(id, data),
-    onSuccess: () => {
+    onSuccess: (updatedData, variables) => {
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      // Invalidate specific quotation detail
+      queryClient.invalidateQueries({ queryKey: ['quotations', variables.id] });
+      // Invalidate job cards if quotation is linked to a job card
+      if (updatedData?.jobCardId || variables.data?.jobCardId) {
+        queryClient.invalidateQueries({ queryKey: ['job-cards'] });
+      }
     }
   });
 
@@ -133,6 +143,7 @@ function QuotationsContent() {
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
   const [showCheckInSlipModal, setShowCheckInSlipModal] = useState<boolean>(false);
   const [checkInSlipData, setCheckInSlipData] = useState<CheckInSlipData | null>(null);
+  const [createdQuotationId, setCreatedQuotationId] = useState<string | null>(null);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -346,6 +357,10 @@ function QuotationsContent() {
         );
         setActiveServiceCenterId(normalizedCenterId);
 
+        // Immediately open the create modal so the user sees it right after redirect
+        // Form and customer details will hydrate as async data (search, insurers) resolve.
+        setShowCreateModal(true);
+
         // Find customer by ID or phone
         const findCustomer = async () => {
           try {
@@ -438,16 +453,12 @@ function QuotationsContent() {
                   }
                 }
 
-                // Open create modal
-                setShowCreateModal(true);
-
-                // Clear the stored data
+                // Clear the stored data once we've hydrated the form
                 safeStorage.removeItem("pendingQuotationFromJobCard");
               } else if (quotationData.customerId) {
                 const decodedCustomerId = String(quotationData.customerId);
                 setForm((prev) => ({ ...prev, customerId: decodedCustomerId }));
                 setActiveCustomerId(decodedCustomerId);
-                setShowCreateModal(true);
                 safeStorage.removeItem("pendingQuotationFromJobCard");
               }
             }, 500);
@@ -1312,6 +1323,16 @@ To reject, reply "REJECT"
     }
   };
 
+  const handleSendToCustomerAfterCreate = async (quotationId: string) => {
+    try {
+      await sendQuotationToCustomerById(quotationId, { manageLoading: true });
+      setShowCreateModal(false);
+      resetForm();
+      setCreatedQuotationId(null);
+    } catch {
+      // Error already shown in sendQuotationToCustomerById
+    }
+  };
 
   // Add item
   const addItem = () => {
@@ -1518,44 +1539,35 @@ To reject, reply "REJECT"
         // Remove ID and other non-updatable fields if necessary, but repo.update usually handles it
         const { id, quotationNumber, customer, vehicle, serviceCenter, ...updatableData } = updatedQuotation;
         await updateQuotationMutation.mutateAsync({ id: editingId, data: updatableData });
+        // Refresh quotations list to show updated data immediately
+        await queryClient.refetchQueries({ queryKey: ['quotations'] });
+        // Also update the selected quotation if viewing
+        if (selectedQuotation?.id === editingId) {
+          const updated = await quotationRepository.getById(editingId);
+          setSelectedQuotation(updated);
+        }
         showSuccess("Quotation updated successfully!");
       } else {
         const newQuotation = buildQuotationFromForm();
         const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
         updateLocalAppointmentStatus(createdQuotation);
+        // Refresh quotations list to show new quotation
+        await queryClient.refetchQueries({ queryKey: ['quotations'] });
+        // If created from job card, navigate back and refresh job cards
+        if (newQuotation.jobCardId) {
+          queryClient.invalidateQueries({ queryKey: ['job-cards'] });
+        }
         setFilter("DRAFT");
         showSuccess("Quotation created successfully!");
+        setCreatedQuotationId(createdQuotation.id);
+        // Keep modal open: show "Send to Customer" / "Done"
+        return;
       }
       setShowCreateModal(false);
       resetForm();
     } catch (error) {
       console.error("Error saving quotation:", error);
       showError("Failed to save quotation. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateAndSendToCustomer = async () => {
-    if (!validateQuotationForm()) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const newQuotation = buildQuotationFromForm();
-      const createdQuotation = await createQuotationMutation.mutateAsync(newQuotation);
-      updateLocalAppointmentStatus(createdQuotation);
-      setFilter("SENT_TO_CUSTOMER");
-
-      await sendQuotationToCustomerById(createdQuotation.id, { manageLoading: false });
-
-      setShowCreateModal(false);
-      resetForm();
-      showSuccess("Quotation created and sent successfully!");
-    } catch (error) {
-      console.error("Error creating and sending quotation:", error);
-      showError("Failed to create and send quotation. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -2144,15 +2156,22 @@ Please keep this slip safe for vehicle collection.`;
           }
 
           // Update quotation status and link job card
+          const updateData = {
+            status: "CUSTOMER_APPROVED" as const,
+            customerApproved: true,
+            customerApprovedAt: new Date().toISOString(),
+            jobCardId: jobCard?.id, // Ensure ID is present
+          };
+
           await updateQuotationMutation.mutateAsync({
             id: quotationId,
-            data: {
-              status: "CUSTOMER_APPROVED" as const,
-              customerApproved: true,
-              customerApprovedAt: new Date().toISOString(),
-              jobCardId: jobCard?.id, // Ensure ID is present
-            }
+            data: updateData,
           });
+
+          // Immediately update selectedQuotation in modal so buttons disable/remove without full refresh
+          setSelectedQuotation((prev) =>
+            prev && prev.id === quotationId ? { ...prev, ...updateData } as Quotation : prev
+          );
 
           // Update lead status
           if (jobCard) {
@@ -2195,6 +2214,11 @@ Please keep this slip safe for vehicle collection.`;
           await updateQuotationMutation.mutateAsync({ id: quotationId, data: updateData });
 
           const updatedQuotation = { ...quotation, ...updateData };
+
+          // Immediately update selectedQuotation in modal so buttons disable/remove without full refresh
+          setSelectedQuotation((prev) =>
+            prev && prev.id === quotationId ? { ...prev, ...updateData } as Quotation : prev
+          );
 
           // Add to leads for follow-up
           const lead = addRejectedQuotationToLeads(updatedQuotation);
@@ -2668,17 +2692,24 @@ Please keep this slip safe for vehicle collection.`;
           updateItem={updateItem}
           handleNoteTemplateChange={handleNoteTemplateChange}
           handleSubmit={handleSubmit}
-          handleCreateAndSendToCustomer={handleCreateAndSendToCustomer}
           handleGenerateAndSendCheckInSlip={handleGenerateAndSendCheckInSlip}
           checkInSlipFormData={checkInSlipFormData}
           setCheckInSlipFormData={setCheckInSlipFormData}
           userInfo={userInfo}
-          onClose={() => {
+          onClose={async () => {
             setShowCreateModal(false);
             resetForm();
+            setCreatedQuotationId(null);
+            if (isEditing) {
+              await queryClient.refetchQueries({ queryKey: ['quotations'] });
+            }
           }}
           loading={loading}
           isEditing={isEditing}
+          createdQuotationId={createdQuotationId}
+          onSendToCustomerAfterCreate={handleSendToCustomerAfterCreate}
+          onCustomerApproveAfterCreate={createdQuotationId ? () => handleCustomerApproval(createdQuotationId) : undefined}
+          onCustomerRejectAfterCreate={createdQuotationId ? () => handleCustomerRejection(createdQuotationId) : undefined}
         />
       )}
 

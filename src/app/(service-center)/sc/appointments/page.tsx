@@ -1,8 +1,9 @@
 "use client";
 import { Suspense, useCallback, useMemo } from "react";
 import { Calendar } from "lucide-react";
-import dynamic from "next/dynamic";
-import { AppointmentGrid, Toast } from "../components/appointments";
+import { AppointmentGrid, Toast, AppointmentDetailModal, CustomerSearchModal } from "../components/appointments";
+import CheckInSlip from "@/components/check-in-slip/CheckInSlip";
+import { AppointmentFormModal } from "../components/appointment/AppointmentFormModal";
 import { useAppointmentLogic } from "./hooks/useAppointmentLogic";
 import { canCreateAppointment } from "@/shared/constants/roles";
 import type { JobCard } from "@/shared/types/job-card.types";
@@ -22,14 +23,6 @@ import {
   canEditVehicleInfo,
 } from "@/shared/constants/roles";
 import { migrateAllJobCards } from "@/features/job-cards/utils/migrateJobCards.util";
-
-// Lazy Loaded Components
-const AppointmentDetailModal = dynamic(() => import("../components/appointments").then(mod => mod.AppointmentDetailModal), {
-  loading: () => <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"><div className="bg-white p-4 rounded shadow">Loading details...</div></div>
-});
-const CustomerSearchModal = dynamic(() => import("../components/appointments").then(mod => mod.CustomerSearchModal));
-const CheckInSlip = dynamic(() => import("@/components/check-in-slip/CheckInSlip"), { ssr: false });
-const AppointmentFormModal = dynamic(() => import("../components/appointment/AppointmentFormModal").then(mod => mod.AppointmentFormModal));
 
 function AppointmentsContent() {
   const {

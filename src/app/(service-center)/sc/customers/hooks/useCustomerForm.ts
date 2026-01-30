@@ -117,8 +117,11 @@ export function useCustomerForm(
       hasErrors = true;
     }
 
-    // Validate pincode if provided
-    if (newCustomerForm.pincode && !/^\d{6}$/.test(newCustomerForm.pincode)) {
+    // Validate pincode - make mandatory and exactly 6 digits (frontend-only)
+    if (!newCustomerForm.pincode) {
+      errors.pincode = "Please enter a 6-digit pincode";
+      hasErrors = true;
+    } else if (!/^\d{6}$/.test(newCustomerForm.pincode)) {
       errors.pincode = "Pincode must be exactly 6 digits";
       hasErrors = true;
     }
@@ -259,6 +262,7 @@ export function useCustomerForm(
             cityState: cityState,
             pincode: newCustomerForm.pincode,
             customerType: newCustomerForm.customerType,
+            gstNumber: newCustomerForm.gstNumber, // Include GST number in update
             // Add other fields if necessary
           };
 

@@ -1,13 +1,12 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useToast } from "@/core/contexts/ToastContext";
 import { ConfirmModal } from "@/components/ui/ConfirmModal/ConfirmModal";
 import { Modal } from "@/components/ui/Modal/Modal";
 import { Button } from "@/components/ui/Button";
-import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList, Package, UserPlus } from "lucide-react";
-import { staffService } from "@/features/workshop/services/staff.service";
-import type { Engineer } from "@/shared/types/workshop.types";
+import { CheckCircle, XCircle, Clock, Eye, UserCheck, FileText, ShieldCheck, ShieldX, X, Car, User, Phone, Calendar, Wrench, AlertCircle, Search, ClipboardList, Package } from "lucide-react";
 const safeStorage = {
   getItem: <T,>(key: string, defaultValue: T): T => {
     if (typeof window === "undefined") return defaultValue;
@@ -37,21 +36,16 @@ const safeStorage = {
   }
 };
 import type { Quotation } from "@/shared/types";
-import type { JobCard, PartsRequest } from "@/shared/types/job-card.types";
+import type { JobCard } from "@/shared/types/job-card.types";
+import type { JobCardPartsRequest } from "@/shared/types/jobcard-inventory.types";
 import { getServiceCenterContext, filterByServiceCenter, shouldFilterByServiceCenter } from "@/shared/lib/serviceCenter";
 
 // Service Intake Request types (matching appointments page)
 // Import from shared types
 import type { DocumentationFiles } from '@/shared/types/documentation.types';
-import { jobCardService } from "@/features/job-cards/services/jobCard.service";
 import { quotationsService } from "@/features/quotations/services/quotations.service";
-import { 
-  useManagerReview, 
-  useUpdatePartsRequestStatus, 
-  useAssignEngineer,
-  usePendingPartsRequests,
-  useJobCardsQuery
-} from "@/features/job-cards/hooks/useJobCards";
+import { useManagerReview, useJobCardsQuery } from "@/features/job-cards/hooks/useJobCards";
+import { usePartsApproval } from "@/shared/hooks/usePartsApproval";
 
 interface ServiceIntakeForm {
   customerIdProof: DocumentationFiles;
@@ -126,7 +120,6 @@ interface ServiceIntakeRequest {
 export default function Approvals() {
   const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [partsRequests, setPartsRequests] = useState<PartsRequest[]>([]);
   const [serviceIntakeRequests, setServiceIntakeRequests] = useState<ServiceIntakeRequest[]>([]);
   const [jobCardApprovals, setJobCardApprovals] = useState<JobCard[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<ServiceIntakeRequest | null>(null);
@@ -140,12 +133,8 @@ export default function Approvals() {
   const shouldFilter = shouldFilterByServiceCenter(serviceCenterContext);
   const { showSuccess, showError, showInfo } = useToast();
 
-  // Root-level fix: Initialize React Query mutations for automatic cache invalidation
   const managerReviewMutation = useManagerReview();
-  const updatePartsRequestStatusMutation = useUpdatePartsRequestStatus();
-  const assignEngineerMutation = useAssignEngineer();
 
-  // Root-level fix: Use React Query for fetching job cards and parts requests
   const jobCardQueryParams = useMemo(() => {
     const params: any = {
       passedToManager: 'true',
@@ -158,22 +147,12 @@ export default function Approvals() {
   }, [shouldFilter, serviceCenterContext.serviceCenterId]);
 
   const { data: fetchedJobCards, refetch: refetchJobCards } = useJobCardsQuery(jobCardQueryParams);
-  const { data: fetchedPartsRequests, refetch: refetchPartsRequests } = usePendingPartsRequests(
-    shouldFilter && serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined
-  );
 
-  // Sync React Query data to local state (for compatibility with existing code)
   useEffect(() => {
     if (fetchedJobCards) {
       setJobCardApprovals(fetchedJobCards);
     }
   }, [fetchedJobCards]);
-
-  useEffect(() => {
-    if (fetchedPartsRequests) {
-      setPartsRequests(fetchedPartsRequests);
-    }
-  }, [fetchedPartsRequests]);
 
   // Modal States
   const [confirmModalState, setConfirmModalState] = useState<{
@@ -191,13 +170,27 @@ export default function Approvals() {
   const [rejectionModalState, setRejectionModalState] = useState<{
     isOpen: boolean;
     targetId: string | null;
-    type: 'QUOTATION' | 'JOB_CARD' | 'PARTS_REQUEST' | 'SERVICE_INTAKE' | null;
+    type: 'QUOTATION' | 'JOB_CARD' | 'SERVICE_INTAKE' | null;
   }>({
     isOpen: false,
     targetId: null,
     type: null,
   });
   const [rejectionReason, setRejectionReason] = useState("");
+
+  // Parts requests awaiting Service Manager approval (from technicians)
+  const {
+    pendingRequests: partsRequests,
+    isLoading: isPartsLoading,
+    approve: approvePartsRequest,
+    reject: rejectPartsRequest,
+    refresh: refreshPartsRequests,
+  } = usePartsApproval();
+
+  const managerPendingPartsRequests: JobCardPartsRequest[] = useMemo(
+    () => partsRequests.filter((r) => !r.scManagerApproved && r.status !== "REJECTED"),
+    [partsRequests]
+  );
 
   const openConfirmation = (title: string, message: string, onConfirm: () => void) => {
     setConfirmModalState({
@@ -208,7 +201,7 @@ export default function Approvals() {
     });
   };
 
-  const openRejection = (id: string, type: 'QUOTATION' | 'JOB_CARD' | 'PARTS_REQUEST' | 'SERVICE_INTAKE') => {
+  const openRejection = (id: string, type: 'QUOTATION' | 'JOB_CARD' | 'SERVICE_INTAKE') => {
     setRejectionModalState({
       isOpen: true,
       targetId: id,
@@ -231,15 +224,9 @@ export default function Approvals() {
         refreshQuotations();
         showInfo("Quotation rejected.");
       } else if (type === 'JOB_CARD') {
-        // Root-level fix: Use React Query mutation for automatic cache invalidation
         await managerReviewMutation.mutateAsync({ id: targetId, status: "REJECTED", notes: rejectionReason });
-        await refetchJobCards(); // Refetch to update UI immediately
+        await refetchJobCards();
         showInfo("Job card rejected.");
-      } else if (type === 'PARTS_REQUEST') {
-        // Root-level fix: Use React Query mutation for automatic cache invalidation
-        await updatePartsRequestStatusMutation.mutateAsync({ id: targetId, status: "REJECTED", notes: rejectionReason });
-        await refetchPartsRequests(); // Refetch to update UI immediately
-        showInfo("Parts Request rejected.");
       } else if (type === 'SERVICE_INTAKE') {
         processServiceIntakeRejection(targetId, rejectionReason);
       }
@@ -249,6 +236,40 @@ export default function Approvals() {
       console.error("Rejection failed", error);
       showError("Failed to reject request.");
     }
+  };
+
+  const handleApprovePartsRequest = (requestId: string) => {
+    openConfirmation(
+      "Approve Parts Request",
+      "Approve this parts request so it can move to Inventory for issuing parts?",
+      async () => {
+        try {
+          await approvePartsRequest(requestId, "SC Manager", "Approved by Service Manager");
+          await refreshPartsRequests();
+          showSuccess("Parts request approved. It is now pending Inventory approval.");
+        } catch (error) {
+          console.error("Failed to approve parts request", error);
+          showError("Failed to approve parts request.");
+        }
+      }
+    );
+  };
+
+  const handleRejectPartsRequest = (requestId: string) => {
+    openConfirmation(
+      "Reject Parts Request",
+      "Reject this parts request? The technician will not receive these parts.",
+      async () => {
+        try {
+          await rejectPartsRequest(requestId, "SC Manager", "Rejected by Service Manager");
+          await refreshPartsRequests();
+          showInfo("Parts request rejected.");
+        } catch (error) {
+          console.error("Failed to reject parts request", error);
+          showError("Failed to reject parts request.");
+        }
+      }
+    );
   };
 
   // Helper functions to refresh data
@@ -261,16 +282,8 @@ export default function Approvals() {
     setQuotations(finalQuotations);
   };
 
-  // Root-level fix: refreshJobCards and refreshPartsRequests now use React Query refetch
-  // These functions kept for backward compatibility with existing code
   const refreshJobCards = async () => {
-    // Root-level fix: Use React Query refetch instead of direct service call
     await refetchJobCards();
-  };
-
-  const refreshPartsRequests = async () => {
-    // Root-level fix: Use React Query refetch instead of direct service call
-    await refetchPartsRequests();
   };
 
   const processServiceIntakeRejection = (requestId: string, reason: string) => {
@@ -333,34 +346,8 @@ export default function Approvals() {
 
       setServiceIntakeRequests(pendingRequests);
 
-      // Fetch real pending job cards from API
-      try {
-        const queryParams: any = {
-          passedToManager: 'true',
-          managerReviewStatus: 'PENDING'
-        };
-
-        if (shouldFilter && serviceCenterContext.serviceCenterId) {
-          queryParams.serviceCenterId = serviceCenterContext.serviceCenterId;
-        }
-
-        const pendingJobCards = await jobCardService.getAll(queryParams);
-        setJobCardApprovals(pendingJobCards);
-      } catch (error) {
-        console.error("Failed to fetch pending job cards:", error);
-        setJobCardApprovals([]);
-      }
-
-      // Load pending parts requests
-      try {
-        const pendingParts = await jobCardService.getPendingPartsRequests(
-          shouldFilter && serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined
-        );
-        setPartsRequests(pendingParts);
-      } catch (error) {
-        console.error("Failed to fetch pending parts requests:", error);
-        setPartsRequests([]);
-      }
+      // Job cards are loaded via React Query (useJobCardsQuery). Do NOT overwrite them here —
+      // loadData runs on interval/storage and would overwrite fresh refetches after approval.
     };
 
     loadData();
@@ -438,23 +425,6 @@ export default function Approvals() {
     });
   }, [jobCardApprovals, searchQuery]);
 
-  const filteredPartsRequests = useMemo(() => {
-    if (!searchQuery.trim()) return partsRequests;
-
-    const query = searchQuery.toLowerCase();
-    return partsRequests.filter((req) => {
-      const customerName = req.jobCard?.customerName?.toLowerCase() || "";
-      const vehicle = `${req.jobCard?.vehicleMake || ""} ${req.jobCard?.vehicleModel || ""} ${req.jobCard?.registration || ""}`.toLowerCase();
-      const jobCardNumber = req.jobCard?.jobCardNumber?.toLowerCase() || "";
-      const items = req.items.map(i => i.partName.toLowerCase()).join(" ");
-
-      return customerName.includes(query) ||
-        vehicle.includes(query) ||
-        jobCardNumber.includes(query) ||
-        items.includes(query);
-    });
-  }, [partsRequests, searchQuery]);
-
   const handleApproveQuotation = async (quotationId: string) => {
     openConfirmation(
       "Approve Quotation",
@@ -529,106 +499,20 @@ export default function Approvals() {
     openRejection(jobCardId, 'JOB_CARD');
   };
 
-  // Engineers State
-  const [engineers, setEngineers] = useState<Engineer[]>([]);
-  const [approvePartsModalState, setApprovePartsModalState] = useState<{
-    isOpen: boolean;
-    requestId: string | null;
-    selectedEngineerId: string;
-    currentEngineerName: string;
-    jobCardId: string;
-  }>({
-    isOpen: false,
-    requestId: null,
-    selectedEngineerId: "",
-    currentEngineerName: "",
-    jobCardId: "",
-  });
-
-  // Fetch engineers on mount
-  useEffect(() => {
-    const fetchEngineers = async () => {
-      try {
-        const data = await staffService.getEngineers(serviceCenterContext.serviceCenterId ? String(serviceCenterContext.serviceCenterId) : undefined);
-        setEngineers(data);
-      } catch (error) {
-        console.error("Failed to fetch engineers:", error);
-      }
-    };
-    if (serviceCenterContext.serviceCenterId) {
-      fetchEngineers();
-    }
-  }, [serviceCenterContext.serviceCenterId]);
-
-  const handleApprovePartsRequest = async (requestId: string) => {
-    const request = partsRequests.find(r => r.id === requestId);
-    if (!request || !request.jobCard) return;
-
-    let assignedEngineerId = "";
-    let assignedEngineerName = "Unassigned";
-
-    const { assignedEngineer } = request.jobCard;
-
-    if (assignedEngineer) {
-      if (typeof assignedEngineer === 'string') {
-        assignedEngineerId = assignedEngineer;
-        const engineer = engineers.find(e => e.id === assignedEngineer);
-        if (engineer) assignedEngineerName = engineer.name;
-      } else {
-        assignedEngineerId = assignedEngineer.id;
-        assignedEngineerName = assignedEngineer.name;
-      }
-    }
-
-    setApprovePartsModalState({
-      isOpen: true,
-      requestId,
-      selectedEngineerId: assignedEngineerId, // Pre-select assigned one
-      currentEngineerName: assignedEngineerName,
-      jobCardId: request.jobCard.id,
-    });
-  };
-
-  const handleConfirmPartsApproval = async () => {
-    const { requestId, selectedEngineerId, jobCardId } = approvePartsModalState;
-    if (!requestId) return;
-
-    try {
-      // 1. If engineer changed/selected (and differs from original), update assignment
-      if (selectedEngineerId) {
-        // Optionally check if different, but re-assigning is safe
-        // Find engineer name
-        const engineer = engineers.find(e => e.id === selectedEngineerId);
-        if (engineer) {
-          // Root-level fix: Use React Query mutation for automatic cache invalidation
-          await assignEngineerMutation.mutateAsync({ id: jobCardId, engineerId: selectedEngineerId, engineerName: engineer.name });
-        }
-      }
-
-      // 2. Approve Request - Root-level fix: Use React Query mutation for automatic cache invalidation
-      await updatePartsRequestStatusMutation.mutateAsync({ id: requestId, status: "APPROVED", jobCardId });
-
-      await refetchPartsRequests(); // Refetch to update UI immediately
-      await refetchJobCards(); // In case status changed
-
-      setApprovePartsModalState(prev => ({ ...prev, isOpen: false }));
-      showSuccess("Parts Request Approved & Engineer Confirmed!");
-    } catch (error) {
-      console.error("Failed to approve parts request", error);
-      showError("Failed to approve parts request");
-    }
-  };
-
-  const handleRejectPartsRequest = async (requestId: string) => {
-    openRejection(requestId, 'PARTS_REQUEST');
-  };
-
   return (
     <div className="bg-[#f9f9fb] min-h-screen">
       <div className="pt-6 pb-10">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-blue-600 mb-2">Approvals</h1>
-          <p className="text-gray-500">Review and approve pending requests</p>
+          <p className="text-gray-500">Review and approve pending requests.</p>
+          <p className="text-sm text-amber-700 mt-1">
+            Technician parts requests awaiting your approval appear below. After you approve,
+            Inventory Manager will see them in{" "}
+            <Link href="/inventory-manager/approvals" className="font-semibold underline hover:text-amber-800">
+              Inventory → Approvals
+            </Link>{" "}
+            to assign/issue parts.
+          </p>
         </div>
 
         {/* Search Bar */}
@@ -775,134 +659,69 @@ export default function Approvals() {
             </div>
           )}
 
-          {/* Parts Request Approvals Section */}
-          {filteredPartsRequests.length > 0 && (
+          {/* Technician Parts Requests (Service Manager stage) */}
+          {managerPendingPartsRequests.length > 0 && (
             <div className="mb-6">
               <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                Parts Request Approvals {filteredPartsRequests.length > 0 && `(${filteredPartsRequests.length})`}
+                Technician Parts Requests ({managerPendingPartsRequests.length})
               </h2>
               <div className="space-y-4">
-                {filteredPartsRequests.map((request) => (
+                {managerPendingPartsRequests.map((request) => (
                   <div key={request.id} className="bg-white rounded-2xl shadow-md p-6">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-3">
-                          <Package className="text-orange-600" size={20} />
-                          <span className="font-semibold text-lg">Parts Request</span>
-                          {/* 
-                            Logic to show detailed status:
-                            - PENDING: Needs general approval
-                            - APPROVED: Approved by Inventory Manager, pending final action
-                            - PARTIALLY_APPROVED: Some items approved
-                          */}
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${request.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                            request.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                              'bg-gray-100 text-gray-700'
-                            }`}>
-                            {request.status === 'PENDING' ? 'Pending Approval' : request.status.replace('_', ' ')}
+                          <Package className="text-indigo-600" size={20} />
+                          <span className="font-semibold text-lg">
+                            Job Card: {request.jobCardId}
+                          </span>
+                          <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                            Pending Parts Approval
                           </span>
                         </div>
-
-                        <div className="space-y-4 mb-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <p className="text-gray-700">
-                              <span className="font-semibold">Job Card:</span> {request.jobCard?.jobCardNumber || "N/A"}
-                            </p>
-                            <p className="text-gray-700">
-                              <span className="font-semibold">Technician:</span> {
-                                (typeof request.jobCard?.assignedEngineer === 'string'
-                                  ? engineers.find(e => e.id === request.jobCard?.assignedEngineer)?.name
-                                  : request.jobCard?.assignedEngineer?.name) || "Unassigned"
-                              }
-                            </p>
-                            <p className="text-gray-700">
-                              <span className="font-semibold">Customer:</span> {request.jobCard?.customerName || request.jobCard?.customer?.name || "N/A"}
-                            </p>
-                            <p className="text-gray-700">
-                              <span className="font-semibold">Vehicle:</span> {
-                                (() => {
-                                  const jc = request.jobCard;
-                                  if (!jc) return "N/A";
-
-                                  const makeModel =
-                                    (jc.vehicleObject && `${jc.vehicleObject.vehicleMake} ${jc.vehicleObject.vehicleModel}`) ||
-                                    (typeof jc.vehicle === 'string' ? jc.vehicle : (jc.vehicle?.vehicleMake && `${jc.vehicle.vehicleMake} ${jc.vehicle.vehicleModel}`)) ||
-                                    (jc.vehicleMake && `${jc.vehicleMake} ${jc.vehicleModel || ''}`) ||
-                                    "N/A";
-
-                                  const reg =
-                                    jc.vehicleObject?.registration ||
-                                    jc.registration ||
-                                    (typeof jc.vehicle !== 'string' ? jc.vehicle?.registration : '') ||
-                                    "No Reg";
-
-                                  return `${makeModel} (${reg})`;
-                                })()
-                              }
-                            </p>
-                          </div>
-
-                          <div className="mt-2 text-sm text-gray-500">
-                            Requested: {new Date(request.createdAt).toLocaleString("en-IN")}
-                          </div>
-
-                          <div className="mt-4 border rounded-lg overflow-hidden">
-                            <table className="min-w-full divide-y divide-gray-200">
-                              <thead className="bg-gray-50">
-                                <tr>
-                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Part Details</th>
-                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested Qty</th>
-                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Status</th>
-                                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                </tr>
-                              </thead>
-                              <tbody className="bg-white divide-y divide-gray-200">
-                                {request.items.map((item, idx) => (
-                                  <tr key={idx}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                      <div className="font-medium">{item.partName}</div>
-                                      <div className="text-xs text-gray-500">{item.partNumber || "N/A"}</div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                      {item.requestedQty}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                      {/* This would ideally check real-time stock */}
-                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                        Check Stock
-                                      </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                      {item.isWarranty ? (
-                                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">Warranty</span>
-                                      ) : (
-                                        <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">Paid</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
+                        <p className="text-gray-700">
+                          <span className="font-semibold">Customer:</span>{" "}
+                          {request.customerName || "N/A"}
+                        </p>
+                        <p className="text-gray-700">
+                          <span className="font-semibold">Requested By:</span>{" "}
+                          {request.requestedBy || "Technician"}
+                        </p>
+                        <p className="text-gray-700 mt-2 font-semibold flex items-center gap-2">
+                          <Package size={16} /> Required Parts:
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
+                          {request.parts.map((part, idx) => (
+                            <li key={idx} className="flex items-center justify-between">
+                              <span>
+                                {part.partName}
+                                {part.isWarranty && (
+                                  <span className="ml-2 text-xs text-indigo-600 font-medium">
+                                    (Warranty)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="font-medium">Qty: {part.quantity}</span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => handleApprovePartsRequest(request.id)}
-                          className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-medium justify-center"
-                        >
-                          <ShieldCheck size={18} />
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleRejectPartsRequest(request.id)}
-                          className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-medium justify-center"
-                        >
-                          <ShieldX size={18} />
-                          Reject
-                        </button>
-                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <Button
+                        variant="primary"
+                        onClick={() => handleApprovePartsRequest(request.id)}
+                      >
+                        <CheckCircle className="mr-2" size={16} />
+                        Approve Parts Request
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleRejectPartsRequest(request.id)}
+                      >
+                        <XCircle className="mr-2" size={16} />
+                        Reject Parts Request
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -1000,7 +819,7 @@ export default function Approvals() {
                 Quotation Approvals {filteredQuotations.length > 0 && `(${filteredQuotations.length})`}
               </h2>
             )}
-            {filteredQuotations.length === 0 && filteredServiceIntakeRequests.length === 0 && filteredJobCardApprovals.length === 0 && filteredPartsRequests.length === 0 ? (
+            {filteredQuotations.length === 0 && filteredServiceIntakeRequests.length === 0 && filteredJobCardApprovals.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-md p-12 text-center">
                 <FileText className="mx-auto text-gray-400 mb-4" size={48} />
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">No Pending Approvals</h3>
@@ -1095,8 +914,8 @@ export default function Approvals() {
           <ConfirmModal
             isOpen={confirmModalState.isOpen}
             onClose={() => setConfirmModalState(prev => ({ ...prev, isOpen: false }))}
-            onConfirm={() => {
-              confirmModalState.onConfirm();
+            onConfirm={async () => {
+              await confirmModalState.onConfirm();
               setConfirmModalState(prev => ({ ...prev, isOpen: false }));
             }}
             title={confirmModalState.title}
@@ -1132,61 +951,6 @@ export default function Approvals() {
                   disabled={!rejectionReason.trim()}
                 >
                   Confirm Rejection
-                </Button>
-              </div>
-            </div>
-          </Modal>
-
-          {/* Parts Approval & Engineer Selection Modal */}
-          <Modal
-            isOpen={approvePartsModalState.isOpen}
-            onClose={() => setApprovePartsModalState(prev => ({ ...prev, isOpen: false }))}
-            title="Approve Parts & Confirm Engineer"
-            size="md"
-          >
-            <div className="space-y-6">
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
-                <p className="text-sm text-blue-800">
-                  <span className="font-semibold">Note:</span> Please verify the engineer receiving the parts.
-                  The currently assigned engineer is pre-selected. Changing the engineer here will update the job card assignment.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assigned Engineer <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <UserPlus className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                  <select
-                    value={approvePartsModalState.selectedEngineerId}
-                    onChange={(e) => setApprovePartsModalState(prev => ({ ...prev, selectedEngineerId: e.target.value }))}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none"
-                  >
-                    <option value="" disabled>Select Engineer</option>
-                    {engineers.map((engineer) => (
-                      <option key={engineer.id} value={engineer.id}>
-                        {engineer.name} {engineer.status !== 'Available' ? `(${engineer.status})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                <Button
-                  onClick={() => setApprovePartsModalState(prev => ({ ...prev, isOpen: false }))}
-                  variant="outline"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleConfirmPartsApproval}
-                  className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-                  disabled={!approvePartsModalState.selectedEngineerId}
-                >
-                  <ShieldCheck size={18} />
-                  Approve & Issue
                 </Button>
               </div>
             </div>
